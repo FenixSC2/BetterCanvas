@@ -136,3 +136,33 @@
 }
 .errorTitle { font-weight: 900; margin-bottom: 6px; }
 .errorMsg { font-family: ui-monospace, monospace; white-space: pre-wrap; }
+
+/* Emphasis for missing/overdue items */
+.dangerText {
+  color: #b00020;
+  font-weight: 800;
+}
+
+.dangerBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff0f2;
+  border: 1px solid #ffd0d6;
+  color: #b00020;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.listItem.dangerItem {
+  border-color: #ffd0d6;
+  background: #fff7f8;
+}
+
+.muted.dangerMuted {
+  opacity: 1; /* override muted */
+  color: #b00020;
+  font-weight: 700;
+}

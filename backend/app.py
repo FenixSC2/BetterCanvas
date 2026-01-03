@@ -1,4 +1,6 @@
 # app.py
+from __future__ import annotations
+
 import os
 import time
 import logging
@@ -14,6 +16,10 @@ from pydantic import BaseModel, Field
 from dateutil import parser as dateparser
 from dotenv import load_dotenv
 
+# imports for caching
+import asyncio
+from threading import Lock
+
 load_dotenv()
 
 # === Configuration ===
@@ -21,10 +27,80 @@ CANVAS_BASE_URL = os.getenv("CANVAS_BASE_URL", "https://northeastern.instructure
 CANVAS_API_TOKEN = os.getenv("CANVAS_API_TOKEN", "your_token_here")
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "y")
 
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "120"))
+SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "180"))
+
+_cache_lock = Lock()
+_cache: dict[str, dict[str, Any]] = {}  # key -> {"ts": float, "value": Any}
+
 HEADERS = {
     "Authorization": f"Bearer {CANVAS_API_TOKEN}",
     "Accept": "application/json"
 }
+
+# === Caching ===
+def cache_get(key: str):
+    with _cache_lock:
+        item = _cache.get(key)
+        if not item:
+            return None
+        if time.time() - item["ts"] > CACHE_TTL_SECONDS:
+            return None
+        return item["value"]
+
+def cache_set(key: str, value: Any):
+    with _cache_lock:
+        _cache[key] = {"ts": time.time(), "value": value}
+
+def cache_clear(prefix: str | None = None):
+    with _cache_lock:
+        if prefix is None:
+            _cache.clear()
+            return
+        for k in list(_cache.keys()):
+            if k.startswith(prefix):
+                _cache.pop(k, None)
+
+# Cached getters
+def get_profile_cached() -> Profile:
+    key = "profile"
+    v = cache_get(key)
+    if v:
+        return v
+    p = mock_profile() if MOCK_MODE else get_student_profile()
+    cache_set(key, p)
+    return p
+
+def get_enrollments_cached() -> List[dict]:
+    key = "enrollments"
+    v = cache_get(key)
+    if v:
+        return v
+    e = mock_enrollments() if MOCK_MODE else canvas_get_paginated("/users/self/enrollments")
+    cache_set(key, e)
+    return e
+
+def get_courses_cached() -> List[Course]:
+    key = "courses"
+    v = cache_get(key)
+    if v:
+        return v
+    courses = mock_courses() if MOCK_MODE else get_active_courses()
+    cache_set(key, courses)
+    return courses
+
+def get_course_assignments_cached(course_id: int) -> List[Assignment]:
+    key = f"assignments:{course_id}"
+    v = cache_get(key)
+    if v:
+        return v
+    asgs = (
+        mock_course_assignments(course_id, limit=None)
+        if MOCK_MODE
+        else get_course_assignments(course_id, include_submission=True, limit=None)
+    )
+    cache_set(key, asgs)
+    return asgs
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -147,6 +223,115 @@ class Assignment(BaseModel):
     submitted: Optional[bool] = None
     score: Optional[float] = None
 
+# === Grade aggregation and missing detection ===
+
+# Models
+class MissingItem(BaseModel):
+    assignment_id: int
+    course_id: int
+    name: str
+    due_at: Optional[datetime]
+    points_possible: Optional[float]
+    html_url: Optional[str]
+
+class CourseSummary(BaseModel):
+    id: int
+    name: str
+    course_code: Optional[str] = None
+    syllabus_url: Optional[str] = None
+    html_url: Optional[str] = None
+
+    current_score: Optional[float] = None
+    current_grade: Optional[str] = None
+
+    next_assignments: List[Assignment] = Field(default_factory=list)
+
+    missing_count: int = 0
+    missing: List[MissingItem] = Field(default_factory=list)
+
+# Course summary function
+def build_course_summaries(next_limit: int = 3, missing_limit: int = 10) -> List[CourseSummary]:
+    courses = get_courses_cached()
+    enrollments = get_enrollments_cached()
+
+    # Map course_id -> grades
+    grades_by_course: dict[int, dict[str, Any]] = {}
+    for e in enrollments:
+        if e.get("type") != "StudentEnrollment":
+            continue
+        cid = e.get("course_id")
+        if not cid:
+            continue
+        g = e.get("grades") or {}
+        grades_by_course[cid] = {
+            "current_score": g.get("current_score"),
+            "current_grade": g.get("current_grade"),
+        }
+
+    now = datetime.now(timezone.utc)
+
+    summaries: List[CourseSummary] = []
+    for c in courses:
+        cid = c.id
+        grade = grades_by_course.get(cid, {})
+
+        asgs = get_course_assignments_cached(cid)
+
+        # "Next assignments": due dates in the future, sorted
+        future = [a for a in asgs if a.due_at and a.due_at >= now]
+        future.sort(key=lambda a: a.due_at)
+        next_asgs = future[:next_limit]
+
+        # Missing detection: due date in past + not submitted
+        missing = []
+        for a in asgs:
+            if not a.due_at:
+                continue
+            if a.due_at >= now:
+                continue
+            # If Canvas returned submission info, we can use it:
+            if a.submitted:
+                continue
+            # Skip "none" submission types (some items aren’t actually submittable)
+            if a.submission_types and "none" in a.submission_types:
+                continue
+            missing.append(MissingItem(
+                assignment_id=a.id,
+                course_id=cid,
+                name=a.name,
+                due_at=a.due_at,
+                points_possible=a.points_possible,
+                html_url=a.html_url
+            ))
+
+        missing.sort(key=lambda m: (m.due_at is None, m.due_at or datetime.min.replace(tzinfo=timezone.utc)))
+
+        summaries.append(CourseSummary(
+            id=cid,
+            name=c.name,
+            course_code=c.course_code,
+            syllabus_url=c.syllabus_url,
+            html_url=c.html_url,
+            current_score=grade.get("current_score"),
+            current_grade=grade.get("current_grade"),
+            next_assignments=next_asgs,
+            missing_count=len(missing),
+            missing=missing[:missing_limit],
+        ))
+
+    summaries.sort(key=lambda s: s.name.lower())
+    return summaries
+
+# Cache course summaries 
+def get_course_summaries_cached(next_limit: int, missing_limit: int) -> List[CourseSummary]:
+    key = f"course_summaries:next={next_limit}:miss={missing_limit}"
+    v = cache_get(key)
+    if v:
+        return v
+    s = build_course_summaries(next_limit=next_limit, missing_limit=missing_limit)
+    cache_set(key, s)
+    return s
+
 # === Mock Generators ===
 
 def mock_profile() -> Profile:
@@ -184,13 +369,29 @@ def mock_courses() -> List[Course]:
     ]
 
 def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List[Assignment]:
-    # A couple upcoming assignments, plus one with a description
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
     base = [
+        # One intentionally overdue + unsubmitted assignment (tests "missing")
+        Assignment(
+            id=999 + course_id * 1000,
+            course_id=course_id,
+            name="Overdue: Reading Check (Missing)",
+            due_at=now - timedelta(days=2),
+            points_possible=5,
+            description="<p>This is intentionally overdue + unsubmitted to test missing detection.</p>",
+            submission_types=["online_text_entry"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{999 + course_id * 1000}",
+            submitted=False,
+            score=None,
+        ),
+
+        # Upcoming items
         Assignment(
             id=1 + course_id * 1000,
             course_id=course_id,
             name="Homework 1: Warm-up",
-            due_at=datetime.now(timezone.utc).replace(microsecond=0) ,
+            due_at=now + timedelta(days=3, hours=randint(0, 6)),
             points_possible=50,
             description="<p>Answer the questions in the PDF. Show work.</p>",
             submission_types=["online_upload"],
@@ -202,7 +403,7 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             id=2 + course_id * 1000,
             course_id=course_id,
             name="Project Proposal",
-            due_at=(datetime.now(timezone.utc).replace(microsecond=0) ),
+            due_at=now + timedelta(days=7, hours=randint(0, 6)),
             points_possible=25,
             description="<p>Submit a 1-page proposal describing your project idea.</p>",
             submission_types=["online_text_entry"],
@@ -213,8 +414,8 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
         Assignment(
             id=3 + course_id * 1000,
             course_id=course_id,
-            name="Quiz 1",
-            due_at=(datetime.now(timezone.utc).replace(microsecond=0) ),
+            name="Quiz 1 (Submitted)",
+            due_at=now + timedelta(days=1, hours=randint(0, 6)),
             points_possible=10,
             description="",
             submission_types=["online_quiz"],
@@ -223,6 +424,9 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             score=9.0,
         ),
     ]
+
+    base.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
+    return base[:limit] if limit else base
 
     # Stagger due dates to look realistic
     now = datetime.now(timezone.utc)
@@ -245,6 +449,28 @@ def mock_upcoming(limit: int = 50) -> List[Assignment]:
         all_asgs.extend(mock_course_assignments(c.id))
     all_asgs.sort(key=lambda a: a.due_at or datetime.max.replace(tzinfo=timezone.utc))
     return all_asgs[:limit]
+
+def mock_enrollments() -> List[dict]:
+    return [
+        {
+            "course_id": 101,
+            "type": "StudentEnrollment",
+            "enrollment_state": "active",
+            "grades": {"current_score": 92.4, "current_grade": "A-"},
+        },
+        {
+            "course_id": 202,
+            "type": "StudentEnrollment",
+            "enrollment_state": "active",
+            "grades": {"current_score": 87.1, "current_grade": "B+"},
+        },
+    ]
+
+def mock_course_summaries(next_limit: int = 3, missing_limit: int = 10) -> List[CourseSummary]:
+    # Use the same aggregation logic, but fed by mock data through cached getters.
+    # Because get_courses_cached/get_enrollments_cached/get_course_assignments_cached are mock-aware,
+    # this will produce consistent mock summaries.
+    return build_course_summaries(next_limit=next_limit, missing_limit=missing_limit)
 
 # === Canvas-specific getters used by the app ===
 
@@ -466,6 +692,53 @@ def api_dashboard(upcoming_limit: int = 20):
     except Exception as exc:
         logger.exception("Error building dashboard")
         raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/courses/summary", response_model=List[CourseSummary])
+def api_courses_summary(next_limit: int = 3, missing_limit: int = 10):
+    if MOCK_MODE:
+        # optional: bypass cache in mock mode so changes show instantly while debugging
+        return mock_course_summaries(next_limit=next_limit, missing_limit=missing_limit)
+    return get_course_summaries_cached(next_limit=next_limit, missing_limit=missing_limit)
+
+# === Background sync loop ===
+_sync_task: Optional[asyncio.Task] = None
+
+async def sync_loop():
+    while True:
+        try:
+            logger.info("Background sync: refreshing cached Canvas data…")
+
+            # Refresh “core” cache keys
+            cache_clear(prefix="course_summaries")
+            cache_clear(prefix="assignments:")
+            cache_clear(prefix=None)  # or keep selective; simplest for now
+
+            # Warm the cache
+            _ = get_profile_cached()
+            _ = get_enrollments_cached()
+            courses = get_courses_cached()
+            for c in courses:
+                _ = get_course_assignments_cached(c.id)
+
+            # Precompute common summaries
+            _ = get_course_summaries_cached(next_limit=3, missing_limit=10)
+
+            logger.info("Background sync: done.")
+        except Exception:
+            logger.exception("Background sync failed (will retry)")
+
+        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
+
+@app.on_event("startup")
+async def on_startup():
+    global _sync_task
+    _sync_task = asyncio.create_task(sync_loop())
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global _sync_task
+    if _sync_task:
+        _sync_task.cancel()
 
 
 # Run with: uvicorn app:app --reload --port 8000
