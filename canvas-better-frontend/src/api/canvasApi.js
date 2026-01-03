@@ -29,4 +29,7 @@ export const canvasApi = {
       `/api/courses/summary?next_limit=${nextLimit}&missing_limit=${missingLimit}`,
       opts
     ),
+
+    // New overview endpoint
+    getOverview: (opts) => request("/api/overview", opts),
 };

@@ -166,3 +166,22 @@
   color: #b00020;
   font-weight: 700;
 }
+
+.gradeBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.gradeBadge.actual {
+  background: #e5f0ff;
+  color: #1f4fd8;
+}
+
+.gradeBadge.estimated {
+  background: #fff3cd;   /* soft yellow */
+  color: #856404;        /* readable dark gold */
+  border: 1px solid #ffeeba;
+}
