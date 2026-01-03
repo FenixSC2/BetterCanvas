@@ -3,7 +3,8 @@ import os
 import time
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from random import randint
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -18,6 +19,7 @@ load_dotenv()
 # === Configuration ===
 CANVAS_BASE_URL = os.getenv("CANVAS_BASE_URL", "https://northeastern.instructure.com/")
 CANVAS_API_TOKEN = os.getenv("CANVAS_API_TOKEN", "your_token_here")
+MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "y")
 
 HEADERS = {
     "Authorization": f"Bearer {CANVAS_API_TOKEN}",
@@ -144,6 +146,105 @@ class Assignment(BaseModel):
     html_url: Optional[str] = None
     submitted: Optional[bool] = None
     score: Optional[float] = None
+
+# === Mock Generators ===
+
+def mock_profile() -> Profile:
+    return Profile(
+        id=999999,
+        name="Mock Student",
+        sortable_name="Student, Mock",
+        short_name="Mock",
+        primary_email="mock.student@example.com",
+        avatar_url=None,
+    )
+
+def mock_courses() -> List[Course]:
+    return [
+        Course(
+            id=101,
+            name="CS 3000 — Algorithms (Mock)",
+            course_code="CS3000",
+            term_id=202601,
+            published=True,
+            syllabus="Mock syllabus: This course covers graphs, flows, and dynamic programming.",
+            syllabus_url=f"{CANVAS_BASE_URL}/courses/101/syllabus",
+            html_url=f"{CANVAS_BASE_URL}/courses/101",
+        ),
+        Course(
+            id=202,
+            name="MATH 2001 — Discrete Structures (Mock)",
+            course_code="MATH2001",
+            term_id=202601,
+            published=True,
+            syllabus="Mock syllabus: Proofs, combinatorics, and discrete probability.",
+            syllabus_url=f"{CANVAS_BASE_URL}/courses/202/syllabus",
+            html_url=f"{CANVAS_BASE_URL}/courses/202",
+        ),
+    ]
+
+def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List[Assignment]:
+    # A couple upcoming assignments, plus one with a description
+    base = [
+        Assignment(
+            id=1 + course_id * 1000,
+            course_id=course_id,
+            name="Homework 1: Warm-up",
+            due_at=datetime.now(timezone.utc).replace(microsecond=0) ,
+            points_possible=50,
+            description="<p>Answer the questions in the PDF. Show work.</p>",
+            submission_types=["online_upload"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{1 + course_id * 1000}",
+            submitted=False,
+            score=None,
+        ),
+        Assignment(
+            id=2 + course_id * 1000,
+            course_id=course_id,
+            name="Project Proposal",
+            due_at=(datetime.now(timezone.utc).replace(microsecond=0) ),
+            points_possible=25,
+            description="<p>Submit a 1-page proposal describing your project idea.</p>",
+            submission_types=["online_text_entry"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{2 + course_id * 1000}",
+            submitted=False,
+            score=None,
+        ),
+        Assignment(
+            id=3 + course_id * 1000,
+            course_id=course_id,
+            name="Quiz 1",
+            due_at=(datetime.now(timezone.utc).replace(microsecond=0) ),
+            points_possible=10,
+            description="",
+            submission_types=["online_quiz"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{3 + course_id * 1000}",
+            submitted=True,
+            score=9.0,
+        ),
+    ]
+
+    # Stagger due dates to look realistic
+    now = datetime.now(timezone.utc)
+    base[0].due_at = now.replace(microsecond=0)  # due now-ish
+    base[1].due_at = (now.replace(microsecond=0) )  # will tweak below
+    base[2].due_at = (now.replace(microsecond=0) )
+
+    # Actually stagger by days/hours
+    base[0].due_at = now.replace(microsecond=0) + timedelta(days=3, hours=randint(0, 6))
+    base[1].due_at = now.replace(microsecond=0) + timedelta(days=7, hours=randint(0, 6))
+    base[2].due_at = now.replace(microsecond=0) + timedelta(days=1, hours=randint(0, 6))
+
+    base.sort(key=lambda a: a.due_at or datetime.max.replace(tzinfo=timezone.utc))
+    return base[:limit] if limit else base
+
+def mock_upcoming(limit: int = 50) -> List[Assignment]:
+    courses = mock_courses()
+    all_asgs: List[Assignment] = []
+    for c in courses:
+        all_asgs.extend(mock_course_assignments(c.id))
+    all_asgs.sort(key=lambda a: a.due_at or datetime.max.replace(tzinfo=timezone.utc))
+    return all_asgs[:limit]
 
 # === Canvas-specific getters used by the app ===
 
@@ -297,6 +398,8 @@ def get_upcoming_assignments(limit: int = 50) -> List[Assignment]:
 @app.get("/api/profile", response_model=Profile)
 def api_profile():
     try:
+        if MOCK_MODE:
+            return mock_profile()
         return get_student_profile()
     except HTTPException as e:
         raise e
@@ -307,6 +410,8 @@ def api_profile():
 @app.get("/api/courses", response_model=List[Course])
 def api_courses():
     try:
+        if MOCK_MODE:
+            return mock_courses()
         return get_active_courses()
     except HTTPException as e:
         raise e
@@ -317,6 +422,8 @@ def api_courses():
 @app.get("/api/courses/{course_id}/assignments", response_model=List[Assignment])
 def api_course_assignments(course_id: int, limit: Optional[int] = None):
     try:
+        if MOCK_MODE:
+            return mock_course_assignments(course_id, limit=limit)
         return get_course_assignments(course_id, include_submission=True, limit=limit)
     except HTTPException as e:
         # forward 403 as 403 so front end can handle gracefully
@@ -328,6 +435,8 @@ def api_course_assignments(course_id: int, limit: Optional[int] = None):
 @app.get("/api/upcoming", response_model=List[Assignment])
 def api_upcoming(limit: Optional[int] = 50):
     try:
+        if MOCK_MODE:
+            return mock_upcoming(limit=limit or 50)
         return get_upcoming_assignments(limit=limit)
     except Exception as exc:
         logger.exception("Error fetching upcoming")
@@ -339,6 +448,13 @@ def api_dashboard(upcoming_limit: int = 20):
     Convenience endpoint returning combined profile + course list + upcoming assignments.
     """
     try:
+        if MOCK_MODE:
+            return {
+                "profile": mock_profile().dict(),
+                "courses": [c.dict() for c in mock_courses()],
+                "upcoming": [a.dict() for a in mock_upcoming(limit=upcoming_limit)]
+            }
+
         profile = get_student_profile()
         courses = get_active_courses()
         upcoming = get_upcoming_assignments(limit=upcoming_limit)

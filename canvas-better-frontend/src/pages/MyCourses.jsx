@@ -4,6 +4,7 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 
+// Format due date nicely
 function fmtDue(dt) {
   if (!dt) return "No due date";
   const d = new Date(dt);
