@@ -185,3 +185,61 @@
   color: #856404;        /* readable dark gold */
   border: 1px solid #ffeeba;
 }
+
+/* =========================
+   Urgency / Status Badges
+   ========================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+
+  padding: 2px 10px;
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+
+  white-space: nowrap;
+  user-select: none;
+
+  border: 1px solid transparent;
+}
+
+/* --- Neutral / Undated --- */
+.badgeNeutral {
+  background-color: rgba(0, 0, 0, 0.04);
+  color: #444;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* --- Info (Due soon) --- */
+.badgeInfo {
+  background-color: rgba(59, 130, 246, 0.12); /* blue */
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+/* --- Warning (Due today / tomorrow) --- */
+.badgeWarn {
+  background-color: rgba(234, 179, 8, 0.18); /* yellow */
+  color: #92400e;
+  border-color: rgba(234, 179, 8, 0.45);
+}
+
+/* --- Danger (Overdue / Missing) --- */
+.badgeDanger {
+  background-color: rgba(220, 38, 38, 0.16); /* red */
+  color: #991b1b;
+  border-color: rgba(220, 38, 38, 0.45);
+}
+
+/* --- Success (Completed) --- */
+.badgeSuccess {
+  background-color: rgba(22, 163, 74, 0.16); /* green */
+  color: #166534;
+  border-color: rgba(22, 163, 74, 0.45);
+}

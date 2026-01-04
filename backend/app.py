@@ -599,7 +599,7 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
         Assignment(
             id=999 + course_id * 1000,
             course_id=course_id,
-            name="Overdue: Reading Check (Missing)",
+            name="Reading Check 1",
             due_at=now - timedelta(days=2),
             points_possible=5,
             description="<p>This is intentionally overdue + unsubmitted to test missing detection.</p>",
@@ -635,7 +635,7 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
         Assignment(
             id=3 + course_id * 1000,
             course_id=course_id,
-            name="Quiz 1 (Submitted)",
+            name="Quiz 1",
             due_at=now + timedelta(days=1, hours=randint(0, 6)),
             points_possible=10,
             description="",

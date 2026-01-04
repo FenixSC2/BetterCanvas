@@ -38,6 +38,54 @@ function isUpcomingAssignment(a) {
   return Number.isFinite(h) && h >= 0;
 }
 
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function daysBetween(a, b) {
+  const ms = startOfDay(b).getTime() - startOfDay(a).getTime();
+  return Math.round(ms / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Badge precedence:
+ * 1) Completed (submitted)
+ * 2) Overdue (missing)
+ * 3) Due today
+ * 4) Due tomorrow
+ * 5) Due soon (<= 3 days)
+ * 6) Undated
+ * 7) null (no badge for far-away)
+ */
+function getBadge(a) {
+  if (a?.submitted) return { label: "Completed", tone: "success" };
+
+  if (!a?.due_at) return { label: "Undated", tone: "neutral" };
+
+  if (isMissingAssignment(a)) return { label: "Overdue", tone: "danger" };
+
+  const due = new Date(a.due_at);
+  const now = new Date();
+  const d = daysBetween(now, due);
+
+  if (d === 0) return { label: "Due today", tone: "warning" };
+  if (d === 1) return { label: "Due tomorrow", tone: "warning" };
+  if (d >= 2 && d <= 3) return { label: "Due soon", tone: "info" };
+
+  return { label: null, tone: "neutral" };
+}
+
+function Badge({ tone, children }) {
+  let className = "badge ";
+  if (tone === "danger") className += "badgeDanger";
+  else if (tone === "warning") className += "badgeWarn";
+  else if (tone === "info") className += "badgeInfo";
+  else if (tone === "success") className += "badgeSuccess";
+  else className += "badgeNeutral";
+
+  return <span className={className}>{children}</span>;
+}
+
 export function UpcomingAssignments() {
   const [items, setItems] = useState([]);
   const [err, setErr] = useState(null);
@@ -55,7 +103,7 @@ export function UpcomingAssignments() {
     return v || "all";
   });
 
-  // 0 = due-date only, 1 = points-leaning (but still respects urgency a bit)
+  // 0 = due-date only, 1 = points-leaning (still respects urgency a bit)
   const [alpha, setAlpha] = useState(() => {
     const v = localStorage.getItem("upcomingSortAlpha");
     const n = v != null ? Number(v) : 0.25;
@@ -116,28 +164,41 @@ export function UpcomingAssignments() {
     const withDueNonMissing = filtered.filter((a) => a?.due_at && !isMissingAssignment(a));
     const undated = filtered.filter((a) => !a?.due_at);
 
-    // 3) Missing always top: sort by due date (most overdue first = earlier due_at first)
-    missing.sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
+    // Completed should sort to bottom regardless; we still show it in "all" view
+    const completed = filtered.filter((a) => a?.submitted);
+
+    // Remove completed from other groups to avoid duplicates
+    const completedKey = new Set(completed.map((a) => `${a.course_id}-${a.id}`));
+    const stripCompleted = (arr) => arr.filter((a) => !completedKey.has(`${a.course_id}-${a.id}`));
+
+    const missing2 = stripCompleted(missing);
+    const withDue2 = stripCompleted(withDueNonMissing);
+    const undated2 = stripCompleted(undated);
+
+    // Missing always top
+    missing2.sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
 
     // If the current view is "undated only", skip fancy scoring
     if (filterMode === "undated") {
-      return [...undated];
+      // Put undated non-completed first, then completed undated (rare)
+      const completedUndated = completed.filter((a) => !a?.due_at);
+      return [...undated2, ...completedUndated];
     }
 
-    // 4) Weighted sort for the remaining due-dated items (non-missing)
+    // 4) Weighted sort for remaining due-dated items (non-missing, non-completed)
     const nowMs = Date.now();
 
     const maxPointsRaw = Math.max(
       1,
-      ...withDueNonMissing.map((a) => (typeof a.points_possible === "number" ? a.points_possible : 0))
+      ...withDue2.map((a) => (typeof a.points_possible === "number" ? a.points_possible : 0))
     );
     const maxPointsLog = Math.log1p(maxPointsRaw);
 
     // Sharper urgency curve + normalize
-    const rawU = withDueNonMissing.map((a) => {
+    const rawU = withDue2.map((a) => {
       const h = (new Date(a.due_at).getTime() - nowMs) / (1000 * 60 * 60);
       const hh = Math.max(0, h);
-      return 1 / (hh + 4); // stronger urgency than +12
+      return 1 / (hh + 4);
     });
 
     const minU = Math.min(...rawU, 0);
@@ -157,18 +218,12 @@ export function UpcomingAssignments() {
       return clamp01(w);
     };
 
-    const scored = withDueNonMissing.map((a) => {
+    const scored = withDue2.map((a) => {
       const uN = urgencyNorm(a);
-
-      // Dampen weight so it doesn't dominate too early
       const wN = weightNorm(a);
       const wAdj = Math.pow(wN, 1.8);
-
-      // Even at alpha=1, keep some urgency signal
       const blendedWeightChannel = 0.35 * uN + 0.65 * wAdj;
-
       const score = (1 - alpha) * uN + alpha * blendedWeightChannel;
-
       return { ...a, _score: score };
     });
 
@@ -177,8 +232,15 @@ export function UpcomingAssignments() {
       return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
     });
 
-    // 5) Put undated last (unless filter says otherwise)
-    return [...missing, ...scored, ...undated];
+    // Completed always bottom; sort completed by due date if available (else last)
+    const completedSorted = [...completed].sort((a, b) => {
+      const ad = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
+      const bd = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
+      return ad - bd;
+    });
+
+    // Undated at end (before completed) unless filter mode says otherwise
+    return [...missing2, ...scored, ...undated2, ...completedSorted];
   }, [items, alpha, filterMode]);
 
   if (loading) return <Loading label="Loading upcoming assignments…" />;
@@ -266,7 +328,7 @@ export function UpcomingAssignments() {
                   </div>
 
                   <div className="muted" style={{ marginTop: 10 }}>
-                    <b>Note: </b>Missing assignments are always pinned to the top in "All" view.
+                    Missing assignments are always pinned to the top (except in Undated-only view).
                   </div>
                 </div>
               </div>
@@ -368,24 +430,30 @@ export function UpcomingAssignments() {
 
       <ul className="list">
         {visibleAndSorted.map((a) => {
-          const dueHours = hoursUntil(a.due_at);
-          const overdue = Number.isFinite(dueHours) && dueHours < 0;
-          const missing = overdue && !a.submitted;
+          const missing = isMissingAssignment(a);
+          const badge = getBadge(a);
 
           const liClass = `listItem${missing ? " dangerItem" : ""}`;
           const dueClass = missing ? "dangerText" : "muted";
 
-          const courseLabel = a.course_name || a.course_code || "Unknown course";
+          const courseLabel =
+            a.course_name ||
+            a.course_code ||
+            (a.course_id != null ? `Course ${a.course_id}` : "Unknown course");
 
           return (
             <li key={`${a.course_id}-${a.id}`} className={liClass}>
               <div className="listMain">
-                {/* Top line: Name (left) + Due (right) */}
+                {/* Top line: Name + badge (left) and Due (right) */}
                 <div
                   className="rowWrap"
                   style={{ justifyContent: "space-between", gap: 12, alignItems: "baseline" }}
                 >
-                  <div className="listTitle">{a.name}</div>
+                  <div className="rowWrap" style={{ gap: 10, alignItems: "baseline" }}>
+                    <div className="listTitle">{a.name}</div>
+                    {badge?.label ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+                  </div>
+
                   <div className={dueClass} style={{ whiteSpace: "nowrap" }}>
                     Due: <span className="mono">{fmtDue(a.due_at)}</span>
                   </div>
@@ -395,7 +463,6 @@ export function UpcomingAssignments() {
                 <div className={missing ? "muted dangerMuted" : "muted"}>
                   <span className="mono">{courseLabel}</span>
                   {typeof a.points_possible === "number" ? ` • Points: ${a.points_possible}` : ""}
-                  {a.submitted ? " • Submitted" : ""}
                   {a.score != null ? ` • Score: ${a.score}` : ""}
                   {missing ? " • Missing/Overdue" : ""}
                 </div>
@@ -409,9 +476,10 @@ export function UpcomingAssignments() {
                 ) : null}
               </div>
 
+              {/* Canvas link/button (primary intent of this tool) */}
               {a.html_url ? (
-                <a className="link" href={a.html_url} target="_blank" rel="noreferrer">
-                  View
+                <a className="btn" href={a.html_url} target="_blank" rel="noreferrer">
+                  Open in Canvas
                 </a>
               ) : null}
             </li>
