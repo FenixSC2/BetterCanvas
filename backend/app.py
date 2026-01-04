@@ -88,6 +88,7 @@ class Course(BaseModel):
 class Assignment(BaseModel):
     id: int
     course_id: int
+    course_name: Optional[str] = None
     name: str
     due_at: Optional[datetime]
     points_possible: Optional[float]
@@ -652,11 +653,15 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
 def mock_upcoming(limit: int = 50) -> List[Assignment]:
     courses = mock_courses()
     all_asgs: List[Assignment] = []
+
     for c in courses:
-        all_asgs.extend(mock_course_assignments(c.id))
+        asgs = mock_course_assignments(c.id)
+        for a in asgs:
+            a.course_name = c.name  # <-- IMPORTANT
+        all_asgs.extend(asgs)
+
     all_asgs.sort(key=lambda a: a.due_at or datetime.max.replace(tzinfo=timezone.utc))
     return all_asgs[:limit]
-
 
 def mock_enrollments() -> List[dict]:
     return [
@@ -802,7 +807,6 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
         return parsed[:limit]
     return parsed
 
-
 def get_upcoming_assignments(limit: int = 50) -> List[Assignment]:
     courses = get_active_courses()
     assignments_agg: List[Assignment] = []
@@ -811,14 +815,16 @@ def get_upcoming_assignments(limit: int = 50) -> List[Assignment]:
     for c in courses:
         asgs = get_course_assignments(c.id, include_submission=True)
         for a in asgs:
-            if a.due_at is None:
+            if not a.due_at:
+                continue
+            if a.submitted:
                 continue
             if a.due_at >= now:
+                a.course_name = c.name  # <-- IMPORTANT
                 assignments_agg.append(a)
 
     assignments_agg.sort(key=lambda a: a.due_at)
     return assignments_agg[:limit]
-
 
 # === FastAPI endpoints ===
 @app.get("/api/profile", response_model=Profile)
