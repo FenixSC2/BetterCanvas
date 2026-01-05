@@ -19,7 +19,23 @@ export const canvasApi = {
   getCourses: (opts) => request("/api/courses", opts),
   getCourseAssignments: (courseId, limit = 3, opts) =>
     request(`/api/courses/${courseId}/assignments?limit=${limit}`, opts),
-  getUpcoming: (limit = 25, opts) => request(`/api/upcoming?limit=${limit}`, opts),
+  getUpcoming: (arg1, arg2) => {
+    let limit = 25;
+    let opts = {};
+
+    // Support both:
+    // getUpcoming(limit, opts)
+    // getUpcoming(opts)
+    if (typeof arg1 === "number" || arg1 == null) {
+      limit = arg1 ?? 25;
+      opts = arg2 || {};
+    } else if (typeof arg1 === "object") {
+      opts = arg1 || {};
+      limit = 25;
+    }
+
+    return request(`/api/upcoming?limit=${encodeURIComponent(limit)}`, opts);
+  },
   getDashboard: (upcomingLimit = 20, opts) =>
     request(`/api/dashboard?upcoming_limit=${upcomingLimit}`, opts),
 
