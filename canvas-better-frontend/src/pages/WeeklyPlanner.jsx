@@ -25,7 +25,11 @@ function startOfWeekMonday(date) {
 }
 
 function fmtDayHeader(d) {
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function fmtTime(dt) {
@@ -33,6 +37,13 @@ function fmtTime(dt) {
   const d = new Date(dt);
   if (!Number.isFinite(d.getTime())) return "";
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function fmtShortDate(dt) {
+  if (!dt) return "";
+  const d = new Date(dt);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function hoursUntil(dt) {
@@ -53,55 +64,69 @@ function stripHtml(html) {
   return html.replace(/<[^>]*>/g, "").trim();
 }
 
-/**
- * We read effort estimates from localStorage for summary totals.
- * This is intentionally tolerant of a few possible key formats.
- * If you know the exact key your WorkloadEstimateControl uses,
- * we can simplify this to one key.
- */
-function getEstimateHours(courseId, assignmentId) {
-  const candidates = [
-    `workload:${courseId}:${assignmentId}`,
-    `effort:${courseId}:${assignmentId}`,
-    `bettercanvas:workload:${courseId}:${assignmentId}`,
-    `bettercanvas:effort:${courseId}:${assignmentId}`,
-  ];
+function clampHours(x) {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(200, x));
+}
 
-  for (const k of candidates) {
-    const raw = localStorage.getItem(k);
-    if (!raw) continue;
+function parseMaybeHours(raw) {
+  if (raw == null) return null;
 
-    const direct = Number(raw);
-    if (Number.isFinite(direct)) return Math.max(0, Math.min(200, direct));
+  const direct = Number(raw);
+  if (Number.isFinite(direct)) return clampHours(direct);
 
-    try {
-      const obj = JSON.parse(raw);
-      if (typeof obj === "number" && Number.isFinite(obj)) return Math.max(0, Math.min(200, obj));
-      if (typeof obj?.value === "number" && Number.isFinite(obj.value)) return Math.max(0, Math.min(200, obj.value));
+  try {
+    const obj = JSON.parse(raw);
 
-      const h = typeof obj?.hours === "number" && Number.isFinite(obj.hours) ? obj.hours : 0;
-      const m = typeof obj?.minutes === "number" && Number.isFinite(obj.minutes) ? obj.minutes : 0;
-      const total = h + m / 60;
-      if (Number.isFinite(total) && total > 0) return Math.max(0, Math.min(200, total));
-    } catch {
-      // ignore
-    }
+    if (typeof obj === "number" && Number.isFinite(obj)) return clampHours(obj);
+    if (typeof obj?.value === "number" && Number.isFinite(obj.value))
+      return clampHours(obj.value);
+
+    const h =
+      typeof obj?.hours === "number" && Number.isFinite(obj.hours) ? obj.hours : 0;
+    const m =
+      typeof obj?.minutes === "number" && Number.isFinite(obj.minutes)
+        ? obj.minutes
+        : 0;
+    const total = h + m / 60;
+    if (Number.isFinite(total)) return clampHours(total);
+  } catch {
+    // ignore
   }
 
-  return 0;
+  return null;
+}
+
+function isoDay(d) {
+  const x = startOfDay(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function makeId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `split_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
 function loadPlannerSettings() {
   try {
     const raw = localStorage.getItem("weeklyPlanner:settings");
-    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false };
+    // NEW default: showCompletedSplits true (so marking complete doesn't "vanish")
+    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true };
+
     const obj = JSON.parse(raw);
     return {
-      dailyCapacityHours: Number.isFinite(Number(obj?.dailyCapacityHours)) ? Number(obj.dailyCapacityHours) : 3.0,
+      dailyCapacityHours: Number.isFinite(Number(obj?.dailyCapacityHours))
+        ? Number(obj.dailyCapacityHours)
+        : 3.0,
       showCompleted: !!obj?.showCompleted,
+      showCompletedSplits:
+        typeof obj?.showCompletedSplits === "boolean" ? obj.showCompletedSplits : true,
     };
   } catch {
-    return { dailyCapacityHours: 3.0, showCompleted: false };
+    return { dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true };
   }
 }
 
@@ -109,23 +134,77 @@ function savePlannerSettings(settings) {
   localStorage.setItem("weeklyPlanner:settings", JSON.stringify(settings));
 }
 
-/**
- * Navigate to Upcoming Assignments and target an assignment.
- * Works with a small App.jsx listener (provided below).
- */
+function loadSplits() {
+  try {
+    const raw = localStorage.getItem("weeklyPlanner:splits");
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter(
+        (s) =>
+          s &&
+          s.id &&
+          s.courseId != null &&
+          s.assignmentId != null &&
+          s.dateISO &&
+          s.hours != null
+      )
+      .map((s) => ({
+        id: String(s.id),
+        courseId: Number(s.courseId),
+        assignmentId: Number(s.assignmentId),
+        dateISO: String(s.dateISO),
+        hours: Number(s.hours),
+        completed: !!s.completed,
+      }))
+      .filter(
+        (s) =>
+          Number.isFinite(s.courseId) &&
+          Number.isFinite(s.assignmentId) &&
+          Number.isFinite(s.hours)
+      );
+  } catch {
+    return [];
+  }
+}
+
+function saveSplits(splits) {
+  localStorage.setItem("weeklyPlanner:splits", JSON.stringify(splits));
+}
+
+function loadEffortKeyMap() {
+  try {
+    const raw = localStorage.getItem("weeklyPlanner:effortKeyMap");
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveEffortKeyMap(map) {
+  localStorage.setItem("weeklyPlanner:effortKeyMap", JSON.stringify(map));
+}
+
 function navigateToAssignment(courseId, assignmentId) {
-  // store for UpcomingAssignments page to optionally highlight/scroll/open details
   localStorage.setItem(
     "nav:upcoming:target",
     JSON.stringify({ courseId, assignmentId, ts: Date.now() })
   );
 
-  // tell App to switch tabs
   window.dispatchEvent(
-    new CustomEvent("canvasbetter:navigate", {
-      detail: { tab: "upcoming" },
-    })
+    new CustomEvent("canvasbetter:navigate", { detail: { tab: "upcoming" } })
   );
+}
+
+function getPlannerBarVariant({ isSplit, splitCompleted, assignment }) {
+  if (isSplit && splitCompleted) return "submitted";
+  if (assignment?.submitted) return "submitted";
+  if (isMissing(assignment)) return "missing";
+  if (isSplit) return "split";
+  return "original";
 }
 
 export function WeeklyPlanner() {
@@ -133,16 +212,16 @@ export function WeeklyPlanner() {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // week cursor
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
-
-  // settings
   const [settings, setSettings] = useState(() => loadPlannerSettings());
 
-  // force recompute when localStorage effort changes
+  const [splits, setSplits] = useState(() => loadSplits());
+  const [splitDrafts, setSplitDrafts] = useState({});
+  const [splitErrors, setSplitErrors] = useState({});
+
+  const [effortKeyMap, setEffortKeyMap] = useState(() => loadEffortKeyMap());
   const [storageTick, setStorageTick] = useState(0);
 
-  // horizontal scroll helpers
   const scrollerRef = useRef(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
 
@@ -168,30 +247,51 @@ export function WeeklyPlanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  //useEffect(() => savePlannerSettings(settings), [settings]);
+  useEffect(() => saveSplits(splits), [splits]);
+  useEffect(() => saveEffortKeyMap(effortKeyMap), [effortKeyMap]);
+
   useEffect(() => {
     function onStorage(e) {
       if (!e?.key) return;
-      if (
-        e.key.startsWith("workload:") ||
-        e.key.startsWith("effort:") ||
-        e.key.startsWith("bettercanvas:workload:") ||
-        e.key.startsWith("bettercanvas:effort:")
-      ) {
+
+      if (e.key.toLowerCase().includes("effort") || e.key.toLowerCase().includes("workload")) {
         setStorageTick((t) => t + 1);
       }
-      if (e.key === "weeklyPlanner:settings") {
-        setSettings(loadPlannerSettings());
-      }
+
+      if (e.key === "weeklyPlanner:settings") setSettings(loadPlannerSettings());
+      if (e.key === "weeklyPlanner:splits") setSplits(loadSplits());
+      if (e.key === "weeklyPlanner:effortKeyMap") setEffortKeyMap(loadEffortKeyMap());
     }
+
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
-    savePlannerSettings(settings);
-  }, [settings]);
+    const original = localStorage.setItem;
 
-  // scroll indicators (arrows + gradients)
+    localStorage.setItem = function patchedSetItem(key, value) {
+      original.call(this, key, value);
+
+      try {
+        if (typeof key === "string") {
+          const lk = key.toLowerCase();
+          if (lk.includes("effort") || lk.includes("workload")) {
+            setStorageTick((t) => t + 1);
+          }
+          if (key === "weeklyPlanner:settings") setSettings(loadPlannerSettings());
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    return () => {
+      localStorage.setItem = original;
+    };
+  }, []);
+
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -212,18 +312,240 @@ export function WeeklyPlanner() {
       el.removeEventListener("scroll", compute);
       window.removeEventListener("resize", compute);
     };
-  }, [items, weekStart]);
+  }, [items, weekStart, splits]);
+
+  const effortMapKey = (courseId, assignmentId) => `${String(courseId)}:${String(assignmentId)}`;
+
+  const discoverEffortKeyFor = (courseId, assignmentId) => {
+    const cid = String(courseId);
+    const aid = String(assignmentId);
+
+    const mapKey = effortMapKey(cid, aid);
+    if (effortKeyMap[mapKey]) return effortKeyMap[mapKey];
+
+    const candidates = [
+      `workload:${cid}:${aid}`,
+      `effort:${cid}:${aid}`,
+      `bettercanvas:workload:${cid}:${aid}`,
+      `bettercanvas:effort:${cid}:${aid}`,
+      `workloadEstimate:${cid}:${aid}`,
+      `workload_estimate:${cid}:${aid}`,
+      `effortEstimate:${cid}:${aid}`,
+      `effort_estimate:${cid}:${aid}`,
+    ];
+
+    for (const k of candidates) {
+      const raw = localStorage.getItem(k);
+      const v = parseMaybeHours(raw);
+      if (v != null) {
+        setEffortKeyMap((prev) => ({ ...prev, [mapKey]: k }));
+        return k;
+      }
+    }
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+
+        const lk = key.toLowerCase();
+        if (!lk.includes("effort") && !lk.includes("workload")) continue;
+        if (!key.includes(cid) || !key.includes(aid)) continue;
+
+        const raw = localStorage.getItem(key);
+        const v = parseMaybeHours(raw);
+        if (v != null) {
+          setEffortKeyMap((prev) => ({ ...prev, [mapKey]: key }));
+          return key;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  };
+
+  const getEstimateHours = (courseId, assignmentId) => {
+    const mapKey = effortMapKey(courseId, assignmentId);
+    const knownKey = effortKeyMap[mapKey] || discoverEffortKeyFor(courseId, assignmentId);
+    if (!knownKey) return 0;
+
+    const raw = localStorage.getItem(knownKey);
+    const v = parseMaybeHours(raw);
+    return v == null ? 0 : v;
+  };
+
+  const keyFor = (courseId, assignmentId) => `${courseId}:${assignmentId}`;
+
+  const getDraft = (courseId, assignmentId) => {
+    const key = keyFor(courseId, assignmentId);
+    const d = splitDrafts[key] || {};
+    return { dateISO: d.dateISO || "", hours: d.hours ?? "" };
+  };
+
+  const setDraft = (courseId, assignmentId, patch) => {
+    const key = keyFor(courseId, assignmentId);
+    setSplitDrafts((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), ...patch },
+    }));
+  };
+
+  const setErrMsg = (courseId, assignmentId, msg) => {
+    const key = keyFor(courseId, assignmentId);
+    setSplitErrors((prev) => ({ ...prev, [key]: msg }));
+  };
+
+  const clearErrMsg = (courseId, assignmentId) => {
+    const key = keyFor(courseId, assignmentId);
+    setSplitErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const addSplit = (assignment) => {
+    const courseId = assignment.course_id;
+    const assignmentId = assignment.id;
+
+    const draft = getDraft(courseId, assignmentId);
+    const hours = Number(draft.hours);
+
+    const todayISO = isoDay(new Date());
+    const dueISO = assignment?.due_at ? isoDay(new Date(assignment.due_at)) : null;
+
+    const defaultDateISO = dueISO && todayISO <= dueISO ? todayISO : dueISO || "";
+    const targetISO = draft.dateISO || defaultDateISO;
+
+    const totalEffort = getEstimateHours(courseId, assignmentId);
+
+    const alreadySplit = splits
+      .filter((s) => s.courseId === courseId && s.assignmentId === assignmentId)
+      .reduce((acc, s) => acc + (Number.isFinite(s.hours) ? s.hours : 0), 0);
+
+    const remaining = Math.max(0, totalEffort - alreadySplit);
+
+    if (!targetISO) return setErrMsg(courseId, assignmentId, "Pick a split date.");
+    if (!Number.isFinite(hours) || hours <= 0) return setErrMsg(courseId, assignmentId, "Enter split hours > 0.");
+
+    if (hours > remaining + 1e-9)
+      return setErrMsg(courseId, assignmentId, `Can't split more than remaining (${remaining.toFixed(1)}h).`);
+
+    if (targetISO < todayISO) return setErrMsg(courseId, assignmentId, "Can't split into a past date.");
+    if (dueISO && targetISO > dueISO) return setErrMsg(courseId, assignmentId, `Can't split after due date (${dueISO}).`);
+
+    clearErrMsg(courseId, assignmentId);
+
+    const existingIdx = splits.findIndex(
+      (s) => s.courseId === courseId && s.assignmentId === assignmentId && s.dateISO === targetISO
+    );
+
+    if (existingIdx >= 0) {
+      setSplits((prev) => {
+        const next = [...prev];
+        const cur = next[existingIdx];
+        const newHours = Math.round((cur.hours + hours) * 100) / 100;
+        next[existingIdx] = { ...cur, hours: newHours };
+        return next;
+      });
+    } else {
+      setSplits((prev) => [
+        ...prev,
+        {
+          id: makeId(),
+          courseId,
+          assignmentId,
+          dateISO: targetISO,
+          hours: Math.round(hours * 100) / 100,
+          completed: false,
+        },
+      ]);
+    }
+
+    setDraft(courseId, assignmentId, { hours: "" });
+  };
+
+  const removeSplit = (splitId) => {
+    setSplits((prev) => prev.filter((s) => s.id !== splitId));
+  };
+
+  const toggleSplitCompleted = (splitId, checked) => {
+    setSplits((prev) => prev.map((s) => (s.id === splitId ? { ...s, completed: !!checked } : s)));
+  };
+
+  const resetPlannerCache = () => {
+    const ok = window.confirm(
+      "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
+    );
+    if (!ok) return;
+
+    try {
+      const toRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        const lk = k.toLowerCase();
+        if (lk.includes("effort") || lk.includes("workload")) toRemove.push(k);
+      }
+      for (const k of toRemove) localStorage.removeItem(k);
+    } catch {
+      // ignore
+    }
+
+    localStorage.removeItem("weeklyPlanner:splits");
+    localStorage.removeItem("weeklyPlanner:settings");
+    localStorage.removeItem("weeklyPlanner:effortKeyMap");
+    localStorage.removeItem("nav:upcoming:target");
+
+    setSplits([]);
+    setSplitDrafts({});
+    setSplitErrors({});
+    setSettings({ dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true });
+    setEffortKeyMap({});
+    setStorageTick((t) => t + 1);
+  };
 
   const view = useMemo(() => {
     const start = startOfDay(weekStart);
-    const end = addDays(start, 7); // exclusive
+    const end = addDays(start, 7);
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
 
     const buckets = new Map();
     for (let i = 0; i < 7; i++) buckets.set(i, []);
-
     const undated = [];
 
+    const splitsByKey = new Map();
+    for (const s of splits) {
+      const key = `${s.courseId}:${s.assignmentId}`;
+      const list = splitsByKey.get(key) || [];
+      list.push(s);
+      splitsByKey.set(key, list);
+    }
+
+    const splitSum = (courseId, assignmentId) => {
+      const key = `${courseId}:${assignmentId}`;
+      const list = splitsByKey.get(key) || [];
+      return list.reduce((acc, s) => acc + (Number.isFinite(s.hours) ? s.hours : 0), 0);
+    };
+
+    // split entries (use NEW showCompletedSplits toggle)
+    for (const s of splits) {
+      if (!settings.showCompletedSplits && s.completed) continue;
+
+      const splitDay = new Date(`${s.dateISO}T00:00:00`);
+      if (!Number.isFinite(splitDay.getTime())) continue;
+
+      if (splitDay >= start && splitDay < end) {
+        const dayIdx = Math.floor((splitDay.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const list = buckets.get(dayIdx) || [];
+        list.push({ __kind: "split", split: s });
+        buckets.set(dayIdx, list);
+      }
+    }
+
+    // base entries (keep existing submitted behavior tied to showCompleted)
     for (const a of items || []) {
       if (!settings.showCompleted && a.submitted) continue;
 
@@ -239,26 +561,33 @@ export function WeeklyPlanner() {
       }
 
       if (due >= start && due < end) {
-        const dayIdx = Math.floor(
-          (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-        );
+        const dayIdx = Math.floor((startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
         const list = buckets.get(dayIdx) || [];
-        list.push(a);
+        list.push({ __kind: "base", assignment: a, splitAway: splitSum(a.course_id, a.id) });
         buckets.set(dayIdx, list);
       }
     }
 
-    // sort each day: missing first, then due time
     for (let i = 0; i < 7; i++) {
       const list = buckets.get(i) || [];
-      list.sort((a, b) => {
-        const am = isMissing(a);
-        const bm = isMissing(b);
-        if (am !== bm) return am ? -1 : 1;
+      list.sort((x, y) => {
+        if (x.__kind !== y.__kind) return x.__kind === "base" ? -1 : 1;
 
-        const at = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
-        const bt = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
-        return at - bt;
+        if (x.__kind === "base") {
+          const a = x.assignment;
+          const b = y.assignment;
+          const am = isMissing(a);
+          const bm = isMissing(b);
+          if (am !== bm) return am ? -1 : 1;
+
+          const at = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
+          const bt = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
+          return at - bt;
+        }
+
+        if (!!x.split.completed !== !!y.split.completed) return x.split.completed ? 1 : -1;
+        if ((y.split.hours || 0) !== (x.split.hours || 0)) return (y.split.hours || 0) - (x.split.hours || 0);
+        return String(x.split.id).localeCompare(String(y.split.id));
       });
       buckets.set(i, list);
     }
@@ -266,26 +595,27 @@ export function WeeklyPlanner() {
     const dayTotals = days.map((_, i) => {
       const list = buckets.get(i) || [];
       let total = 0;
-      for (const a of list) total += getEstimateHours(a.course_id, a.id);
+
+      for (const entry of list) {
+        if (entry.__kind === "split") {
+          total += Number.isFinite(entry.split.hours) ? entry.split.hours : 0;
+        } else {
+          const a = entry.assignment;
+          const totalEffort = getEstimateHours(a.course_id, a.id);
+          const remaining = Math.max(0, totalEffort - (entry.splitAway || 0));
+          total += remaining;
+        }
+      }
+
       return total;
     });
 
     const weekTotal = dayTotals.reduce((s, x) => s + x, 0);
 
-    undated.sort((a, b) => {
-      const am = isMissing(a);
-      const bm = isMissing(b);
-      if (am !== bm) return am ? -1 : 1;
+    undated.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-      const ap = typeof a.points_possible === "number" ? a.points_possible : 0;
-      const bp = typeof b.points_possible === "number" ? b.points_possible : 0;
-      if (bp !== ap) return bp - ap;
-
-      return (a.name || "").localeCompare(b.name || "");
-    });
-
-    return { start, end, days, buckets, undated, dayTotals, weekTotal };
-  }, [items, weekStart, settings.showCompleted, storageTick]);
+    return { days, buckets, undated, dayTotals, weekTotal };
+  }, [items, weekStart, settings.showCompleted, settings.showCompletedSplits, storageTick, splits, effortKeyMap]);
 
   if (loading) return <Loading label="Loading planner…" />;
   if (err) return <ErrorBox error={err} />;
@@ -300,9 +630,15 @@ export function WeeklyPlanner() {
     el.scrollBy({ left: delta, behavior: "smooth" });
   };
 
+  const setCapacityFromInput = (val) => {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return;
+    const clamped = Math.max(0.5, Math.min(12, n));
+    setSettings((s) => ({ ...s, dailyCapacityHours: clamped }));
+  };
+
   return (
     <div className="stack" style={{ width: "100%" }}>
-      {/* Header + controls */}
       <div className="card">
         <div className="cardBody">
           <div className="rowWrap" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -344,121 +680,89 @@ export function WeeklyPlanner() {
               max="12"
               step="0.5"
               value={capacity}
-              onChange={(e) => setSettings((s) => ({ ...s, dailyCapacityHours: Number(e.target.value) }))}
-              style={{ width: 260 }}
+              onChange={(e) => setCapacityFromInput(e.target.value)}
+              style={{ width: 220 }}
               aria-label="Daily capacity hours"
             />
 
+            <input
+              type="number"
+              min="0.5"
+              max="12"
+              step="0.5"
+              value={capacity}
+              onChange={(e) => setCapacityFromInput(e.target.value)}
+              style={{ width: 90 }}
+              aria-label="Daily capacity numeric"
+              title="Type a capacity value"
+            />
+
+            {/* Existing behavior */}
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
-                checked={settings.showCompleted}
-                onChange={(e) => setSettings((s) => ({ ...s, showCompleted: e.target.checked }))}
+                checked={!!settings.showCompleted}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() =>
+                  setSettings((s) => {
+                    const next = { ...s, showCompleted: !s.showCompleted };
+                    savePlannerSettings(next); // persist immediately
+                    return next;
+                  })
+                }
               />
-              Show completed
+              Show completed (submitted)
+            </label>
+
+            {/* NEW: split completed visibility */}
+            <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!settings.showCompletedSplits}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() =>
+                  setSettings((s) => {
+                    const next = { ...s, showCompletedSplits: !s.showCompletedSplits };
+                    savePlannerSettings(next); // persist immediately
+                    return next;
+                  })
+                }
+              />
+              Show completed (planned splits)
             </label>
 
             <div className="muted" style={{ marginLeft: "auto" }}>
-              Tip: use <span className="mono">Effort</span> to estimate workload.
+              Tip: red = missing • green = completed • blue = due date • yellow = split
             </div>
           </div>
         </div>
       </div>
 
-      {/* Week grid wrapper with scroll arrows + gradients */}
       <div style={{ position: "relative" }}>
-        {/* left gradient cue */}
-        {canScroll.left ? (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 28,
-              pointerEvents: "none",
-              background: "linear-gradient(to right, rgba(0,0,0,0.08), rgba(0,0,0,0))",
-              borderRadius: 12,
-              zIndex: 2,
-            }}
-          />
-        ) : null}
-
-        {/* right gradient cue */}
-        {canScroll.right ? (
-          <div
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 28,
-              pointerEvents: "none",
-              background: "linear-gradient(to left, rgba(0,0,0,0.08), rgba(0,0,0,0))",
-              borderRadius: 12,
-              zIndex: 2,
-            }}
-          />
-        ) : null}
-
-        {/* left arrow */}
         {canScroll.left ? (
           <button
             className="btn"
             onClick={() => scrollByPx(-1)}
             title="Scroll left"
-            style={{
-              position: "absolute",
-              left: 8,
-              top: 8,
-              zIndex: 3,
-              padding: "6px 10px",
-              borderRadius: 999,
-              opacity: 0.95,
-            }}
+            style={{ position: "absolute", left: 8, top: 8, zIndex: 3, padding: "6px 10px", borderRadius: 999, opacity: 0.95 }}
           >
             ←
           </button>
         ) : null}
 
-        {/* right arrow */}
         {canScroll.right ? (
           <button
             className="btn"
             onClick={() => scrollByPx(1)}
             title="Scroll right"
-            style={{
-              position: "absolute",
-              right: 8,
-              top: 8,
-              zIndex: 3,
-              padding: "6px 10px",
-              borderRadius: 999,
-              opacity: 0.95,
-            }}
+            style={{ position: "absolute", right: 8, top: 8, zIndex: 3, padding: "6px 10px", borderRadius: 999, opacity: 0.95 }}
           >
             →
           </button>
         ) : null}
 
-        {/* scroller */}
-        <div
-          ref={scrollerRef}
-          style={{
-            overflowX: "auto",
-            paddingBottom: 6,
-          }}
-        >
-          {/* 7 columns that try to fill the page; will scroll on small screens */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 12,
-              minWidth: 980, // helps avoid ultra-squished columns on small screens; scroll kicks in
-              width: "100%",
-            }}
-          >
+        <div ref={scrollerRef} style={{ overflowX: "auto", paddingBottom: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 12, minWidth: 980, width: "100%" }}>
             {view.days.map((day, idx) => {
               const list = view.buckets.get(idx) || [];
               const total = view.dayTotals[idx];
@@ -483,88 +787,180 @@ export function WeeklyPlanner() {
                       </div>
                     ) : (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-                        {list.map((a) => {
-                          const missing = isMissing(a);
+                        {list.map((entry) => {
+                          if (entry.__kind === "split") {
+                            const s = entry.split;
+                            const a = (items || []).find((x) => x.course_id === s.courseId && x.id === s.assignmentId);
+
+                            const name = a?.name || `Assignment ${s.assignmentId}`;
+                            const courseLabel = a?.course_name ?? "Unknown Course";
+                            const dueTime = fmtTime(a?.due_at);
+                            const dueDate = fmtShortDate(a?.due_at);
+
+                            const barVariant = getPlannerBarVariant({
+                              isSplit: true,
+                              splitCompleted: s.completed,
+                              assignment: a,
+                            });
+
+                            return (
+                              <div key={`split-${s.id}`} className="plannerCard">
+                                <div className={`plannerBar plannerBar-${barVariant}`} />
+                                <div className="plannerContent">
+                                  <div className="plannerTitle" title={name}>
+                                    {name}
+                                  </div>
+
+                                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                                    <div className="muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                                      Due: <span className="mono">{dueDate || "—"}</span>{" "}
+                                      <span className="mono">{dueTime || ""}</span>
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    className="muted"
+                                    style={{ marginTop: 6, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                    title={courseLabel}
+                                  >
+                                    <span className="mono">{courseLabel}</span>
+                                  </div>
+
+                                  <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                    <label className="muted" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={!!s.completed}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => toggleSplitCompleted(s.id, e.target.checked)}
+                                      />
+                                      Completed
+                                    </label>
+
+                                    <div className="muted" style={{ fontSize: 12 }}>
+                                      Planned: <span className="mono">{s.hours.toFixed(1)}h</span> on{" "}
+                                      <span className="mono">{s.dateISO}</span>
+                                    </div>
+
+                                    <button className="btn btnDanger" onClick={() => removeSplit(s.id)}>
+                                      Remove
+                                    </button>
+
+                                    <button className="btn" onClick={() => navigateToAssignment(s.courseId, s.assignmentId)}>
+                                      View assignment
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // base cards unchanged...
+                          const a = entry.assignment;
                           const courseLabel = a.course_name ?? "Unknown Course";
                           const dueTime = fmtTime(a.due_at);
-                          const est = getEstimateHours(a.course_id, a.id);
+                          const dueDate = fmtShortDate(a.due_at);
+
+                          const totalEffort = getEstimateHours(a.course_id, a.id);
+                          const splitAway = entry.splitAway || 0;
+                          const remaining = Math.max(0, totalEffort - splitAway);
+
+                          const todayISO = isoDay(new Date());
+                          const dueISO = a?.due_at ? isoDay(new Date(a.due_at)) : null;
+                          const defaultDateISO = dueISO && todayISO <= dueISO ? todayISO : dueISO || "";
+
+                          const draft = getDraft(a.course_id, a.id);
+                          const effectiveDateISO = draft.dateISO || defaultDateISO;
+                          const errMsg = splitErrors[keyFor(a.course_id, a.id)];
+
+                          const barVariant = getPlannerBarVariant({ isSplit: false, splitCompleted: false, assignment: a });
 
                           return (
-                            <div
-                              key={`${a.course_id}-${a.id}`}
-                              className={`card ${missing ? "dangerItem" : ""}`}
-                              style={{
-                                padding: 10,
-                                borderRadius: 12,
-                              }}
-                            >
-                              {/* top row: name + due time */}
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: 10,
-                                  alignItems: "baseline",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontWeight: 600,
-                                    lineHeight: 1.15,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                  title={a.name}
-                                >
+                            <div key={`${a.course_id}-${a.id}`} className="plannerCard">
+                              <div className={`plannerBar plannerBar-${barVariant}`} />
+                              <div className="plannerContent">
+                                <div className="plannerTitle" title={a.name}>
                                   {a.name}
                                 </div>
 
+                                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                                  <div className="muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                                    Due: <span className="mono">{dueDate || "—"}</span>{" "}
+                                    <span className="mono">{dueTime || ""}</span>
+                                  </div>
+                                </div>
+
                                 <div
-                                  className={`muted ${missing ? "dangerText" : ""}`}
-                                  style={{ whiteSpace: "nowrap", fontSize: 12 }}
-                                  title="Due time"
+                                  className="muted"
+                                  style={{ marginTop: 6, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                  title={courseLabel}
                                 >
-                                  {dueTime || "—"}
-                                </div>
-                              </div>
-
-                              {/* course name */}
-                              <div
-                                className={`muted ${missing ? "dangerMuted" : ""}`}
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 12,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                                title={courseLabel}
-                              >
-                                {courseLabel}
-                              </div>
-
-                              {/* effort summary + control */}
-                              <div style={{ marginTop: 8 }}>
-                                <div className="muted" style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                  <span>Effort:</span>
-                                  <span className="mono">{est > 0 ? `${est.toFixed(1)}h` : "—"}</span>
+                                  <span className="mono">{courseLabel}</span>
                                 </div>
 
-                                <div style={{ marginTop: 6 }}>
+                                <div style={{ marginTop: 8 }}>
                                   <WorkloadEstimateControl courseId={a.course_id} assignmentId={a.id} />
                                 </div>
-                              </div>
 
-                              {/* actions */}
-                              <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                                <button
-                                  className="btn"
-                                  onClick={() => navigateToAssignment(a.course_id, a.id)}
-                                  title="View this assignment in Upcoming assignments"
-                                  style={{ whiteSpace: "nowrap" }}
-                                >
-                                  View assignment
-                                </button>
+                                <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                                  Remaining on due date: <span className="mono">{remaining.toFixed(1)}h</span>
+                                </div>
+
+                                <div style={{ marginTop: 10 }}>
+                                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                                    Split work to an earlier day:
+                                  </div>
+
+                                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                                    <label className="muted" style={{ fontSize: 12 }}>
+                                      Date{" "}
+                                      <input
+                                        type="date"
+                                        value={effectiveDateISO}
+                                        min={todayISO}
+                                        max={dueISO || undefined}
+                                        onChange={(e) => {
+                                          setDraft(a.course_id, a.id, { dateISO: e.target.value });
+                                          clearErrMsg(a.course_id, a.id);
+                                        }}
+                                        style={{ marginLeft: 6 }}
+                                      />
+                                    </label>
+
+                                    <label className="muted" style={{ fontSize: 12 }}>
+                                      Hours{" "}
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.25"
+                                        value={draft.hours}
+                                        onChange={(e) => {
+                                          setDraft(a.course_id, a.id, { hours: e.target.value });
+                                          clearErrMsg(a.course_id, a.id);
+                                        }}
+                                        style={{ width: 90, marginLeft: 6 }}
+                                      />
+                                    </label>
+
+                                    <button className="btn" onClick={() => addSplit(a)} disabled={remaining <= 0}>
+                                      Split
+                                    </button>
+
+                                    <div className="muted" style={{ fontSize: 12 }}>
+                                      Max: <span className="mono">{remaining.toFixed(1)}h</span>
+                                    </div>
+
+                                    <button className="btn" onClick={() => navigateToAssignment(a.course_id, a.id)}>
+                                      View assignment
+                                    </button>
+                                  </div>
+
+                                  {errMsg ? (
+                                    <div className="dangerText" style={{ marginTop: 6, fontSize: 12 }}>
+                                      {errMsg}
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           );
@@ -579,12 +975,12 @@ export function WeeklyPlanner() {
         </div>
       </div>
 
-      {/* Undated assignments (kept lightweight) */}
       <div className="card">
         <div className="cardBody">
           <div className="h3" style={{ marginTop: 0 }}>
             Undated assignments
           </div>
+
           {view.undated.length === 0 ? (
             <div className="muted">None</div>
           ) : (
@@ -597,14 +993,13 @@ export function WeeklyPlanner() {
             <ul className="list" style={{ marginTop: 10 }}>
               {view.undated.slice(0, 10).map((a) => {
                 const courseLabel = a.course_name ?? "Unknown Course";
-                const missing = isMissing(a);
                 const hasDesc = !!stripHtml(a.description);
 
                 return (
-                  <li key={`und-${a.course_id}-${a.id}`} className={`listItem ${missing ? "dangerItem" : ""}`}>
+                  <li key={`und-${a.course_id}-${a.id}`} className="listItem">
                     <div className="listMain">
                       <div className="listTitle">{a.name}</div>
-                      <div className={`muted ${missing ? "dangerMuted" : ""}`}>
+                      <div className="muted">
                         <span className="mono">{courseLabel}</span>
                         {hasDesc ? " • Description available" : ""}
                       </div>
@@ -618,12 +1013,53 @@ export function WeeklyPlanner() {
               })}
             </ul>
           ) : null}
+        </div>
+      </div>
 
-          {view.undated.length > 10 ? (
-            <div className="muted" style={{ marginTop: 8 }}>
-              Showing first 10 undated items.
-            </div>
-          ) : null}
+      <div className="card">
+        <div className="cardBody">
+          <div className="h3" style={{ marginTop: 0 }}>
+            Reset planner cache
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            This will delete <span className="mono">all split cards</span>, clear planner settings, and remove
+            <span className="mono"> all effort/workload estimates</span> stored in this browser.
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <button className="btn btnDanger" onClick={() => {
+              const ok = window.confirm(
+                "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
+              );
+              if (!ok) return;
+              // reuse the existing reset function if you kept it
+              // (kept inline for drop-in simplicity)
+              try {
+                const toRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i);
+                  if (!k) continue;
+                  const lk = k.toLowerCase();
+                  if (lk.includes("effort") || lk.includes("workload")) toRemove.push(k);
+                }
+                for (const k of toRemove) localStorage.removeItem(k);
+              } catch {
+                // ignore
+              }
+              localStorage.removeItem("weeklyPlanner:splits");
+              localStorage.removeItem("weeklyPlanner:settings");
+              localStorage.removeItem("weeklyPlanner:effortKeyMap");
+              localStorage.removeItem("nav:upcoming:target");
+              setSplits([]);
+              setSplitDrafts({});
+              setSplitErrors({});
+              setSettings({ dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true });
+              setEffortKeyMap({});
+              setStorageTick((t) => t + 1);
+            }}>
+              Reset cache (deletes splits + effort)
+            </button>
+          </div>
         </div>
       </div>
 

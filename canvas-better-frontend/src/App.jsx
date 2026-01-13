@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect, useMemo, useState } from "react"; // ✅ add useEffect
+import { useMemo, useState, useEffect } from "react";
 import { Tabs } from "./components/Tabs";
 import { MyInformation } from "./pages/MyInformation";
 import { MyCourses } from "./pages/MyCourses";
@@ -39,7 +39,8 @@ export default function App() {
         <Tabs tabs={tabs} activeKey={active} onChange={setActive} />
       </header>
 
-      <main className="main">
+      {/* widen only for planner */}
+      <main className={`main ${active === "planner" ? "mainWide" : ""}`}>
         {active === "info" ? <MyInformation /> : null}
         {active === "courses" ? <MyCourses /> : null}
         {active === "upcoming" ? <UpcomingAssignments /> : null}

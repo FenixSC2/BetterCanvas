@@ -12,7 +12,7 @@ export function WorkloadEstimateControl({ courseId, assignmentId }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       <span className="muted">
-        Effort: <span className="mono">{formatHours(hours)}</span>
+        Total Effort: <span className="mono">{formatHours(hours)}</span> <br></br>
       </span>
 
       <input
