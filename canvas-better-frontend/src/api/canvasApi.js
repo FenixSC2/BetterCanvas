@@ -48,4 +48,13 @@ export const canvasApi = {
 
     // New overview endpoint
     getOverview: (opts) => request("/api/overview", opts),
+
+    // annoucnments endpoint
+    getAnnouncements: (daysBack = 14, limit = 20, cache = "auto", opts) =>
+      request(
+        `/api/announcements?days_back=${encodeURIComponent(daysBack)}&limit=${encodeURIComponent(
+          limit
+        )}&cache=${encodeURIComponent(cache)}`,
+        opts
+      ),
 };

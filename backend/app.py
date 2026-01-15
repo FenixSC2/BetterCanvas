@@ -185,6 +185,17 @@ class OverviewResponse(BaseModel):
 
     any_estimated_grades: bool = False
 
+# Annoucnement model
+class Announcement(BaseModel):
+    id: int
+    title: str
+    message: Optional[str] = None
+    posted_at: Optional[datetime] = None
+    html_url: Optional[str] = None
+
+    course_id: Optional[int] = None
+    course_name: Optional[str] = None
+
 # === HTTP Session with retries ===
 session = requests.Session()
 retries = Retry(
@@ -284,6 +295,78 @@ def filter_courses_to_latest_term(courses: List[Course]) -> List[Course]:
 def sort_key_due_at(dt: Optional[datetime]) -> datetime:
     # Always return a valid, tz-aware datetime
     return dt if dt is not None else datetime.max.replace(tzinfo=timezone.utc)
+
+# get announcements for current courses, sorted by posted_at desc, limited to recent ones
+def get_announcements(
+    days_back: int = 14,
+    limit: int = 30,
+    mode: CacheMode = CacheMode.auto,
+) -> List[Announcement]:
+    # Cache key
+    key = f"announcements:days_back={days_back}:limit={limit}"
+    if _use_cache(mode):
+        v = cache_get(key)
+        if v:
+            return v
+
+    # Only current courses (your get_courses() already filters to latest term)
+    courses = get_courses(mode=mode)
+    course_map = {c.id: c for c in courses}
+
+    if not course_map:
+        out: List[Announcement] = []
+        cache_set(key, out)
+        return out
+
+    # Canvas expects context codes like "course_123"
+    context_codes = [f"course_{cid}" for cid in course_map.keys()]
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days_back)
+
+    # Canvas announcements endpoint
+    raw = canvas_get_paginated(
+        "/announcements",
+        params={
+            "context_codes[]": context_codes,  # requests will encode list properly
+            "start_date": start.isoformat(),
+            "end_date": now.isoformat(),
+            "active_only": "true",
+            "per_page": 100,
+        },
+    )
+
+    out: List[Announcement] = []
+    for a in raw:
+        # Canvas fields commonly include: id, title, message, posted_at, html_url, context_code
+        context_code = a.get("context_code")  # e.g. "course_123"
+        course_id: Optional[int] = None
+        if isinstance(context_code, str) and context_code.startswith("course_"):
+            try:
+                course_id = int(context_code.split("_", 1)[1])
+            except Exception:
+                course_id = None
+
+        c = course_map.get(course_id) if course_id else None
+
+        out.append(
+            Announcement(
+                id=a.get("id"),
+                title=a.get("title") or "(untitled)",
+                message=a.get("message"),
+                posted_at=parse_iso(a.get("posted_at")),
+                html_url=a.get("html_url"),
+                course_id=course_id,
+                course_name=(c.name if c else None),
+            )
+        )
+
+    # Newest first
+    out.sort(key=lambda x: sort_key_due_at(x.posted_at), reverse=True)
+    out = out[:limit]
+
+    cache_set(key, out)
+    return out
 
 # === Mock Generators ===
 def mock_profile() -> Profile:
@@ -915,6 +998,16 @@ def api_overview(cache: CacheMode = Query(CacheMode.auto)):
 def api_cache_clear():
     cache_clear(prefix=None)
     return {"ok": True}
+
+@app.get("/api/announcements", response_model=List[Announcement])
+def api_announcements(
+    days_back: int = 14,
+    limit: int = 30,
+    cache: CacheMode = Query(CacheMode.auto),
+):
+    if MOCK_MODE:
+        return []  # or add a mock_announcements() later
+    return get_announcements(days_back=days_back, limit=limit, mode=cache)
 
 # === Background sync loop ===
 _sync_task: Optional[asyncio.Task] = None
