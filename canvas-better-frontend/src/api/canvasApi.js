@@ -1,17 +1,23 @@
 // src/api/canvasApi.js
+import { loadingBus } from "../lib/loadingBus";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request(path, { signal } = {}) {
-  const res = await fetch(`${API_BASE}${path}`, { signal });
+  loadingBus.start(); 
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { signal });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    const err = new Error(text || `${res.status} ${res.statusText}`);
-    err.status = res.status;
-    throw err;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const err = new Error(text || `${res.status} ${res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+
+    return res.json();
+  } finally {
+    loadingBus.end(); 
   }
-
-  return res.json();
 }
 
 export const canvasApi = {

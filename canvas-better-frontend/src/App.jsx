@@ -5,6 +5,7 @@ import { MyInformation } from "./pages/MyInformation";
 import { MyCourses } from "./pages/MyCourses";
 import { UpcomingAssignments } from "./pages/UpcomingAssignments";
 import { WeeklyPlanner } from "./pages/WeeklyPlanner";
+import { TopLoadingBar } from "./components/TopLoadingBar";
 import "./styles.css";
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <TopLoadingBar />
       <header className="header">
         <div className="brand">
           <div className="brandTitle">Canvas Better (Local)</div>

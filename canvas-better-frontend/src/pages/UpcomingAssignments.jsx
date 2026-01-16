@@ -5,6 +5,7 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
+import { useCachedAsync } from "../hooks/useCachedAsync";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -151,9 +152,14 @@ function parseUpcomingTarget(raw) {
 }
 
 export function UpcomingAssignments() {
-  const [items, setItems] = useState([]);
-  const [err, setErr] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // ✅ Cached fetch (prevents tab-switch flash)
+  const upcomingQ = useCachedAsync(
+    "upcoming:list",
+    ({ signal }) => canvasApi.getUpcoming({ signal }),
+    { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
+  );
+
+  const items = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
 
   // Filter: all | missing | upcoming | undated
   const [filterMode, setFilterMode] = useState("all");
@@ -171,22 +177,6 @@ export function UpcomingAssignments() {
   const [focusKey, setFocusKey] = useState(null); // `${courseId}-${assignmentId}`
   const focusTimerRef = useRef(null);
   const pendingFocusRef = useRef(null); // stores target until DOM is ready
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setErr(null);
-
-    canvasApi
-      .getUpcoming({ signal: ac.signal })
-      .then((data) => setItems(data || []))
-      .catch((e) => {
-        if (e.name !== "AbortError") setErr(e);
-      })
-      .finally(() => setLoading(false));
-
-    return () => ac.abort();
-  }, []);
 
   const filteredSorted = useMemo(() => {
     const now = Date.now();
@@ -254,7 +244,7 @@ export function UpcomingAssignments() {
 
   // === Auto-focus target assignment ===
   useEffect(() => {
-    if (loading) return;
+    // wait until we have *some* data (cached or freshly loaded)
     if (!items?.length) return;
 
     const raw = localStorage.getItem("nav:upcoming:target");
@@ -280,7 +270,7 @@ export function UpcomingAssignments() {
 
     // Mark pending focus; we’ll execute scroll when DOM is present
     pendingFocusRef.current = key;
-  }, [loading, items, filterMode]);
+  }, [items, filterMode]);
 
   // After list renders (filteredSorted changes), perform scroll if pending
   useEffect(() => {
@@ -292,26 +282,19 @@ export function UpcomingAssignments() {
       const el = document.getElementById(elId);
       if (!el) return false;
 
-      // highlight
       setFocusKey(key);
-
-      // scroll into view
       el.scrollIntoView({ behavior: "smooth", block: "center" });
 
-      // clear pending
       pendingFocusRef.current = null;
 
-      // clear highlight after a bit
       if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
       focusTimerRef.current = window.setTimeout(() => setFocusKey(null), 2500);
 
       return true;
     };
 
-    // Give React/layout a moment
     requestAnimationFrame(() => {
       if (run()) return;
-      // sometimes needs a second frame
       requestAnimationFrame(() => run());
     });
 
@@ -320,8 +303,12 @@ export function UpcomingAssignments() {
     };
   }, [filteredSorted]);
 
-  if (loading) return <Loading label="Loading upcoming assignments…" />;
-  if (err) return <ErrorBox error={err} />;
+  if (upcomingQ.error) return <ErrorBox error={upcomingQ.error} />;
+
+  // Only show the big loading screen if we truly have nothing yet
+  if (upcomingQ.loading && items.length === 0) {
+    return <Loading label="Loading upcoming assignments…" />;
+  }
 
   const filterLabel =
     filterMode === "all"
@@ -337,6 +324,7 @@ export function UpcomingAssignments() {
       <div className="rowWrap" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
         <div className="muted">
           Powered by <span className="mono">GET /api/upcoming</span>.
+          {upcomingQ.refreshing ? <span className="muted"> {" "}• Updating…</span> : null}
         </div>
 
         {/* Controls */}
@@ -365,6 +353,15 @@ export function UpcomingAssignments() {
             style={{ whiteSpace: "nowrap" }}
           >
             Sorting
+          </button>
+
+          <button
+            className="btn"
+            onClick={() => upcomingQ.refresh()}
+            title="Fetch fresh upcoming assignments"
+            style={{ whiteSpace: "nowrap" }}
+          >
+            Refresh
           </button>
         </div>
       </div>
@@ -405,7 +402,7 @@ export function UpcomingAssignments() {
         </div>
       </Popover>
 
-      {/* Sorting popover — prevent wrapping of "Points" */}
+      {/* Sorting popover */}
       <Popover open={sortOpen} onClose={() => setSortOpen(false)} anchorRef={sortBtnRef} align="right" width={360}>
         <div className="stack">
           <div className="h3" style={{ marginBottom: 2 }}>
@@ -461,7 +458,9 @@ export function UpcomingAssignments() {
         </div>
       </Popover>
 
-      {filteredSorted.length === 0 ? <div className="muted">No assignments found for the selected filter.</div> : null}
+      {filteredSorted.length === 0 ? (
+        <div className="muted">No assignments found for the selected filter.</div>
+      ) : null}
 
       <ul className="list">
         {filteredSorted.map((a) => {
@@ -524,7 +523,18 @@ export function UpcomingAssignments() {
                     >
                       {a.name}
 
-                      <span className={`badge badge-${badge.variant}`}>{badge.label}</span>
+                      {/* NOTE: this relies on your styles: .badge, .badgeSuccess, etc */}
+                      <span className={`badge badge${badge.variant === "success"
+                        ? "Success"
+                        : badge.variant === "danger"
+                        ? "Danger"
+                        : badge.variant === "warning"
+                        ? "Warn"
+                        : badge.variant === "neutral"
+                        ? "Neutral"
+                        : "Neutral"}`}>
+                        {badge.label}
+                      </span>
 
                       {typeof a.points_possible === "number" ? (
                         <span className="muted">
@@ -559,9 +569,7 @@ export function UpcomingAssignments() {
                     >
                       <div className="stack">
                         {hasDesc ? (
-                          <div className="muted" style={{ whiteSpace: "pre-wrap" }}>
-                            {desc}
-                          </div>
+                          <div className="desc">{desc}</div>
                         ) : (
                           <div className="muted">No description provided.</div>
                         )}

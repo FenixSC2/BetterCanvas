@@ -1,21 +1,15 @@
 // src/components/Expandable.jsx
 import { useEffect, useId, useState } from "react";
 
-/**
- * Expandable section (details/summary) with:
- * - explicit chevron indicator
- * - no native summary marker (we hide it via inline styles)
- * - onToggle/onOpen/onClose callbacks
- */
 export function Expandable({
   title,
   subtitle,
+  right,
   children,
   defaultOpen = false,
   onToggle,
   onOpen,
   onClose,
-  right, // optional right-side element inside summary row (e.g. button)
 }) {
   const id = useId();
   const [open, setOpen] = useState(!!defaultOpen);
@@ -35,51 +29,49 @@ export function Expandable({
 
   return (
     <details className="card expandable" open={open} onToggle={handleToggle}>
-      <summary
-        className="cardBody expandableSummary"
-        aria-controls={id}
-        style={{
-          listStyle: "none", // helps some browsers
-        }}
-      >
+      <summary className="cardBody expandableSummary" aria-controls={id}>
         <div
           className="row"
           style={{
             alignItems: "center",
             gap: 10,
-            justifyContent: "space-between",
+            width: "100%",
           }}
         >
-          <div className="row" style={{ alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            {/* Explicit indicator (only one) */}
-            <span
-              className="mono"
-              aria-hidden="true"
-              style={{
-                width: 18,
-                display: "inline-block",
-                userSelect: "none",
-                opacity: 0.8,
-              }}
-            >
-              {open ? "▾" : "▸"}
-            </span>
+          {/* our indicator */}
+          <span
+            className="mono"
+            aria-hidden="true"
+            style={{
+              width: 18,
+              display: "inline-block",
+              userSelect: "none",
+              opacity: 0.8,
+            }}
+          >
+            {open ? "▾" : "▸"}
+          </span>
 
-            <div className="expandableHeader" style={{ flex: 1, minWidth: 0 }}>
-              <div className="expandableTitle">{title}</div>
-              {subtitle ? <div className="expandableSubtitle">{subtitle}</div> : null}
-            </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="expandableTitle">{title}</div>
+            {subtitle ? (
+              <div className="expandableSubtitle" style={{ marginTop: 2 }}>
+                {subtitle}
+              </div>
+            ) : null}
           </div>
 
-          {/* optional right-side content */}
-          {right ? <div style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>{right}</div> : null}
+          {/* right-side slot (e.g., View in Canvas button) */}
+          {right ? (
+            <div
+              className="expandableRight"
+              onClick={(e) => e.stopPropagation()} // prevent toggling when clicking button
+              style={{ marginLeft: 10, display: "flex", alignItems: "center" }}
+            >
+              {right}
+            </div>
+          ) : null}
         </div>
-
-        {/* Hide the native marker reliably */}
-        <style>{`
-          summary::-webkit-details-marker { display: none; }
-          summary::marker { content: ""; }
-        `}</style>
       </summary>
 
       <div className="cardBody expandableBody" id={id}>

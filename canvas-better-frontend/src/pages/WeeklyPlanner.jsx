@@ -4,6 +4,7 @@ import { canvasApi } from "../api/canvasApi";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
+import { useCachedAsync } from "../hooks/useCachedAsync";
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -82,12 +83,8 @@ function parseMaybeHours(raw) {
     if (typeof obj?.value === "number" && Number.isFinite(obj.value))
       return clampHours(obj.value);
 
-    const h =
-      typeof obj?.hours === "number" && Number.isFinite(obj.hours) ? obj.hours : 0;
-    const m =
-      typeof obj?.minutes === "number" && Number.isFinite(obj.minutes)
-        ? obj.minutes
-        : 0;
+    const h = typeof obj?.hours === "number" && Number.isFinite(obj.hours) ? obj.hours : 0;
+    const m = typeof obj?.minutes === "number" && Number.isFinite(obj.minutes) ? obj.minutes : 0;
     const total = h + m / 60;
     if (Number.isFinite(total)) return clampHours(total);
   } catch {
@@ -113,7 +110,6 @@ function makeId() {
 function loadPlannerSettings() {
   try {
     const raw = localStorage.getItem("weeklyPlanner:settings");
-    // NEW default: showCompletedSplits true (so marking complete doesn't "vanish")
     if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true };
 
     const obj = JSON.parse(raw);
@@ -208,9 +204,14 @@ function getPlannerBarVariant({ isSplit, splitCompleted, assignment }) {
 }
 
 export function WeeklyPlanner() {
-  const [items, setItems] = useState([]);
-  const [err, setErr] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // ✅ Cached upcoming (hydration prevents tab flash)
+  const plannerQ = useCachedAsync(
+    "planner:upcoming",
+    ({ signal }) => canvasApi.getUpcoming({ signal }),
+    { ttlMs: 60 * 1000 } // refresh-friendly
+  );
+
+  const items = Array.isArray(plannerQ.data) ? plannerQ.data : [];
 
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [settings, setSettings] = useState(() => loadPlannerSettings());
@@ -225,29 +226,6 @@ export function WeeklyPlanner() {
   const scrollerRef = useRef(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
 
-  const refresh = () => {
-    const ac = new AbortController();
-    setLoading(true);
-    setErr(null);
-
-    canvasApi
-      .getUpcoming({ signal: ac.signal })
-      .then((data) => setItems(data || []))
-      .catch((e) => {
-        if (e.name !== "AbortError") setErr(e);
-      })
-      .finally(() => setLoading(false));
-
-    return () => ac.abort();
-  };
-
-  useEffect(() => {
-    const abort = refresh();
-    return () => abort?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  //useEffect(() => savePlannerSettings(settings), [settings]);
   useEffect(() => saveSplits(splits), [splits]);
   useEffect(() => saveEffortKeyMap(effortKeyMap), [effortKeyMap]);
 
@@ -268,6 +246,7 @@ export function WeeklyPlanner() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Patch localStorage.setItem so same-tab changes tick the planner
   useEffect(() => {
     const original = localStorage.setItem;
 
@@ -475,38 +454,6 @@ export function WeeklyPlanner() {
     setSplits((prev) => prev.map((s) => (s.id === splitId ? { ...s, completed: !!checked } : s)));
   };
 
-  const resetPlannerCache = () => {
-    const ok = window.confirm(
-      "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
-    );
-    if (!ok) return;
-
-    try {
-      const toRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k) continue;
-        const lk = k.toLowerCase();
-        if (lk.includes("effort") || lk.includes("workload")) toRemove.push(k);
-      }
-      for (const k of toRemove) localStorage.removeItem(k);
-    } catch {
-      // ignore
-    }
-
-    localStorage.removeItem("weeklyPlanner:splits");
-    localStorage.removeItem("weeklyPlanner:settings");
-    localStorage.removeItem("weeklyPlanner:effortKeyMap");
-    localStorage.removeItem("nav:upcoming:target");
-
-    setSplits([]);
-    setSplitDrafts({});
-    setSplitErrors({});
-    setSettings({ dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true });
-    setEffortKeyMap({});
-    setStorageTick((t) => t + 1);
-  };
-
   const view = useMemo(() => {
     const start = startOfDay(weekStart);
     const end = addDays(start, 7);
@@ -530,7 +477,7 @@ export function WeeklyPlanner() {
       return list.reduce((acc, s) => acc + (Number.isFinite(s.hours) ? s.hours : 0), 0);
     };
 
-    // split entries (use NEW showCompletedSplits toggle)
+    // split entries
     for (const s of splits) {
       if (!settings.showCompletedSplits && s.completed) continue;
 
@@ -545,7 +492,7 @@ export function WeeklyPlanner() {
       }
     }
 
-    // base entries (keep existing submitted behavior tied to showCompleted)
+    // base entries
     for (const a of items || []) {
       if (!settings.showCompleted && a.submitted) continue;
 
@@ -617,11 +564,17 @@ export function WeeklyPlanner() {
     return { days, buckets, undated, dayTotals, weekTotal };
   }, [items, weekStart, settings.showCompleted, settings.showCompletedSplits, storageTick, splits, effortKeyMap]);
 
-  if (loading) return <Loading label="Loading planner…" />;
-  if (err) return <ErrorBox error={err} />;
+  // ✅ Errors/loading based on cached query
+  if (plannerQ.error) return <ErrorBox error={plannerQ.error} />;
+
+  // Only show big loading when we have nothing cached yet
+  if (plannerQ.loading && items.length === 0) return <Loading label="Loading planner…" />;
 
   const capacity = settings.dailyCapacityHours;
-  const weekLabel = `${view.days[0].toLocaleDateString()} – ${view.days[6].toLocaleDateString()}`;
+  const weekLabel =
+    view.days.length >= 7
+      ? `${view.days[0].toLocaleDateString()} – ${view.days[6].toLocaleDateString()}`
+      : "";
 
   const scrollByPx = (dir) => {
     const el = scrollerRef.current;
@@ -634,7 +587,11 @@ export function WeeklyPlanner() {
     const n = Number(val);
     if (!Number.isFinite(n)) return;
     const clamped = Math.max(0.5, Math.min(12, n));
-    setSettings((s) => ({ ...s, dailyCapacityHours: clamped }));
+    setSettings((s) => {
+      const next = { ...s, dailyCapacityHours: clamped };
+      savePlannerSettings(next);
+      return next;
+    });
   };
 
   return (
@@ -647,6 +604,7 @@ export function WeeklyPlanner() {
               <div className="muted">
                 Week of <span className="mono">{weekLabel}</span> • Total planned:{" "}
                 <span className="mono">{view.weekTotal.toFixed(1)}h</span>
+                {plannerQ.refreshing ? <span className="muted"> {" "}• Updating…</span> : null}
               </div>
             </div>
 
@@ -660,7 +618,7 @@ export function WeeklyPlanner() {
               <button className="btn" onClick={() => setWeekStart((d) => addDays(d, 7))}>
                 Next →
               </button>
-              <button className="btn" onClick={refresh} title="Refresh from Canvas">
+              <button className="btn" onClick={() => plannerQ.refresh()} title="Refresh from Canvas">
                 Refresh
               </button>
             </div>
@@ -697,7 +655,6 @@ export function WeeklyPlanner() {
               title="Type a capacity value"
             />
 
-            {/* Existing behavior */}
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -706,7 +663,7 @@ export function WeeklyPlanner() {
                 onChange={() =>
                   setSettings((s) => {
                     const next = { ...s, showCompleted: !s.showCompleted };
-                    savePlannerSettings(next); // persist immediately
+                    savePlannerSettings(next);
                     return next;
                   })
                 }
@@ -714,7 +671,6 @@ export function WeeklyPlanner() {
               Show completed (submitted)
             </label>
 
-            {/* NEW: split completed visibility */}
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -723,7 +679,7 @@ export function WeeklyPlanner() {
                 onChange={() =>
                   setSettings((s) => {
                     const next = { ...s, showCompletedSplits: !s.showCompletedSplits };
-                    savePlannerSettings(next); // persist immediately
+                    savePlannerSettings(next);
                     return next;
                   })
                 }
@@ -744,7 +700,15 @@ export function WeeklyPlanner() {
             className="btn"
             onClick={() => scrollByPx(-1)}
             title="Scroll left"
-            style={{ position: "absolute", left: 8, top: 8, zIndex: 3, padding: "6px 10px", borderRadius: 999, opacity: 0.95 }}
+            style={{
+              position: "absolute",
+              left: 8,
+              top: 8,
+              zIndex: 3,
+              padding: "6px 10px",
+              borderRadius: 999,
+              opacity: 0.95,
+            }}
           >
             ←
           </button>
@@ -755,14 +719,30 @@ export function WeeklyPlanner() {
             className="btn"
             onClick={() => scrollByPx(1)}
             title="Scroll right"
-            style={{ position: "absolute", right: 8, top: 8, zIndex: 3, padding: "6px 10px", borderRadius: 999, opacity: 0.95 }}
+            style={{
+              position: "absolute",
+              right: 8,
+              top: 8,
+              zIndex: 3,
+              padding: "6px 10px",
+              borderRadius: 999,
+              opacity: 0.95,
+            }}
           >
             →
           </button>
         ) : null}
 
         <div ref={scrollerRef} style={{ overflowX: "auto", paddingBottom: 6 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 12, minWidth: 980, width: "100%" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              gap: 12,
+              minWidth: 980,
+              width: "100%",
+            }}
+          >
             {view.days.map((day, idx) => {
               const list = view.buckets.get(idx) || [];
               const total = view.dayTotals[idx];
@@ -820,7 +800,13 @@ export function WeeklyPlanner() {
 
                                   <div
                                     className="muted"
-                                    style={{ marginTop: 6, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                    style={{
+                                      marginTop: 6,
+                                      fontSize: 12,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
                                     title={courseLabel}
                                   >
                                     <span className="mono">{courseLabel}</span>
@@ -855,7 +841,7 @@ export function WeeklyPlanner() {
                             );
                           }
 
-                          // base cards unchanged...
+                          // base cards
                           const a = entry.assignment;
                           const courseLabel = a.course_name ?? "Unknown Course";
                           const dueTime = fmtTime(a.due_at);
@@ -892,7 +878,13 @@ export function WeeklyPlanner() {
 
                                 <div
                                   className="muted"
-                                  style={{ marginTop: 6, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                  style={{
+                                    marginTop: 6,
+                                    fontSize: 12,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
                                   title={courseLabel}
                                 >
                                   <span className="mono">{courseLabel}</span>
@@ -1027,36 +1019,40 @@ export function WeeklyPlanner() {
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <button className="btn btnDanger" onClick={() => {
-              const ok = window.confirm(
-                "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
-              );
-              if (!ok) return;
-              // reuse the existing reset function if you kept it
-              // (kept inline for drop-in simplicity)
-              try {
-                const toRemove = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                  const k = localStorage.key(i);
-                  if (!k) continue;
-                  const lk = k.toLowerCase();
-                  if (lk.includes("effort") || lk.includes("workload")) toRemove.push(k);
+            <button
+              className="btn btnDanger"
+              onClick={() => {
+                const ok = window.confirm(
+                  "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
+                );
+                if (!ok) return;
+
+                try {
+                  const toRemove = [];
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (!k) continue;
+                    const lk = k.toLowerCase();
+                    if (lk.includes("effort") || lk.includes("workload")) toRemove.push(k);
+                  }
+                  for (const k of toRemove) localStorage.removeItem(k);
+                } catch {
+                  // ignore
                 }
-                for (const k of toRemove) localStorage.removeItem(k);
-              } catch {
-                // ignore
-              }
-              localStorage.removeItem("weeklyPlanner:splits");
-              localStorage.removeItem("weeklyPlanner:settings");
-              localStorage.removeItem("weeklyPlanner:effortKeyMap");
-              localStorage.removeItem("nav:upcoming:target");
-              setSplits([]);
-              setSplitDrafts({});
-              setSplitErrors({});
-              setSettings({ dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true });
-              setEffortKeyMap({});
-              setStorageTick((t) => t + 1);
-            }}>
+
+                localStorage.removeItem("weeklyPlanner:splits");
+                localStorage.removeItem("weeklyPlanner:settings");
+                localStorage.removeItem("weeklyPlanner:effortKeyMap");
+                localStorage.removeItem("nav:upcoming:target");
+
+                setSplits([]);
+                setSplitDrafts({});
+                setSplitErrors({});
+                setSettings({ dailyCapacityHours: 3.0, showCompleted: false, showCompletedSplits: true });
+                setEffortKeyMap({});
+                setStorageTick((t) => t + 1);
+              }}
+            >
               Reset cache (deletes splits + effort)
             </button>
           </div>

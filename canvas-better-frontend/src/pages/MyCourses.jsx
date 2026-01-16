@@ -1,9 +1,10 @@
 // src/pages/MyCourses.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
+import { useCachedAsync } from "../hooks/useCachedAsync";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -12,7 +13,6 @@ function fmtDue(dt) {
 }
 
 function BulletRow({ parts }) {
-  // parts: array of React nodes (already filtered)
   return (
     <span>
       {parts.map((p, idx) => (
@@ -26,25 +26,19 @@ function BulletRow({ parts }) {
 }
 
 export function MyCourses() {
-  const [summaries, setSummaries] = useState([]);
-  const [err, setErr] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Cache key includes params so if you change them later, it won’t collide
+  const state = useCachedAsync(
+    "courses:summary:next=3:missing=10",
+    async ({ signal }) => {
+      const data = await canvasApi.getCourseSummaries(3, 10, { signal });
+      return data || [];
+    },
+    { ttlMs: 2 * 60 * 1000 } // ~2 minutes feels right for courses/grades
+  );
 
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setErr(null);
-
-    canvasApi
-      .getCourseSummaries(3, 10, { signal: ac.signal })
-      .then((data) => setSummaries(data || []))
-      .catch((e) => {
-        if (e.name !== "AbortError") setErr(e);
-      })
-      .finally(() => setLoading(false));
-
-    return () => ac.abort();
-  }, []);
+  const summaries = state.data ?? [];
+  const loading = state.loading;
+  const err = state.error;
 
   const sorted = useMemo(() => {
     const copy = [...summaries];
@@ -52,25 +46,32 @@ export function MyCourses() {
     return copy;
   }, [summaries]);
 
-  if (loading) return <Loading label="Loading course summaries…" />;
-  if (err) return <ErrorBox error={err} />;
+  // Important behavior change:
+  // - If we have cached data, we do NOT show a full-page loading screen.
+  // - We show cached content immediately (no flash), while it refreshes in background.
+  if (loading && summaries.length === 0) return <Loading label="Loading course summaries…" />;
+  if (err && summaries.length === 0) return <ErrorBox error={err} />;
 
   return (
     <div className="stack">
       <div className="muted">
         Powered by <span className="mono">GET /api/courses/summary</span>.
+        {state.refreshing ? (
+          <span className="muted" style={{ marginLeft: 10 }}>
+            Refreshing…
+          </span>
+        ) : null}
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="muted">No active courses found.</div>
-      ) : null}
+      {err ? <ErrorBox error={err} /> : null}
+
+      {sorted.length === 0 ? <div className="muted">No active courses found.</div> : null}
 
       {sorted.map((c) => {
         const nextAsgs = c.next_assignments || [];
         const missing = c.missing || [];
         const missingCount = c.missing_count ?? 0;
 
-        // Build a styled subtitle (works even when collapsed)
         const subtitleParts = [];
 
         if (c.course_code) subtitleParts.push(<span key="code">Code: {c.course_code}</span>);
@@ -84,10 +85,7 @@ export function MyCourses() {
         }
 
         subtitleParts.push(
-          <span
-            key="missing"
-            className={missingCount > 0 ? "dangerText" : undefined}
-          >
+          <span key="missing" className={missingCount > 0 ? "dangerText" : undefined}>
             Missing: {missingCount}
           </span>
         );
@@ -110,10 +108,7 @@ export function MyCourses() {
                 ) : null}
               </div>
 
-              {/* Red badge when missing work exists */}
-              {missingCount > 0 ? (
-                <div className="dangerBadge">⚠ Missing work: {missingCount}</div>
-              ) : null}
+              {missingCount > 0 ? <div className="dangerBadge">⚠ Missing work: {missingCount}</div> : null}
 
               <div>
                 <div className="h3">Next assignments</div>
@@ -127,9 +122,7 @@ export function MyCourses() {
                           <div className="listTitle">{a.name}</div>
                           <div className="muted">
                             Due: <span className="mono">{fmtDue(a.due_at)}</span>
-                            {typeof a.points_possible === "number"
-                              ? ` • Points: ${a.points_possible}`
-                              : ""}
+                            {typeof a.points_possible === "number" ? ` • Points: ${a.points_possible}` : ""}
                             {a.submitted ? ` • Submitted` : ""}
                             {a.score != null ? ` • Score: ${a.score}` : ""}
                           </div>
@@ -177,9 +170,7 @@ export function MyCourses() {
                           <div className="listTitle">{m.name}</div>
                           <div className="muted dangerMuted">
                             Due: <span className="mono">{fmtDue(m.due_at)}</span>
-                            {typeof m.points_possible === "number"
-                              ? ` • Points: ${m.points_possible}`
-                              : ""}
+                            {typeof m.points_possible === "number" ? ` • Points: ${m.points_possible}` : ""}
                           </div>
                         </div>
                         {m.html_url ? (

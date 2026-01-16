@@ -5,6 +5,8 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 
+import { useCachedAsync } from "../hooks/useCachedAsync";
+
 // desktop notifications
 import { useDesktopNotifications } from "../hooks/useDesktopNotifications";
 import {
@@ -50,14 +52,25 @@ function safeJsonParse(raw, fallback) {
 }
 
 export function MyInformation() {
-  // ✅ ALL HOOKS UP FRONT (no early returns before hooks)
   const notif = useDesktopNotifications();
 
-  const [profile, setProfile] = useState(null);
-  const [overview, setOverview] = useState(null);
-  const [err, setErr] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // ✅ Cached API data (prevents "No info" flash on tab switch)
+  const profileQ = useCachedAsync(
+    "myinfo:profile",
+    ({ signal }) => canvasApi.getProfile({ signal }),
+    { ttlMs: 5 * 60 * 1000 }
+  );
 
+  const overviewQ = useCachedAsync(
+    "myinfo:overview",
+    ({ signal }) => canvasApi.getOverview({ signal }),
+    { ttlMs: 2 * 60 * 1000 } // a bit fresher is fine
+  );
+
+  const profile = profileQ.data;
+  const overview = overviewQ.data;
+
+  // Announcements state
   const [announcements, setAnnouncements] = useState([]);
   const [annLoading, setAnnLoading] = useState(true);
   const [annErr, setAnnErr] = useState(null);
@@ -68,7 +81,6 @@ export function MyInformation() {
   const SEEN_KEY = "announcements:seenIds";
   const LAST_SEEN_KEY = "announcements:lastSeenId";
 
-  // Derived values (safe)
   const missingCount = overview?.missing_count ?? 0;
   const due24Count = overview?.due_next_24h_count ?? 0;
   const gpa = overview?.gpa;
@@ -79,6 +91,7 @@ export function MyInformation() {
       ? window.isSecureContext || window.location.hostname === "localhost"
       : false;
 
+  // NEW badge count
   const newAnnouncementCount = useMemo(() => {
     if (!announcements?.length) return 0;
     let c = 0;
@@ -105,7 +118,6 @@ export function MyInformation() {
     next.add(id);
     persistSeen(next);
 
-    // keep notifications consistent
     try {
       const lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || "0");
       if (id > lastSeen) localStorage.setItem(LAST_SEEN_KEY, String(id));
@@ -131,7 +143,7 @@ export function MyInformation() {
     }
   }
 
-  // ✅ Load seenIds AFTER mount
+  // Load seenIds after mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SEEN_KEY) || "[]";
@@ -143,29 +155,7 @@ export function MyInformation() {
     }
   }, []);
 
-  // ✅ Profile + Overview fetch
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setErr(null);
-
-    Promise.all([
-      canvasApi.getProfile({ signal: ac.signal }),
-      canvasApi.getOverview({ signal: ac.signal }),
-    ])
-      .then(([p, o]) => {
-        setProfile(p);
-        setOverview(o);
-      })
-      .catch((e) => {
-        if (e.name !== "AbortError") setErr(e);
-      })
-      .finally(() => setLoading(false));
-
-    return () => ac.abort();
-  }, []);
-
-  // ✅ Announcements polling
+  // Announcements polling (side-effects + notifications)
   useEffect(() => {
     const ac = new AbortController();
     const POLL_MS = 3 * 60 * 1000;
@@ -175,7 +165,7 @@ export function MyInformation() {
         setAnnErr(null);
         if (announcements.length === 0) setAnnLoading(true);
 
-        // cache=fresh so backend TTL doesn't hide new posts
+        // Poll using cache=fresh so backend TTL doesn't hide new posts
         const anns = await canvasApi.getAnnouncements(14, 20, "fresh", {
           signal: ac.signal,
         });
@@ -251,9 +241,16 @@ export function MyInformation() {
     notif.setEnabled(false);
   }
 
-  // ✅ Now it is safe to early-return (all hooks already ran)
-  if (loading) return <Loading label="Loading profile…" />;
-  if (err) return <ErrorBox error={err} />;
+  // Error handling for main data
+  const mainErr = profileQ.error || overviewQ.error;
+  if (mainErr) return <ErrorBox error={mainErr} />;
+
+  // Only show the big loading screen if we have *no* cached data yet
+  if ((profileQ.loading && !profile) || (overviewQ.loading && !overview)) {
+    return <Loading label="Loading profile…" />;
+  }
+
+  // If profile never arrives, show message (but this shouldn’t flash anymore)
   if (!profile) return <div className="muted">No profile found.</div>;
 
   return (
@@ -286,6 +283,13 @@ export function MyInformation() {
               {profile.short_name ? (
                 <div className="muted">
                   Short: <span className="mono">{profile.short_name}</span>
+                </div>
+              ) : null}
+
+              {/* subtle background refresh indicator */}
+              {profileQ.refreshing || overviewQ.refreshing ? (
+                <div className="muted" style={{ marginTop: 6 }}>
+                  Updating…
                 </div>
               ) : null}
             </div>
@@ -335,8 +339,8 @@ export function MyInformation() {
           <ul className="list">
             {announcements.map((a) => {
               const isNew = a?.id && !seenIds.has(a.id);
-
               const titleText = a?.title || "Untitled announcement";
+
               const subtitle = (
                 <span className="muted">
                   {a.course_name ? <span className="mono">{a.course_name}</span> : null}
@@ -391,12 +395,7 @@ export function MyInformation() {
                     onOpen={() => markAnnouncementSeen(a.id)}
                   >
                     {a.message ? (
-                      <div
-                        className="muted"
-                        style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}
-                      >
-                        {stripHtml(a.message)}
-                      </div>
+                      <div className="desc">{stripHtml(a.message)}</div>
                     ) : (
                       <div className="muted">No message body provided.</div>
                     )}
@@ -412,7 +411,153 @@ export function MyInformation() {
         </div>
       </Expandable>
 
-      {/* Desktop notifications card */}
+      {/* Next 24 hours */}
+      <Expandable
+        title="Next 24 hours"
+        subtitle={
+          due24Count > 0 ? (
+            <span className="dangerText">Due soon: {due24Count}</span>
+          ) : (
+            <span className="muted">Nothing due (or all complete)</span>
+          )
+        }
+      >
+        {!overview ? (
+          <div className="muted">No overview data yet.</div>
+        ) : due24Count === 0 ? (
+          <div className="muted">
+            No assignments due in the next 24 hours that are incomplete.
+          </div>
+        ) : (
+          <ul className="list">
+            {overview.due_next_24h.map((a) => (
+              <li key={`${a.course_id}-${a.assignment_id}`} className="listItem">
+                <div className="listMain">
+                  <div className="listTitle">{a.name}</div>
+                  <div className="muted">
+                    <span className="mono">{a.course_name}</span>
+                    {" • "}
+                    Due: <span className="mono">{fmtDue(a.due_at)}</span>
+                    {typeof a.points_possible === "number"
+                      ? ` • Points: ${a.points_possible}`
+                      : ""}
+                  </div>
+                </div>
+                {a.html_url ? (
+                  <a className="link" href={a.html_url} target="_blank" rel="noreferrer">
+                    View
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Expandable>
+
+      {/* Missing work */}
+      <Expandable
+        title="Missing work (all courses)"
+        subtitle={
+          missingCount > 0 ? (
+            <span className="dangerText">Missing: {missingCount}</span>
+          ) : (
+            <span className="muted">None detected</span>
+          )
+        }
+      >
+        {!overview ? (
+          <div className="muted">No overview data yet.</div>
+        ) : missingCount === 0 ? (
+          <div className="muted">
+            No missing work detected across your active courses.
+          </div>
+        ) : (
+          <ul className="list">
+            {overview.missing.map((m) => (
+              <li
+                key={`${m.course_id}-${m.assignment_id}`}
+                className="listItem dangerItem"
+              >
+                <div className="listMain">
+                  <div className="listTitle">{m.name}</div>
+                  <div className="muted dangerMuted">
+                    <span className="mono">
+                      {m.course_name ?? `Course ${m.course_id}`}
+                    </span>
+                    {" • "}
+                    Due: <span className="mono">{fmtDue(m.due_at)}</span>
+                    {typeof m.points_possible === "number"
+                      ? ` • Points: ${m.points_possible}`
+                      : ""}
+                  </div>
+                </div>
+                {m.html_url ? (
+                  <a className="link" href={m.html_url} target="_blank" rel="noreferrer">
+                    View
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Expandable>
+
+      {/* Grade overview */}
+      <Expandable
+        title="Grade overview"
+        subtitle={
+          gpa != null ? (
+            <span>
+              Running GPA: <span className="mono">{gpa}</span>
+            </span>
+          ) : (
+            <span className="muted">No GPA available yet</span>
+          )
+        }
+      >
+        {!overview?.grades?.length ? (
+          <div className="muted">No active courses found.</div>
+        ) : (
+          <ul className="list">
+            {overview.grades.map((g) => {
+              const shownGrade = g.display_grade ?? g.current_grade ?? "—";
+              const isEstimated = !!g.grade_is_estimated;
+
+              return (
+                <li key={g.course_id} className="listItem">
+                  <div className="listMain">
+                    <div className="listTitle">
+                      {g.course_name}
+                      {g.course_code ? (
+                        <span className="muted"> ({g.course_code})</span>
+                      ) : null}
+                    </div>
+
+                    <div className="muted" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <span>
+                        Grade:{" "}
+                        <span
+                          className={`gradeBadge ${isEstimated ? "estimated" : "actual"}`}
+                          title={isEstimated ? "Estimated from current score" : "Provided by Canvas"}
+                        >
+                          {shownGrade}
+                          {isEstimated ? " (est.)" : ""}
+                        </span>
+                      </span>
+
+                      <span>
+                        Score: <span className="mono">{g.current_score ?? "—"}</span>
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Expandable>
+
+      {/* Notifications */}
       <div className="card">
         <div className="cardBody">
           <div className="h3">Desktop notifications</div>
@@ -486,156 +631,54 @@ export function MyInformation() {
                 <span className="mono">high-point due within 24 hours</span>, and{" "}
                 <span className="mono">new announcements</span>.
               </div>
+
+              <Expandable
+                title="Troubleshooting notifications"
+                subtitle={<span className="muted">If permission is granted but nothing appears</span>}
+              >
+                <div className="stack">
+                  <div className="muted">
+                    Live status:
+                    <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                      <div>
+                        Supported: <span className="mono">{String(!!notif.supported)}</span>
+                      </div>
+                      <div>
+                        Permission: <span className="mono">{String(notif.permission)}</span>
+                      </div>
+                      <div>
+                        Secure context: <span className="mono">{String(!!isSecureContext)}</span>{" "}
+                        <span className="muted">
+                          (should be true on <span className="mono">localhost</span> or HTTPS)
+                        </span>
+                      </div>
+                      <div>
+                        Enabled in app: <span className="mono">{String(!!notificationsOn)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="muted">
+                    Tip: click <span className="mono">Send test</span>. If you still see nothing, it’s
+                    almost always OS/browser-level notification settings (not the app).
+                  </div>
+
+                  {notif.permission === "denied" ? (
+                    <div className="muted">
+                      You’ve blocked notifications for this site in your browser settings. Re-enable them
+                      there to use this feature.
+                    </div>
+                  ) : null}
+                </div>
+              </Expandable>
             </div>
           )}
         </div>
       </div>
 
-      {/* 1) All missing work */}
-      <Expandable
-        title="Missing work (all courses)"
-        subtitle={
-          missingCount > 0 ? (
-            <span className="dangerText">Missing: {missingCount}</span>
-          ) : (
-            <span className="muted">None detected</span>
-          )
-        }
-      >
-        {missingCount === 0 ? (
-          <div className="muted">
-            No missing work detected across your active courses.
-          </div>
-        ) : (
-          <ul className="list">
-            {overview.missing.map((m) => (
-              <li
-                key={`${m.course_id}-${m.assignment_id}`}
-                className="listItem dangerItem"
-              >
-                <div className="listMain">
-                  <div className="listTitle">{m.name}</div>
-                  <div className="muted dangerMuted">
-                    <span className="mono">
-                      {m.course_name ?? `Course ${m.course_id}`}
-                    </span>
-                    {" • "}
-                    Due: <span className="mono">{fmtDue(m.due_at)}</span>
-                    {typeof m.points_possible === "number"
-                      ? ` • Points: ${m.points_possible}`
-                      : ""}
-                  </div>
-                </div>
-                {m.html_url ? (
-                  <a className="link" href={m.html_url} target="_blank" rel="noreferrer">
-                    View
-                  </a>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Expandable>
-
-      {/* 2) Next 24 hours */}
-      <Expandable
-        title="Next 24 hours"
-        subtitle={
-          due24Count > 0 ? (
-            <span className="dangerText">Due soon: {due24Count}</span>
-          ) : (
-            <span className="muted">Nothing due (or all complete)</span>
-          )
-        }
-      >
-        {due24Count === 0 ? (
-          <div className="muted">
-            No assignments due in the next 24 hours that are incomplete.
-          </div>
-        ) : (
-          <ul className="list">
-            {overview.due_next_24h.map((a) => (
-              <li key={`${a.course_id}-${a.assignment_id}`} className="listItem">
-                <div className="listMain">
-                  <div className="listTitle">{a.name}</div>
-                  <div className="muted">
-                    <span className="mono">{a.course_name}</span>
-                    {" • "}
-                    Due: <span className="mono">{fmtDue(a.due_at)}</span>
-                    {typeof a.points_possible === "number"
-                      ? ` • Points: ${a.points_possible}`
-                      : ""}
-                  </div>
-                </div>
-                {a.html_url ? (
-                  <a className="link" href={a.html_url} target="_blank" rel="noreferrer">
-                    View
-                  </a>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Expandable>
-
-      {/* 3) Grade overview */}
-      <Expandable
-        title="Grade overview"
-        subtitle={
-          gpa != null ? (
-            <span>
-              Running GPA: <span className="mono">{gpa}</span>
-            </span>
-          ) : (
-            <span className="muted">No GPA available yet</span>
-          )
-        }
-      >
-        {!overview?.grades?.length ? (
-          <div className="muted">No active courses found.</div>
-        ) : (
-          <ul className="list">
-            {overview.grades.map((g) => {
-              const shownGrade = g.display_grade ?? g.current_grade ?? "—";
-              const isEstimated = !!g.grade_is_estimated;
-
-              return (
-                <li key={g.course_id} className="listItem">
-                  <div className="listMain">
-                    <div className="listTitle">
-                      {g.course_name}
-                      {g.course_code ? (
-                        <span className="muted"> ({g.course_code})</span>
-                      ) : null}
-                    </div>
-
-                    <div className="muted" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span>
-                        Grade:{" "}
-                        <span
-                          className={`gradeBadge ${isEstimated ? "estimated" : "actual"}`}
-                          title={isEstimated ? "Estimated from current score" : "Provided by Canvas"}
-                        >
-                          {shownGrade}
-                          {isEstimated ? " (est.)" : ""}
-                        </span>
-                      </span>
-
-                      <span>
-                        Score: <span className="mono">{g.current_score ?? "—"}</span>
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Expandable>
-
       <div className="muted">
-        Tip: this tab uses <span className="mono">GET /api/profile</span> and{" "}
-        <span className="mono">GET /api/overview</span>.
+        Tip: this tab uses <span className="mono">GET /api/profile</span>,{" "}
+        <span className="mono">GET /api/overview</span>, and polling announcements.
       </div>
     </div>
   );

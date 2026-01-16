@@ -352,3 +352,27 @@
   border-color: rgba(220, 53, 69, 0.95);
 }
 
+/* --- Expandable: remove native summary marker so we don't get double arrows --- */
+.expandableSummary {
+  list-style: none;
+}
+
+.expandableSummary::-webkit-details-marker {
+  display: none;
+}
+
+/* Firefox */
+.expandableSummary::marker {
+  content: "";
+}
+
+.expandableTitle {
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.expandableSubtitle {
+  font-size: 13px;
+  opacity: 0.7;
+  line-height: 1.25;
+}
