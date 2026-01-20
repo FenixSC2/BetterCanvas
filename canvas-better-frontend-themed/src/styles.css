@@ -1,0 +1,715 @@
+:root {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  line-height: 1.4;
+
+  /* ===== Theme tokens (defaults = classic) ===== */
+  --bg: #f6f7fb;
+  --text: #111;
+  --muted: rgba(0, 0, 0, 0.65);
+  --surface: #ffffff;
+  --surface2: #fafafe;
+  --border: #e6e7ef;
+  --border2: #d9dbe7;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* ===== Density tokens (defaults = comfortable) ===== */
+  --pagePad: 18px;
+  --headerPadTop: 18px;
+  --headerPadBottom: 10px;
+  --headerPadX: 18px;
+  --tabGap: 8px;
+  --tabPadY: 8px;
+  --tabPadX: 10px;
+  --radiusSm: 10px;
+  --radiusMd: 12px;
+  --radiusLg: 14px;
+  --cardPad: 14px;
+
+  /* Typography (density affects these) */
+  --fontBase: 15px;
+  --fontSm: 13px;
+  --fontH2: 18px;
+  --fontH3: 14px;
+}
+
+/* ===== Theme variants ===== */
+html[data-theme="midnight"] {
+  --bg: #0b1020;
+  --text: #eef0f7;
+  --muted: rgba(238, 240, 247, 0.7);
+  --surface: #121a33;
+  --surface2: #0e1630;
+  --border: rgba(238, 240, 247, 0.12);
+  --border2: rgba(238, 240, 247, 0.18);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="ocean"] {
+  --bg: #eef6ff;
+  --text: #0a1b33;
+  --muted: rgba(10, 27, 51, 0.66);
+  --surface: #ffffff;
+  --surface2: #f4faff;
+  --border: #d9e7ff;
+  --border2: #bcd6ff;
+  --shadow: 0 1px 2px rgba(10, 27, 51, 0.06);
+}
+
+html[data-theme="forest"] {
+  /* Deep Obsidian Green - darker and desaturated to let elements pop */
+  --bg: #0d110cf2; 
+  --text: #dbe2c9; 
+  --muted: rgba(163, 179, 153, 0.7); 
+  --surface: #1b2418;
+  --surface2: #242f20; 
+  --border: #2d3a28; 
+  --border2: #4e6145; 
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="cyber"] {
+  --bg: #0c190c;
+  --text: #11ff00;
+  --muted: rgba(38, 255, 0, 0.776);
+  --surface: #060d06;
+  --surface2: #19880023;
+  --border: #9ecb9e;
+  --border2: #a9ffa9;
+  --shadow: 0 1px 2px rgba(11, 42, 26, 0.06);
+}
+
+html[data-theme="rose"] {
+  --bg: #fff1f4;
+  --text: #2a0b12;
+  --muted: rgba(42, 11, 18, 0.62);
+  --surface: #ffffff;
+  --surface2: #fff7f9;
+  --border: #ffd3dc;
+  --border2: #ffb7c6;
+  --shadow: 0 1px 2px rgba(42, 11, 18, 0.06);
+}
+
+html[data-theme="contrast"] {
+  --bg: #000000;
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.78);
+  --surface: #111111;
+  --surface2: #0a0a0a;
+  --border: rgba(255, 255, 255, 0.22);
+  --border2: rgba(255, 255, 255, 0.32);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="frog"] {
+  --bg: #5d8b50;
+  --text: #0a3713;
+  --muted: #535d36;
+  --surface: #ECFFDC;
+  --surface2: #e7fee2;
+  --border: #0abe2e;
+  --border2: #089424;
+  --shadow: 0 5px 15px #112e06;
+}
+
+/* keep dark themes readable */
+html[data-theme="midnight"] .toggleTrack.off,
+html[data-theme="contrast"] .toggleTrack.off,
+html[data-theme="forest"].toggleTrack.off {
+  background: rgba(255, 80, 80, 0.28);
+}
+
+html[data-theme="midnight"] .toggleTrack.on,
+html[data-theme="contrast"] .toggleTrack.on,
+html[data-theme="forest"] .toggleTrack.on {
+  background: rgba(80, 255, 160, 0.22);
+}
+
+/* ===== Density variants ===== */
+html[data-density="compact"] {
+  --pagePad: 12px;
+  --headerPadTop: 14px;
+  --headerPadBottom: 8px;
+  --headerPadX: 14px;
+  --tabGap: 6px;
+  --tabPadY: 6px;
+  --tabPadX: 8px;
+  --radiusSm: 9px;
+  --radiusMd: 11px;
+  --radiusLg: 12px;
+  --cardPad: 12px;
+
+  --fontBase: 13px;
+  --fontSm: 12px;
+  --fontH2: 17px;
+  --fontH3: 13px;
+}
+
+/* ===== Resets / base ===== */
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fontBase);
+}
+
+/* Make controls inherit theme text */
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Remove default list bullets globally (your UI uses lists for layout) */
+ul, ol {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+/* ===== Layout ===== */
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.header {
+  padding: var(--headerPadTop) var(--headerPadX) var(--headerPadBottom);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.brandTitle { font-size: calc(var(--fontBase) + 3px); font-weight: 700; }
+.brandSub { font-size: var(--fontSm); color: var(--muted); margin-top: 2px; }
+
+.tabs {
+  display: flex;
+  gap: var(--tabGap);
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  padding: var(--tabPadY) var(--tabPadX);
+  border-radius: var(--radiusSm);
+  cursor: pointer;
+  font-weight: 600;
+  color: inherit;
+}
+
+.tab.active { border-color: var(--text); }
+
+.main {
+  padding: var(--pagePad);
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.mainWide { max-width: 1200px; }
+
+.footer {
+  padding: 12px var(--pagePad);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ===== Helpers ===== */
+.h2 { font-size: var(--fontH2); font-weight: 800; }
+.h3 { font-size: var(--fontH3); font-weight: 800; margin-bottom: 6px; }
+
+.muted { color: var(--muted); font-size: var(--fontSm); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+.stack { display: grid; gap: 12px; }
+.row { display: flex; gap: 14px; }
+.rowWrap { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ===== Cards ===== */
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusLg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.cardBody { padding: var(--cardPad); }
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex;
+  padding: 8px 10px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  width: 36px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.iconBtn:hover { filter: brightness(0.98); }
+
+/* ===== Settings button (fix the “bar through it”) ===== */
+.settingsFloating {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+
+  /* Make absolutely sure nothing overlays it */
+  z-index: 100000;
+
+  /* Ensure it paints a solid surface */
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+html[data-density="compact"] .settingsFloating {
+  top: 10px;
+  right: 10px;
+}
+
+/* ===== Expandable (details/summary) ===== */
+/* HARD-KILL native disclosure marker in all browsers */
+details > summary {
+  list-style: none !important;
+}
+details > summary::-webkit-details-marker {
+  display: none !important;
+}
+details > summary::marker {
+  content: "" !important;
+}
+
+/* Your component uses .expandableSummary + inner .row, so keep summary simple */
+.expandableSummary {
+  cursor: pointer;
+}
+
+/* Ensure the custom arrow + title are aligned */
+.expandableSummary .row {
+  align-items: center !important; /* beats any looser rules */
+}
+
+/* Make the arrow not sit “high” */
+.expandableSummary .mono {
+  line-height: 1;
+}
+
+/* Title/subtitle styling */
+.expandableTitle {
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.expandableSubtitle {
+  margin-top: 2px;
+  font-size: var(--fontSm);
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+/* ===== Modal ===== */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 3000;
+}
+
+.modalPanel {
+  width: min(980px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radiusLg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.modalBody {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 420px;
+}
+
+.settingsNav {
+  border-right: 1px solid var(--border);
+  background: var(--surface2);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settingsNavItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px;
+  border-radius: var(--radiusMd);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.settingsNavItem:hover { background: var(--surface); border-color: var(--border); }
+.settingsNavItem.active { background: var(--surface); border-color: var(--border2); }
+.settingsNavItem:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.pill {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.settingsContent { padding: 14px; }
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.themeChoice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radiusMd);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.themeChoice.active { border-color: var(--text); }
+
+.themeSwatch {
+  width: 44px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.594);
+  flex: 0 0 auto;
+}
+
+.themeSwatch-classic { background: linear-gradient(135deg, #ffffff 0%, #f6f7fb 100%); }
+.themeSwatch-midnight { background: linear-gradient(135deg, #121a33 0%, #0b1020 100%); border-color: rgba(238, 240, 247, 0.2); }
+.themeSwatch-ocean { background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%); }
+.themeSwatch-forest { background: linear-gradient(135deg, #678560f2 0%, #242f20 100%); border-color: rgba(14, 50, 13, 0.501);}
+.themeSwatch-rose { background: linear-gradient(135deg, #ffffff 0%, #fff1f4 100%); }
+.themeSwatch-contrast { background: linear-gradient(135deg, #111111 0%, #000000 100%); border-color: rgba(255, 255, 255, 0.25); }
+.themeSwatch-frog { background: linear-gradient(135deg, #a6e2a9cd 0%, #135714c3 100%); }
+.themeSwatch-cyber { background: linear-gradient(135deg, #00ff1a7e 0%, #060606 100%); border-color: #459d45; }
+
+.themeChoiceTitle { font-weight: 900; }
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.segmentedBtn {
+  padding: 12px;
+  border-radius: var(--radiusMd);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.segmentedBtn.active { border-color: var(--text); }
+.segmentedTitle { font-weight: 900; }
+.segmentedDesc { font-size: var(--fontSm); color: var(--muted); margin-top: 2px; }
+
+@media (max-width: 760px) {
+  .modalBody { grid-template-columns: 1fr; }
+
+  .settingsNav {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .settingsGrid { grid-template-columns: 1fr; }
+  .segmented { grid-template-columns: 1fr; }
+}
+
+/* ===== Expandable content spacing ===== */
+details.expandable > .cardBody {
+  display: grid;
+  gap: 12px; /* space between cards/items inside dropdown */
+}
+
+/* If a dropdown contains a list of items, space them nicely */
+details.expandable > .cardBody ul {
+  display: grid;
+  gap: 10px;
+  padding-left: 0;
+}
+
+details.expandable > .cardBody li {
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== Card internal rhythm ===== */
+.cardBody > * + * {
+  margin-top: 14px;
+}
+
+/* Headings shouldn't create huge random spacing */
+.cardBody h1, .cardBody h2, .cardBody h3, .cardBody h4 {
+  margin: 0;
+}
+
+/* Paragraph-ish elements stay readable */
+.cardBody p {
+  margin: 6px 0 0;
+}
+
+/* ===== Courses: make "Next assignments" list items look like mini-cards ===== */
+.cardBody ul li {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: var(--radiusMd);
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+}
+
+/* If you used the bullet ::before earlier, remove it for these mini-cards */
+.cardBody ul li::before {
+  content: none;
+}
+
+/* Give breathing room between the mini-cards */
+.cardBody ul {
+  display: grid;
+  gap: 10px;
+  padding-left: 0; /* no indent since they are boxes now */
+}
+
+/* Preserve newlines + indentation for message bodies */
+.preserveWhitespace {
+  white-space: pre-wrap;   /* keeps newlines + wraps long lines */
+  word-break: break-word;  /* prevents overflow on long URLs/words */
+}
+
+/* ===== Next assignments: nicer mini-cards ===== */
+/* Assumes "Next assignments" is rendered as a UL inside .cardBody */
+.cardBody ul {
+  display: grid;
+  gap: 10px;
+  padding-left: 0;
+  margin: 0;
+}
+
+.cardBody ul li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  padding: 12px 14px;
+  box-shadow: none;
+}
+
+/* subtle hover like a clickable item, even if only "View" is clickable */
+.cardBody ul li:hover {
+  border-color: var(--border2);
+}
+
+/* Remove any leftover fake bullets */
+.cardBody ul li::before {
+  content: none !important;
+}
+
+/* Make links inside these cards look like action links, not default blue underlined */
+.cardBody ul li a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.cardBody ul li a:hover {
+  text-decoration: underline;
+}
+
+.preserveWhitespace {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Toggle switch ===== */
+.toggleRow{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  width: 46px;
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toggle:hover { filter: brightness(0.98); }
+
+.toggleTrack {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  transition: background 120ms ease;
+}
+
+/* OFF = muted red */
+.toggleTrack.off {
+  background: rgba(200, 40, 40, 0.75);
+}
+
+/* ON = muted green */
+.toggleTrack.on {
+  background: rgba(20, 160, 70, 0.35);
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: transform 120ms ease;
+}
+
+.toggleThumb.on {
+  transform: translateX(14px);
+}
+
+/* ===== Embedded expandable: remove the "second box" inside listItem cards ===== */
+.listItem .expandable {
+  /* If your Expandable root uses .expandable */
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* If your Expandable uses a different root class, keep this too */
+.listItem details {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* Keep the header spacing nice inside listItem */
+.listItem .expandableSummary,
+.listItem summary {
+  padding: 14px;
+}
+
+/* Ensure expanded body doesn't add a second rounded edge */
+.listItem .expandableBody,
+.listItem .expandableContent {
+  padding: 0 14px 14px;
+}
+
+/* Optional: tighten borders so listItem looks crisp */
+.listItem {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusLg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden; /* clips inner content so corners stay clean */
+}
+
+/* ===== Danger / alert styling ===== */
+
+.dangerText {
+  color: rgb(200, 60, 60);
+  font-weight: 800;
+}
+
+.dangerMuted {
+  color: rgba(200, 60, 60, 0.85);
+}
+
+/* Inline "MISSING" badge inside subtitles */
+.dangerBadgeInline {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid rgba(200, 40, 40, 0.35);
+  background: rgba(200, 40, 40, 0.18);
+  color: rgb(200, 60, 60);
+}
+
+/* Give missing cards a subtle red tint while keeping your existing layout */
+.listItem.dangerItem {
+  border-color: rgba(200, 40, 40, 0.35);
+  background: rgba(200, 40, 40, 0.06);
+}
+
+/* ===== Grade hidden pill ===== */
+.gradeHiddenPill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border2);
+  background: var(--surface2);
+  color: var(--muted);
+  font-style: italic;
+}

@@ -63,7 +63,7 @@ export function TopLoadingBar() {
         left: 0,
         height: 3,
         width: "100%",
-        zIndex: 9999,
+        zIndex: 1200,
         background: "transparent",
       }}
       aria-hidden="true"

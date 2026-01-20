@@ -1,5 +1,5 @@
 // src/pages/MyInformation.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
@@ -70,13 +70,67 @@ export function MyInformation() {
   const profile = profileQ.data;
   const overview = overviewQ.data;
 
-  // Announcements state
-  const [announcements, setAnnouncements] = useState([]);
-  const [annLoading, setAnnLoading] = useState(true);
-  const [annErr, setAnnErr] = useState(null);
+  // ✅ Announcements moved to cached async
+  // We keep using cache="fresh" inside the fetcher so refreshes always see new posts.
+  const announcementsQ = useCachedAsync(
+    "myinfo:announcements:days=14:limit=20",
+    async ({ signal }) => {
+      const anns = await canvasApi.getAnnouncements(14, 20, "fresh", {
+        signal,
+      });
+      return Array.isArray(anns) ? anns : [];
+    },
+    { ttlMs: 3 * 60 * 1000 }
+  );
+
+  const announcements = announcementsQ.data || [];
+  const annErr = announcementsQ.error;
+
+  // Show the announcements loading state only if we have no cached data yet
+  const annLoading = announcementsQ.loading && announcements.length === 0;
 
   // Seen tracking
   const [seenIds, setSeenIds] = useState(() => new Set());
+
+  const SHOW_GPA_KEY = "myinfo:showGpaInCollapsed";
+  const [showGpaCollapsed, setShowGpaCollapsed] = useState(() => {
+    try {
+      const raw = localStorage.getItem(SHOW_GPA_KEY);
+      return raw == null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SHOW_GPA_KEY, String(showGpaCollapsed));
+    } catch {
+      // ignore
+    }
+  }, [showGpaCollapsed]);
+
+  function Toggle({ checked, onChange, label }) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onChange(!checked);
+        }}
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        title={label}
+        className="toggle"
+      >
+        <span className={`toggleTrack ${checked ? "on" : "off"}`}>
+          <span className={`toggleThumb ${checked ? "on" : ""}`} />
+        </span>
+      </button>
+    );
+  }
 
   const SEEN_KEY = "announcements:seenIds";
   const LAST_SEEN_KEY = "announcements:lastSeenId";
@@ -155,70 +209,63 @@ export function MyInformation() {
     }
   }, []);
 
-  // Announcements polling (side-effects + notifications)
+  // ✅ Announcements polling (now calls announcementsQ.refresh)
+  // We must preserve your old behavior: don't notify on first load, only on interval ticks.
+  const shouldNotifyRef = useRef(false);
+
   useEffect(() => {
-    const ac = new AbortController();
     const POLL_MS = 3 * 60 * 1000;
 
-    async function fetchAnnouncements({ notify }) {
-      try {
-        setAnnErr(null);
-        if (announcements.length === 0) setAnnLoading(true);
+    // initial fetch: refresh, but do NOT notify
+    announcementsQ.refresh?.();
 
-        // Poll using cache=fresh so backend TTL doesn't hide new posts
-        const anns = await canvasApi.getAnnouncements(14, 20, "fresh", {
-          signal: ac.signal,
-        });
+    const t = setInterval(() => {
+      shouldNotifyRef.current = true;
+      announcementsQ.refresh?.();
+    }, POLL_MS);
 
-        const safe = Array.isArray(anns) ? anns : [];
-        setAnnouncements(safe);
-        setAnnLoading(false);
-
-        if (!notify || !notif.enabled || notif.permission !== "granted") return;
-
-        let lastSeen = 0;
-        try {
-          lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || "0");
-        } catch {
-          lastSeen = 0;
-        }
-
-        const newestId = safe?.[0]?.id ?? 0;
-        if (newestId > lastSeen) {
-          const newOnes = safe.filter((a) => a.id > lastSeen).slice(0, 3);
-
-          for (const a of newOnes) {
-            notifyOnce({
-              dedupeKey: `announcement:${a.id}`,
-              title: `New announcement${a.course_name ? ` • ${a.course_name}` : ""}`,
-              body: a.title,
-              url: a.html_url || window.location.href,
-              cooldownMs: 0,
-            });
-          }
-
-          try {
-            localStorage.setItem(LAST_SEEN_KEY, String(newestId));
-          } catch {
-            // ignore
-          }
-        }
-      } catch (e) {
-        if (e.name === "AbortError") return;
-        setAnnErr(e);
-        setAnnLoading(false);
-      }
-    }
-
-    fetchAnnouncements({ notify: false });
-    const t = setInterval(() => fetchAnnouncements({ notify: true }), POLL_MS);
-
-    return () => {
-      clearInterval(t);
-      ac.abort();
-    };
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notif.enabled, notif.permission]);
+
+  // When announcements change after a poll tick, evaluate new announcements + notify
+  useEffect(() => {
+    if (!shouldNotifyRef.current) return;
+    shouldNotifyRef.current = false;
+
+    if (!notif.enabled || notif.permission !== "granted") return;
+    if (!announcements?.length) return;
+
+    let lastSeen = 0;
+    try {
+      lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || "0");
+    } catch {
+      lastSeen = 0;
+    }
+
+    const newestId = announcements?.[0]?.id ?? 0;
+    if (newestId > lastSeen) {
+      const newOnes = announcements.filter((a) => a.id > lastSeen).slice(0, 3);
+
+      for (const a of newOnes) {
+        notifyOnce({
+          dedupeKey: `announcement:${a.id}`,
+          title: `New announcement${
+            a.course_name ? ` • ${a.course_name}` : ""
+          }`,
+          body: a.title,
+          url: a.html_url || window.location.href,
+          cooldownMs: 0,
+        });
+      }
+
+      try {
+        localStorage.setItem(LAST_SEEN_KEY, String(newestId));
+      } catch {
+        // ignore
+      }
+    }
+  }, [announcements, notif.enabled, notif.permission]);
 
   async function handleEnableNotifications() {
     const perm = await requestNotificationPermission();
@@ -239,6 +286,35 @@ export function MyInformation() {
 
   function handleDisableNotifications() {
     notif.setEnabled(false);
+  }
+
+  function htmlToPrettyText(html) {
+    if (!html) return "";
+
+    let s = String(html);
+
+    // Convert layout HTML into newlines
+    s = s.replace(/&nbsp;/gi, " ");
+    s = s.replace(/<\s*br\s*\/?>/gi, "\n");
+    s = s.replace(/<\/\s*p\s*>/gi, "\n\n");
+    s = s.replace(/<\/\s*div\s*>/gi, "\n");
+    s = s.replace(/<\/\s*li\s*>/gi, "\n");
+    s = s.replace(/<\/\s*tr\s*>/gi, "\n");
+    s = s.replace(/<\/\s*h[1-6]\s*>/gi, "\n\n");
+
+    // Strip remaining tags safely
+    const tmp = document.createElement("div");
+    tmp.innerHTML = s;
+    let text = tmp.textContent || "";
+
+    // Normalize line endings
+    text = text.replace(/\r\n/g, "\n");
+
+    // 🔑 Collapse excessive blank lines (max 2 in a row)
+    text = text.replace(/\n{3,}/g, "\n\n");
+
+    // Trim junk at edges
+    return text.trim();
   }
 
   // Error handling for main data
@@ -277,7 +353,8 @@ export function MyInformation() {
               ) : null}
               {profile.sortable_name ? (
                 <div className="muted">
-                  Sortable: <span className="mono">{profile.sortable_name}</span>
+                  Sortable:{" "}
+                  <span className="mono">{profile.sortable_name}</span>
                 </div>
               ) : null}
               {profile.short_name ? (
@@ -287,7 +364,9 @@ export function MyInformation() {
               ) : null}
 
               {/* subtle background refresh indicator */}
-              {profileQ.refreshing || overviewQ.refreshing ? (
+              {profileQ.refreshing ||
+              overviewQ.refreshing ||
+              announcementsQ.refreshing ? (
                 <div className="muted" style={{ marginTop: 6 }}>
                   Updating…
                 </div>
@@ -343,7 +422,9 @@ export function MyInformation() {
 
               const subtitle = (
                 <span className="muted">
-                  {a.course_name ? <span className="mono">{a.course_name}</span> : null}
+                  {a.course_name ? (
+                    <span className="mono">{a.course_name}</span>
+                  ) : null}
                   {a.course_name ? " • " : ""}
                   Posted: <span className="mono">{fmtPosted(a.posted_at)}</span>
                   {isNew ? (
@@ -366,25 +447,25 @@ export function MyInformation() {
                   {a.message ? (
                     <>
                       {" • "}
-                      Preview: <span className="mono">{firstLine(a.message)}</span>
+                      Preview:{" "}
+                      <span className="mono">{firstLine(a.message)}</span>
                     </>
                   ) : null}
                 </span>
               );
 
-              const right =
-                a.html_url ? (
-                  <a
-                    className="btn"
-                    href={a.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => markAnnouncementSeen(a.id)}
-                    title="Open in Canvas"
-                  >
-                    View in Canvas
-                  </a>
-                ) : null;
+              const right = a.html_url ? (
+                <a
+                  className="btn"
+                  href={a.html_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => markAnnouncementSeen(a.id)}
+                  title="Open in Canvas"
+                >
+                  View in Canvas
+                </a>
+              ) : null;
 
               return (
                 <li key={a.id} className="listItem">
@@ -395,7 +476,9 @@ export function MyInformation() {
                     onOpen={() => markAnnouncementSeen(a.id)}
                   >
                     {a.message ? (
-                      <div className="desc">{stripHtml(a.message)}</div>
+                      <div className="desc preserveWhitespace">
+                        {htmlToPrettyText(a.message)}
+                      </div>
                     ) : (
                       <div className="muted">No message body provided.</div>
                     )}
@@ -430,26 +513,54 @@ export function MyInformation() {
           </div>
         ) : (
           <ul className="list">
-            {overview.due_next_24h.map((a) => (
-              <li key={`${a.course_id}-${a.assignment_id}`} className="listItem">
-                <div className="listMain">
-                  <div className="listTitle">{a.name}</div>
-                  <div className="muted">
+            {overview.due_next_24h.map((a) => {
+              const titleText = a?.name || "Untitled assignment";
+
+              const subtitle = (
+                <span className="muted">
+                  {a.course_name ? (
                     <span className="mono">{a.course_name}</span>
-                    {" • "}
-                    Due: <span className="mono">{fmtDue(a.due_at)}</span>
-                    {typeof a.points_possible === "number"
-                      ? ` • Points: ${a.points_possible}`
-                      : ""}
-                  </div>
-                </div>
-                {a.html_url ? (
-                  <a className="link" href={a.html_url} target="_blank" rel="noreferrer">
-                    View
-                  </a>
-                ) : null}
-              </li>
-            ))}
+                  ) : null}
+                  {a.course_name ? " • " : ""}
+                  Due: <span className="mono">{fmtDue(a.due_at)}</span>
+                  {typeof a.points_possible === "number"
+                    ? ` • Points: ${a.points_possible}`
+                    : ""}
+                </span>
+              );
+
+              const right = a.html_url ? (
+                <a
+                  className="btn"
+                  href={a.html_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Canvas
+                </a>
+              ) : null;
+
+              return (
+                <li
+                  key={`${a.course_id}-${a.assignment_id}`}
+                  className="listItem"
+                >
+                  <Expandable
+                    title={titleText}
+                    subtitle={subtitle}
+                    right={right}
+                  >
+                    {a.description ? (
+                      <div className="desc preserveWhitespace">
+                        {htmlToPrettyText(a.description)}
+                      </div>
+                    ) : (
+                      <div className="muted">No description available.</div>
+                    )}
+                  </Expandable>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Expandable>
@@ -473,31 +584,58 @@ export function MyInformation() {
           </div>
         ) : (
           <ul className="list">
-            {overview.missing.map((m) => (
-              <li
-                key={`${m.course_id}-${m.assignment_id}`}
-                className="listItem dangerItem"
-              >
-                <div className="listMain">
-                  <div className="listTitle">{m.name}</div>
-                  <div className="muted dangerMuted">
-                    <span className="mono">
-                      {m.course_name ?? `Course ${m.course_id}`}
-                    </span>
-                    {" • "}
-                    Due: <span className="mono">{fmtDue(m.due_at)}</span>
-                    {typeof m.points_possible === "number"
-                      ? ` • Points: ${m.points_possible}`
-                      : ""}
-                  </div>
-                </div>
-                {m.html_url ? (
-                  <a className="link" href={m.html_url} target="_blank" rel="noreferrer">
-                    View
-                  </a>
-                ) : null}
-              </li>
-            ))}
+            {overview.missing.map((m) => {
+              const titleText = m?.name || "Untitled assignment";
+
+              const subtitle = (
+                <span className="muted dangerMuted">
+                  <span className="mono">
+                    {m.course_name ?? `Course ${m.course_id}`}
+                  </span>
+                  {" • "}
+                  <span className="dangerBadgeInline">MISSING</span>
+                  {" • "}
+                  Due: <span className="mono">{fmtDue(m.due_at)}</span>
+                  {typeof m.points_possible === "number"
+                    ? ` • Points: ${m.points_possible}`
+                    : ""}
+                </span>
+              );
+
+              const right = m.html_url ? (
+                <a
+                  className="btn"
+                  href={m.html_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Canvas
+                </a>
+              ) : null;
+
+              return (
+                <li
+                  key={`${m.course_id}-${m.assignment_id}`}
+                  className="listItem dangerItem"
+                >
+                  <Expandable
+                    title={titleText}
+                    subtitle={subtitle}
+                    right={right}
+                  >
+                    {m.description ? (
+                      <div className="desc preserveWhitespace">
+                        {htmlToPrettyText(m.description)}
+                      </div>
+                    ) : (
+                      <div className="muted dangerMuted">
+                        No description available.
+                      </div>
+                    )}
+                  </Expandable>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Expandable>
@@ -505,51 +643,104 @@ export function MyInformation() {
       {/* Grade overview */}
       <Expandable
         title="Grade overview"
+        right={
+          <div className="toggleRow">
+            <span className="muted">Toggle GPA visibility:</span>
+            <Toggle
+              checked={showGpaCollapsed}
+              onChange={setShowGpaCollapsed}
+              label={showGpaCollapsed ? "Hide GPA" : "Show GPA"}
+            />
+          </div>
+        }
         subtitle={
-          gpa != null ? (
-            <span>
-              Running GPA: <span className="mono">{gpa}</span>
-            </span>
+          showGpaCollapsed ? (
+            gpa != null ? (
+              <span>
+                Running GPA: <span className="mono">{gpa}</span>
+              </span>
+            ) : (
+              <span className="muted">No GPA available yet</span>
+            )
           ) : (
-            <span className="muted">No GPA available yet</span>
+            <span className="muted">GPA hidden</span>
           )
         }
       >
         {!overview?.grades?.length ? (
-          <div className="muted">No active courses found.</div>
+          <div className="muted" style={{ marginTop: 10 }}>
+            No active courses found.
+          </div>
         ) : (
-          <ul className="list">
+          <ul className="list" style={{ marginTop: 10 }}>
             {overview.grades.map((g) => {
               const shownGrade = g.display_grade ?? g.current_grade ?? "—";
               const isEstimated = !!g.grade_is_estimated;
 
+              const titleText = g.course_name || "Untitled course";
+
+              const subtitle = (
+                <span className="muted">
+                  Grade:{" "}
+                  <span
+                    className={`gradeBadge ${
+                      isEstimated ? "estimated" : "actual"
+                    }`}
+                    title={
+                      isEstimated
+                        ? "Estimated from current score"
+                        : "Provided by Canvas"
+                    }
+                  >
+                    {shownGrade}
+                    {isEstimated ? " (est.)" : ""}
+                  </span>
+                  {" • "}
+                  Score: <span className="mono">{g.current_score ?? "—"}</span>
+                  {g.course_code ? (
+                    <>
+                      {" • "}
+                      <span className="mono">{g.course_code}</span>
+                    </>
+                  ) : null}
+                </span>
+              );
+
               return (
                 <li key={g.course_id} className="listItem">
-                  <div className="listMain">
-                    <div className="listTitle">
-                      {g.course_name}
-                      {g.course_code ? (
-                        <span className="muted"> ({g.course_code})</span>
-                      ) : null}
-                    </div>
+                  <Expandable
+                    title={titleText}
+                    subtitle={subtitle}
+                    variant="embedded"
+                  >
+                    <div className="stack" style={{ gap: 8 }}>
+                      <div className="muted">
+                        Course ID: <span className="mono">{g.course_id}</span>
+                      </div>
 
-                    <div className="muted" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span>
-                        Grade:{" "}
-                        <span
-                          className={`gradeBadge ${isEstimated ? "estimated" : "actual"}`}
-                          title={isEstimated ? "Estimated from current score" : "Provided by Canvas"}
-                        >
-                          {shownGrade}
-                          {isEstimated ? " (est.)" : ""}
+                      <div className="rowWrap" style={{ gap: 10 }}>
+                        <div className="muted">
+                          Display grade:{" "}
+                          <span className="mono">{g.display_grade ?? "—"}</span>
+                        </div>
+                        <div className="muted">
+                          Current grade:{" "}
+                          <span className="mono">{g.current_grade ?? "—"}</span>
+                        </div>
+                        <div className="muted">
+                          Current score:{" "}
+                          <span className="mono">{g.current_score ?? "—"}</span>
+                        </div>
+                      </div>
+
+                      <div className="muted">
+                        Status:{" "}
+                        <span className="mono">
+                          {isEstimated ? "Estimated" : "Actual"}
                         </span>
-                      </span>
-
-                      <span>
-                        Score: <span className="mono">{g.current_score ?? "—"}</span>
-                      </span>
+                      </div>
                     </div>
-                  </div>
+                  </Expandable>
                 </li>
               );
             })}
@@ -628,45 +819,61 @@ export function MyInformation() {
               <div className="muted">
                 Alerts can trigger for: <span className="mono">Overdue</span>,{" "}
                 <span className="mono">Due within 12 hours</span>,{" "}
-                <span className="mono">high-point due within 24 hours</span>, and{" "}
-                <span className="mono">new announcements</span>.
+                <span className="mono">high-point due within 24 hours</span>,
+                and <span className="mono">new announcements</span>.
               </div>
 
               <Expandable
                 title="Troubleshooting notifications"
-                subtitle={<span className="muted">If permission is granted but nothing appears</span>}
+                subtitle={
+                  <span className="muted">
+                    If permission is granted but nothing appears
+                  </span>
+                }
               >
                 <div className="stack">
                   <div className="muted">
                     Live status:
                     <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
                       <div>
-                        Supported: <span className="mono">{String(!!notif.supported)}</span>
-                      </div>
-                      <div>
-                        Permission: <span className="mono">{String(notif.permission)}</span>
-                      </div>
-                      <div>
-                        Secure context: <span className="mono">{String(!!isSecureContext)}</span>{" "}
-                        <span className="muted">
-                          (should be true on <span className="mono">localhost</span> or HTTPS)
+                        Supported:{" "}
+                        <span className="mono">
+                          {String(!!notif.supported)}
                         </span>
                       </div>
                       <div>
-                        Enabled in app: <span className="mono">{String(!!notificationsOn)}</span>
+                        Permission:{" "}
+                        <span className="mono">{String(notif.permission)}</span>
+                      </div>
+                      <div>
+                        Secure context:{" "}
+                        <span className="mono">
+                          {String(!!isSecureContext)}
+                        </span>{" "}
+                        <span className="muted">
+                          (should be true on{" "}
+                          <span className="mono">localhost</span> or HTTPS)
+                        </span>
+                      </div>
+                      <div>
+                        Enabled in app:{" "}
+                        <span className="mono">
+                          {String(!!notificationsOn)}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   <div className="muted">
-                    Tip: click <span className="mono">Send test</span>. If you still see nothing, it’s
-                    almost always OS/browser-level notification settings (not the app).
+                    Tip: click <span className="mono">Send test</span>. If you
+                    still see nothing, it’s almost always OS/browser-level
+                    notification settings (not the app).
                   </div>
 
                   {notif.permission === "denied" ? (
                     <div className="muted">
-                      You’ve blocked notifications for this site in your browser settings. Re-enable them
-                      there to use this feature.
+                      You’ve blocked notifications for this site in browser
+                      settings. Re-enable them there to use this feature.
                     </div>
                   ) : null}
                 </div>
@@ -678,7 +885,8 @@ export function MyInformation() {
 
       <div className="muted">
         Tip: this tab uses <span className="mono">GET /api/profile</span>,{" "}
-        <span className="mono">GET /api/overview</span>, and polling announcements.
+        <span className="mono">GET /api/overview</span>, and cached/polled
+        announcements.
       </div>
     </div>
   );

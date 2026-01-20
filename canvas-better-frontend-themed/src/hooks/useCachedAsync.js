@@ -13,6 +13,53 @@ export function clearCachedAsync(keyPrefix) {
   }
 }
 
+// ---------- NEW: localStorage hydration helper (does NOT affect useCachedAsync) ----------
+function safeJsonParse(raw, fallback) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Hydrates state from localStorage and keeps it persisted.
+ * Use this when you want "instant UI" on tab switch + across reloads.
+ *
+ * Storage format:
+ *   localStorage[cacheKey] = JSON.stringify({ v: <value>, ts: <epoch_ms> })
+ */
+export function useHydratedStateFromCache(cacheKey, initialValue) {
+  const keyStr = useMemo(() => String(cacheKey), [cacheKey]);
+
+  const [value, setValue] = useState(() => {
+    try {
+      const raw = localStorage.getItem(keyStr);
+      if (!raw) return initialValue;
+      const obj = safeJsonParse(raw, null);
+      if (obj && Object.prototype.hasOwnProperty.call(obj, "v")) return obj.v;
+      return initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  const setAndPersist = (next) => {
+    setValue((prev) => {
+      const v = typeof next === "function" ? next(prev) : next;
+      try {
+        localStorage.setItem(keyStr, JSON.stringify({ v, ts: Date.now() }));
+      } catch {
+        // ignore
+      }
+      return v;
+    });
+  };
+
+  return [value, setAndPersist];
+}
+
+// ---------- Your ORIGINAL hook (unchanged behavior) ----------
 export function useCachedAsync(key, fetcher, opts = {}) {
   const ttlMs = opts.ttlMs ?? 5 * 60 * 1000;
   const keyStr = useMemo(() => String(key), [key]);
