@@ -1,5 +1,6 @@
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial;
   line-height: 1.4;
 
   /* ===== Theme tokens (defaults = classic) ===== */
@@ -20,10 +21,16 @@
   --tabGap: 8px;
   --tabPadY: 8px;
   --tabPadX: 10px;
+
   --radiusSm: 10px;
   --radiusMd: 12px;
   --radiusLg: 14px;
+
   --cardPad: 14px;
+
+  /* Spacing */
+  --listGap: 16px; /* comfortable */
+  --blockGap: 12px; /* comfortable (stack internal spacing) */
 
   /* Typography (density affects these) */
   --fontBase: 15px;
@@ -56,14 +63,13 @@ html[data-theme="ocean"] {
 }
 
 html[data-theme="forest"] {
-  /* Deep Obsidian Green - darker and desaturated to let elements pop */
-  --bg: #0d110cf2; 
-  --text: #dbe2c9; 
-  --muted: rgba(163, 179, 153, 0.7); 
+  --bg: #0d110cf2;
+  --text: #dbe2c9;
+  --muted: rgba(163, 179, 153, 0.7);
   --surface: #1b2418;
-  --surface2: #242f20; 
-  --border: #2d3a28; 
-  --border2: #4e6145; 
+  --surface2: #242f20;
+  --border: #2d3a28;
+  --border2: #4e6145;
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
 
@@ -104,17 +110,17 @@ html[data-theme="frog"] {
   --bg: #5d8b50;
   --text: #0a3713;
   --muted: #535d36;
-  --surface: #ECFFDC;
+  --surface: #ecffdc;
   --surface2: #e7fee2;
   --border: #0abe2e;
   --border2: #089424;
-  --shadow: 0 5px 15px #112e06;
+  --shadow: 0 5px 10px #112e06b3;
 }
 
-/* keep dark themes readable */
+/* keep dark themes readable (toggle tracks) */
 html[data-theme="midnight"] .toggleTrack.off,
 html[data-theme="contrast"] .toggleTrack.off,
-html[data-theme="forest"].toggleTrack.off {
+html[data-theme="forest"] .toggleTrack.off {
   background: rgba(255, 80, 80, 0.28);
 }
 
@@ -133,21 +139,31 @@ html[data-density="compact"] {
   --tabGap: 6px;
   --tabPadY: 6px;
   --tabPadX: 8px;
+
   --radiusSm: 9px;
   --radiusMd: 11px;
   --radiusLg: 12px;
+
   --cardPad: 12px;
 
   --fontBase: 13px;
   --fontSm: 12px;
   --fontH2: 17px;
   --fontH3: 13px;
+
+  --listGap: 8px;
+  --blockGap: 8px;
 }
 
 /* ===== Resets / base ===== */
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body { height: 100%; }
+html,
+body {
+  height: 100%;
+}
 
 body {
   margin: 0;
@@ -157,13 +173,17 @@ body {
 }
 
 /* Make controls inherit theme text */
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
 
 /* Remove default list bullets globally (your UI uses lists for layout) */
-ul, ol {
+ul,
+ol {
   list-style: none;
   margin: 0;
   padding-left: 0;
@@ -183,8 +203,15 @@ ul, ol {
   color: var(--text);
 }
 
-.brandTitle { font-size: calc(var(--fontBase) + 3px); font-weight: 700; }
-.brandSub { font-size: var(--fontSm); color: var(--muted); margin-top: 2px; }
+.brandTitle {
+  font-size: calc(var(--fontBase) + 3px);
+  font-weight: 700;
+}
+.brandSub {
+  font-size: var(--fontSm);
+  color: var(--muted);
+  margin-top: 2px;
+}
 
 .tabs {
   display: flex;
@@ -203,7 +230,9 @@ ul, ol {
   color: inherit;
 }
 
-.tab.active { border-color: var(--text); }
+.tab.active {
+  border-color: var(--text);
+}
 
 .main {
   padding: var(--pagePad);
@@ -212,7 +241,9 @@ ul, ol {
   margin: 0 auto;
 }
 
-.mainWide { max-width: 1200px; }
+.mainWide {
+  max-width: 1200px;
+}
 
 .footer {
   padding: 12px var(--pagePad);
@@ -221,15 +252,38 @@ ul, ol {
 }
 
 /* ===== Helpers ===== */
-.h2 { font-size: var(--fontH2); font-weight: 800; }
-.h3 { font-size: var(--fontH3); font-weight: 800; margin-bottom: 6px; }
+.h2 {
+  font-size: var(--fontH2);
+  font-weight: 800;
+}
+.h3 {
+  font-size: var(--fontH3);
+  font-weight: 800;
+  margin-bottom: 6px;
+}
 
-.muted { color: var(--muted); font-size: var(--fontSm); }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.muted {
+  color: var(--muted);
+  font-size: var(--fontSm);
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+}
 
-.stack { display: grid; gap: 12px; }
-.row { display: flex; gap: 14px; }
-.rowWrap { display: flex; flex-wrap: wrap; gap: 10px; }
+.stack {
+  display: grid;
+  gap: var(--blockGap);
+}
+.row {
+  display: flex;
+  gap: 14px;
+}
+.rowWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 
 /* ===== Cards ===== */
 .card {
@@ -240,7 +294,9 @@ ul, ol {
   overflow: hidden;
 }
 
-.cardBody { padding: var(--cardPad); }
+.cardBody {
+  padding: var(--cardPad);
+}
 
 /* ===== Buttons ===== */
 .btn {
@@ -252,6 +308,10 @@ ul, ol {
   text-decoration: none;
   color: var(--text);
   font-weight: 700;
+}
+
+.btn:hover {
+  filter: brightness(0.98);
 }
 
 .iconBtn {
@@ -267,18 +327,16 @@ ul, ol {
   cursor: pointer;
 }
 
-.iconBtn:hover { filter: brightness(0.98); }
+.iconBtn:hover {
+  filter: brightness(0.98);
+}
 
 /* ===== Settings button (fix the “bar through it”) ===== */
 .settingsFloating {
   position: fixed;
   top: 14px;
   right: 14px;
-
-  /* Make absolutely sure nothing overlays it */
   z-index: 100000;
-
-  /* Ensure it paints a solid surface */
   background: var(--surface);
   box-shadow: var(--shadow);
 }
@@ -300,22 +358,17 @@ details > summary::marker {
   content: "" !important;
 }
 
-/* Your component uses .expandableSummary + inner .row, so keep summary simple */
+/* Your Expandable uses .expandableSummary + inner .row */
 .expandableSummary {
   cursor: pointer;
 }
-
-/* Ensure the custom arrow + title are aligned */
 .expandableSummary .row {
-  align-items: center !important; /* beats any looser rules */
+  align-items: center !important;
 }
-
-/* Make the arrow not sit “high” */
 .expandableSummary .mono {
   line-height: 1;
 }
 
-/* Title/subtitle styling */
 .expandableTitle {
   font-weight: 800;
   line-height: 1.2;
@@ -326,6 +379,18 @@ details > summary::marker {
   font-size: var(--fontSm);
   color: var(--muted);
   line-height: 1.25;
+
+  /* hard single-line preview */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Expanded body rhythm */
+details.expandable > .cardBody {
+  display: grid;
+  gap: var(--blockGap);
 }
 
 /* ===== Modal ===== */
@@ -388,9 +453,18 @@ details > summary::marker {
   font-weight: 800;
 }
 
-.settingsNavItem:hover { background: var(--surface); border-color: var(--border); }
-.settingsNavItem.active { background: var(--surface); border-color: var(--border2); }
-.settingsNavItem:disabled { opacity: 0.55; cursor: not-allowed; }
+.settingsNavItem:hover {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.settingsNavItem.active {
+  background: var(--surface);
+  border-color: var(--border2);
+}
+.settingsNavItem:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 .pill {
   font-size: 11px;
@@ -401,7 +475,9 @@ details > summary::marker {
   color: var(--text);
 }
 
-.settingsContent { padding: 14px; }
+.settingsContent {
+  padding: 14px;
+}
 
 .settingsGrid {
   display: grid;
@@ -421,7 +497,9 @@ details > summary::marker {
   text-align: left;
 }
 
-.themeChoice.active { border-color: var(--text); }
+.themeChoice.active {
+  border-color: var(--text);
+}
 
 .themeSwatch {
   width: 44px;
@@ -431,16 +509,38 @@ details > summary::marker {
   flex: 0 0 auto;
 }
 
-.themeSwatch-classic { background: linear-gradient(135deg, #ffffff 0%, #f6f7fb 100%); }
-.themeSwatch-midnight { background: linear-gradient(135deg, #121a33 0%, #0b1020 100%); border-color: rgba(238, 240, 247, 0.2); }
-.themeSwatch-ocean { background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%); }
-.themeSwatch-forest { background: linear-gradient(135deg, #678560f2 0%, #242f20 100%); border-color: rgba(14, 50, 13, 0.501);}
-.themeSwatch-rose { background: linear-gradient(135deg, #ffffff 0%, #fff1f4 100%); }
-.themeSwatch-contrast { background: linear-gradient(135deg, #111111 0%, #000000 100%); border-color: rgba(255, 255, 255, 0.25); }
-.themeSwatch-frog { background: linear-gradient(135deg, #a6e2a9cd 0%, #135714c3 100%); }
-.themeSwatch-cyber { background: linear-gradient(135deg, #00ff1a7e 0%, #060606 100%); border-color: #459d45; }
+.themeSwatch-classic {
+  background: linear-gradient(135deg, #ffffff 0%, #f6f7fb 100%);
+}
+.themeSwatch-midnight {
+  background: linear-gradient(135deg, #121a33 0%, #0b1020 100%);
+  border-color: rgba(238, 240, 247, 0.2);
+}
+.themeSwatch-ocean {
+  background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+}
+.themeSwatch-forest {
+  background: linear-gradient(135deg, #678560f2 0%, #242f20 100%);
+  border-color: rgba(14, 50, 13, 0.501);
+}
+.themeSwatch-rose {
+  background: linear-gradient(135deg, #ffffff 0%, #fff1f4 100%);
+}
+.themeSwatch-contrast {
+  background: linear-gradient(135deg, #111111 0%, #000000 100%);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.themeSwatch-frog {
+  background: linear-gradient(135deg, #a6e2a9cd 0%, #135714c3 100%);
+}
+.themeSwatch-cyber {
+  background: linear-gradient(135deg, #00ff1a7e 0%, #060606 100%);
+  border-color: #459d45;
+}
 
-.themeChoiceTitle { font-weight: 900; }
+.themeChoiceTitle {
+  font-weight: 900;
+}
 
 .segmented {
   display: grid;
@@ -457,12 +557,22 @@ details > summary::marker {
   text-align: left;
 }
 
-.segmentedBtn.active { border-color: var(--text); }
-.segmentedTitle { font-weight: 900; }
-.segmentedDesc { font-size: var(--fontSm); color: var(--muted); margin-top: 2px; }
+.segmentedBtn.active {
+  border-color: var(--text);
+}
+.segmentedTitle {
+  font-weight: 900;
+}
+.segmentedDesc {
+  font-size: var(--fontSm);
+  color: var(--muted);
+  margin-top: 2px;
+}
 
 @media (max-width: 760px) {
-  .modalBody { grid-template-columns: 1fr; }
+  .modalBody {
+    grid-template-columns: 1fr;
+  }
 
   .settingsNav {
     border-right: none;
@@ -471,115 +581,121 @@ details > summary::marker {
     overflow-x: auto;
   }
 
-  .settingsGrid { grid-template-columns: 1fr; }
-  .segmented { grid-template-columns: 1fr; }
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+  .segmented {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* ===== Expandable content spacing ===== */
-details.expandable > .cardBody {
+/* ===== LIST SYSTEM (the single source of truth across tabs) ===== */
+.list {
   display: grid;
-  gap: 12px; /* space between cards/items inside dropdown */
-}
-
-/* If a dropdown contains a list of items, space them nicely */
-details.expandable > .cardBody ul {
-  display: grid;
-  gap: 10px;
-  padding-left: 0;
-}
-
-details.expandable > .cardBody li {
+  gap: var(--listGap);
   margin: 0;
   padding: 0;
 }
 
-/* ===== Card internal rhythm ===== */
-.cardBody > * + * {
-  margin-top: 14px;
-}
-
-/* Headings shouldn't create huge random spacing */
-.cardBody h1, .cardBody h2, .cardBody h3, .cardBody h4 {
-  margin: 0;
-}
-
-/* Paragraph-ish elements stay readable */
-.cardBody p {
-  margin: 6px 0 0;
-}
-
-/* ===== Courses: make "Next assignments" list items look like mini-cards ===== */
-.cardBody ul li {
+.listItem {
   border: 1px solid var(--border);
-  background: var(--surface2);
-  border-radius: var(--radiusMd);
-  padding: 10px 12px;
-  box-shadow: var(--shadow);
-}
-
-/* If you used the bullet ::before earlier, remove it for these mini-cards */
-.cardBody ul li::before {
-  content: none;
-}
-
-/* Give breathing room between the mini-cards */
-.cardBody ul {
-  display: grid;
-  gap: 10px;
-  padding-left: 0; /* no indent since they are boxes now */
-}
-
-/* Preserve newlines + indentation for message bodies */
-.preserveWhitespace {
-  white-space: pre-wrap;   /* keeps newlines + wraps long lines */
-  word-break: break-word;  /* prevents overflow on long URLs/words */
-}
-
-/* ===== Next assignments: nicer mini-cards ===== */
-/* Assumes "Next assignments" is rendered as a UL inside .cardBody */
-.cardBody ul {
-  display: grid;
-  gap: 10px;
-  padding-left: 0;
-  margin: 0;
-}
-
-.cardBody ul li {
+  border-radius: var(--radiusLg);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radiusMd);
-  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.listItem.dangerItem {
+  border-color: rgba(200, 40, 40, 0.35);
+  background: rgba(200, 40, 40, 0.06);
+}
+
+/* Stronger, theme-safe missing assignment card */
+.dangerItem {
+  position: relative;
+  overflow: hidden; /* required for the accent stripe */
+  border: 1px solid rgba(255, 80, 80, 0.55);
+  background: rgba(255, 255, 255, 0.02); /* basically neutral on all themes */
+  box-shadow:
+    0 0 0 1px rgba(255, 80, 80, 0.12),
+    0 6px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* When focused + missing, keep visibility high */
+.dangerItem.isFocused {
+  box-shadow:
+    0 0 0 2px rgba(255, 110, 110, 0.35),
+    0 14px 32px rgba(0, 0, 0, 0.22);
+}
+
+.dangerItem .assignmentDetails .preserveWhitespace {
+  color: inherit;
+}
+
+/* Make Missing badge readable on darker red background */
+/* Badge should look like a “chip”, not blend into the card */
+.badgeDanger,
+.dangerItem .badgeDanger {
+  background: rgba(216, 19, 19, 0.92);
+  border-color: rgba(255, 120, 120, 0.85);
+  color: #fff;
+}
+
+.dangerItem::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: rgba(255, 60, 60, 0.85);
+  box-shadow: 0 0 18px rgba(255, 60, 60, 0.35);
+}
+
+.dangerItem .assignmentRow {
+  padding-left: 8px; /* matches stripe width */
+}
+
+/* Slight glow for missing title */
+.dangerItem .assignmentName {
+  text-shadow: 0 0 6px rgba(255, 80, 80, 0.35);
+}
+
+/* Embedded expandable: flatten ONLY the top-level expandable inside a listItem */
+.listItem > .expandable,
+.listItem > details {
+  border: none;
+  border-radius: 0;
   box-shadow: none;
+  background: transparent;
 }
 
-/* subtle hover like a clickable item, even if only "View" is clickable */
-.cardBody ul li:hover {
-  border-color: var(--border2);
+/* Header padding only for the top-level expandable */
+.listItem > .expandable .expandableSummary,
+.listItem > details > summary {
+  padding: var(--cardPad);
 }
 
-/* Remove any leftover fake bullets */
-.cardBody ul li::before {
-  content: none !important;
+/* Body padding only for the top-level expandable */
+.listItem > .expandable .expandableBody,
+.listItem > .expandable .expandableContent,
+.listItem > details > .cardBody {
+  padding: 0 var(--cardPad) var(--cardPad);
 }
 
-/* Make links inside these cards look like action links, not default blue underlined */
-.cardBody ul li a {
-  color: var(--text);
-  text-decoration: none;
-  font-weight: 800;
+/* (Generic) cardBody inside list items */
+.listItem .cardBody {
+  padding: 0 var(--cardPad) var(--cardPad);
 }
 
-.cardBody ul li a:hover {
-  text-decoration: underline;
-}
-
+/* ===== Preserve newlines + indentation for message bodies ===== */
 .preserveWhitespace {
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* ===== Toggle switch ===== */
-.toggleRow{
+.toggleRow {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -598,7 +714,9 @@ details.expandable > .cardBody li {
   padding: 0;
 }
 
-.toggle:hover { filter: brightness(0.98); }
+.toggle:hover {
+  filter: brightness(0.98);
+}
 
 .toggleTrack {
   position: relative;
@@ -608,12 +726,9 @@ details.expandable > .cardBody li {
   transition: background 120ms ease;
 }
 
-/* OFF = muted red */
 .toggleTrack.off {
   background: rgba(200, 40, 40, 0.75);
 }
-
-/* ON = muted green */
 .toggleTrack.on {
   background: rgba(20, 160, 70, 0.35);
 }
@@ -634,46 +749,7 @@ details.expandable > .cardBody li {
   transform: translateX(14px);
 }
 
-/* ===== Embedded expandable: remove the "second box" inside listItem cards ===== */
-.listItem .expandable {
-  /* If your Expandable root uses .expandable */
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-}
-
-/* If your Expandable uses a different root class, keep this too */
-.listItem details {
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-}
-
-/* Keep the header spacing nice inside listItem */
-.listItem .expandableSummary,
-.listItem summary {
-  padding: 14px;
-}
-
-/* Ensure expanded body doesn't add a second rounded edge */
-.listItem .expandableBody,
-.listItem .expandableContent {
-  padding: 0 14px 14px;
-}
-
-/* Optional: tighten borders so listItem looks crisp */
-.listItem {
-  border: 1px solid var(--border);
-  border-radius: var(--radiusLg);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  overflow: hidden; /* clips inner content so corners stay clean */
-}
-
 /* ===== Danger / alert styling ===== */
-
 .dangerText {
   color: rgb(200, 60, 60);
   font-weight: 800;
@@ -683,7 +759,6 @@ details.expandable > .cardBody li {
   color: rgba(200, 60, 60, 0.85);
 }
 
-/* Inline "MISSING" badge inside subtitles */
 .dangerBadgeInline {
   display: inline-flex;
   align-items: center;
@@ -697,12 +772,6 @@ details.expandable > .cardBody li {
   color: rgb(200, 60, 60);
 }
 
-/* Give missing cards a subtle red tint while keeping your existing layout */
-.listItem.dangerItem {
-  border-color: rgba(200, 40, 40, 0.35);
-  background: rgba(200, 40, 40, 0.06);
-}
-
 /* ===== Grade hidden pill ===== */
 .gradeHiddenPill {
   display: inline-block;
@@ -712,4 +781,227 @@ details.expandable > .cardBody li {
   background: var(--surface2);
   color: var(--muted);
   font-style: italic;
+}
+
+/* ===== Badge styling ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 12px;
+  border: 2px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.badgeSuccess {
+  border-color: rgba(20, 160, 70, 0.35);
+  background: rgba(20, 160, 70, 0.18);
+  color: rgb(20, 140, 60);
+}
+.badgeDanger {
+  border-color: rgba(200, 40, 40, 0.35);
+  background: rgba(200, 40, 40, 0.18);
+  color: rgb(200, 60, 60);
+}
+.badgeWarn {
+  border-color: rgba(220, 160, 40, 0.45);
+  background: rgba(220, 160, 40, 0.22);
+  color: rgb(170, 120, 20);
+}
+.badgeNeutral {
+  border-color: var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+/* ===== UpcomingAssignments (clean, non-duplicated) ===== */
+.assignmentRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.assignmentMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--cardPad);
+  display: grid;
+  gap: var(--blockGap);
+}
+
+.assignmentTop {
+  display: grid;
+  gap: 6px;
+}
+
+.assignmentTitleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.assignmentTitleRowLeft {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.assignmentName {
+  font-weight: 900;
+  font-size: calc(var(--fontBase) + 4px);
+  line-height: 1.15;
+}
+
+.assignmentPts {
+  margin-left: 4px;
+}
+
+.assignmentControls {
+  margin-top: var(--blockGap);
+}
+
+.assignmentDetails {
+  margin-top: var(--blockGap);
+  width: 100%;
+}
+
+/* Right column: due + button pinned top-right */
+.assignmentActions {
+  flex: 0 0 auto;
+  padding: var(--cardPad);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 210px;
+  padding-top: calc(var(--cardPad) + 2px); /* extra breathing room from top */
+}
+
+.assignmentDueRight {
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Focus highlight */
+.listItem.isFocused {
+  outline: 2px solid rgba(255, 200, 0, 0.9);
+  box-shadow: 0 0 0 6px rgba(255, 200, 0, 0.18);
+}
+
+/* ===== Details (Expandable) inside assignments ===== */
+/* Goal: one consistent surface color (no multi-tone header/body) */
+
+.assignmentDetails details.expandable {
+  border: 2px solid var(--border);
+  border-radius: var(--radiusMd);
+  background: var(--surface2);
+  overflow: hidden;
+}
+
+/* Ensure the SUMMARY has the same background as the body */
+.assignmentDetails details.expandable > summary.cardBody.expandableSummary {
+  background: var(--surface2);
+  padding: 12px 14px;
+  display: block;
+  border-bottom: 1px solid var(--border);
+}
+
+/* When closed, the border-bottom should not show as a “random extra line” */
+.assignmentDetails details.expandable:not([open])
+  > summary.cardBody.expandableSummary {
+  border-bottom-color: transparent;
+}
+
+/* Body background matches summary background */
+.assignmentDetails details.expandable > .cardBody.expandableBody {
+  background: var(--surface2);
+  padding: 10px 14px 14px;
+}
+
+/* Row alignment inside summary */
+.assignmentDetails .expandableSummary .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Hide the subtitle preview when open */
+.assignmentDetails details[open] .expandableSubtitle {
+  display: none;
+}
+
+/* Body padding (override listItem .cardBody so expanded content renders nicely) */
+.assignmentDetails details.expandable > .cardBody,
+.assignmentDetails details > .cardBody,
+.assignmentDetails .expandable .cardBody,
+.assignmentDetails .expandableBody,
+.assignmentDetails .expandableContent {
+  padding: 0 14px 14px;
+}
+
+/* Hide the subtitle preview when open */
+.assignmentDetails details[open] .expandableSubtitle {
+  display: none;
+}
+
+/* UpcomingAssignments: wrapper card around the entire list */
+.upcomingPanel {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface), rgba(187, 187, 187, 0.617) 10%);
+  overflow: hidden;
+}
+
+.upcomingPanelHeader {
+  padding: 14px 16px 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--surface);
+}
+
+.upcomingPanelTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.upcomingPanelCount {
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 2px solid rgba(136, 136, 136, 0.325);
+  opacity: 0.85;
+}
+
+.upcomingPanelSub {
+  margin-top: 4px;
+}
+
+.upcomingPanelBody {
+  padding: 12px 12px 6px 12px;
+}
+
+/* Make the list spacing look intentional inside the panel */
+.upcomingPanelBody .list {
+  margin: 0;
+  padding: 0;
+}
+
+/* Optional: slightly soften list items when inside this panel */
+.upcomingPanelBody .listItem {
+  border-radius: 12px;
+}
+
+.upcomingPanelFooter {
+  padding: 10px 16px 14px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }

@@ -415,7 +415,7 @@ export function MyInformation() {
         ) : !announcements?.length ? (
           <div className="muted">No recent announcements.</div>
         ) : (
-          <ul className="list">
+          <ul className="list listSpaced">
             {announcements.map((a) => {
               const isNew = a?.id && !seenIds.has(a.id);
               const titleText = a?.title || "Untitled announcement";
@@ -512,7 +512,7 @@ export function MyInformation() {
             No assignments due in the next 24 hours that are incomplete.
           </div>
         ) : (
-          <ul className="list">
+          <ul className="list listSpaced">
             {overview.due_next_24h.map((a) => {
               const titleText = a?.name || "Untitled assignment";
 
@@ -583,7 +583,7 @@ export function MyInformation() {
             No missing work detected across your active courses.
           </div>
         ) : (
-          <ul className="list">
+          <ul className="list listSpaced">
             {overview.missing.map((m) => {
               const titleText = m?.name || "Untitled assignment";
 
@@ -672,7 +672,7 @@ export function MyInformation() {
             No active courses found.
           </div>
         ) : (
-          <ul className="list" style={{ marginTop: 10 }}>
+          <ul className="list listSpaced">
             {overview.grades.map((g) => {
               const shownGrade = g.display_grade ?? g.current_grade ?? "—";
               const isEstimated = !!g.grade_is_estimated;

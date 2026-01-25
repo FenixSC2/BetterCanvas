@@ -222,7 +222,7 @@ export function MyCourses() {
         } else {
           subtitleParts.push(
             <span key="gradeHidden" className="muted">
-              Grades: hidden
+              Grade: hidden
             </span>
           );
         }
@@ -262,7 +262,7 @@ export function MyCourses() {
                 <Toggle
                   checked={showGrades}
                   onChange={(v) => setGradeVisible(c.id, v)}
-                  label={showGrades ? "Hide grades" : "Show grades"}
+                  label={showGrades ? "Hide grade" : "Show grade"}
                 />
               </div>
             }
@@ -304,18 +304,20 @@ export function MyCourses() {
               </div>
 
               {missingCount > 0 ? (
-                <div className="dangerBadge">
-                  ⚠ Missing work: {missingCount}
+                <div className={missingCount > 0 ? "muted dangerMuted" : "muted"}>
+                  <strong>
+                    ⚠ Missing work: {missingCount}
+                  </strong>
                 </div>
               ) : null}
 
               <div>
-                <div className="h3">Next assignments</div>
+                <div className="h3">Next assignments: </div>
 
                 {nextAsgs.length === 0 ? (
                   <div className="muted">No upcoming assignments returned.</div>
                 ) : (
-                  <ul className="list">
+                  <ul className="list listSpaced">
                     {nextAsgs.map((a) => {
                       const titleText = a?.name || "Untitled assignment";
 
@@ -366,7 +368,7 @@ export function MyCourses() {
               </div>
 
               <div>
-                <div className="h3">Current grade</div>
+                <div className="h3">Current grade: </div>
 
                 {showGrades ? (
                   <div className="muted">
@@ -387,12 +389,7 @@ export function MyCourses() {
               </div>
 
               <div>
-                <div className="h3 dangerText">Missing work</div>
-                <div
-                  className={missingCount > 0 ? "muted dangerMuted" : "muted"}
-                >
-                  Missing count: <span className="mono">{missingCount}</span>
-                </div>
+                <div className="h3 dangerText">Missing work: </div>
 
                 {missing.length === 0 ? (
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -400,8 +397,7 @@ export function MyCourses() {
                   </div>
                 ) : (
                   <ul
-                    className="list"
-                    style={{ display: "grid", gap: 10, marginTop: 8 }}
+                    className="list listSpaced"
                   >
                     {missing.map((m) => {
                       const titleText = (

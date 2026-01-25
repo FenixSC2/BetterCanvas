@@ -422,7 +422,7 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             name="Reading Check 1",
             due_at=now - timedelta(days=2),
             points_possible=5,
-            description="<p>This is intentionally overdue + unsubmitted to test missing detection.</p>",
+            description="<p>This is intentionally overdue + unsubmitted to test missing detection.\n\nMore text a couple lines below</p>",
             submission_types=["online_text_entry"],
             html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{999 + course_id * 1000}",
             submitted=False,

@@ -46,7 +46,14 @@ function getUrgencyBadge(a) {
  * - closes on outside click + Escape
  * - uses position: fixed + getBoundingClientRect for reliable alignment
  */
-function Popover({ open, onClose, anchorRef, children, align = "right", width = 320 }) {
+function Popover({
+  open,
+  onClose,
+  anchorRef,
+  children,
+  align = "right",
+  width = 320,
+}) {
   const panelRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
@@ -68,7 +75,10 @@ function Popover({ open, onClose, anchorRef, children, align = "right", width = 
       }
 
       // clamp into viewport
-      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+      left = Math.max(
+        margin,
+        Math.min(left, window.innerWidth - width - margin)
+      );
 
       // prefer below anchor; clamp if near bottom
       let top = rect.bottom + margin;
@@ -120,7 +130,11 @@ function Popover({ open, onClose, anchorRef, children, align = "right", width = 
         width,
       }}
     >
-      <div ref={panelRef} className="card" style={{ boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }}>
+      <div
+        ref={panelRef}
+        className="card"
+        style={{ boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }}
+      >
         <div className="cardBody">{children}</div>
       </div>
     </div>
@@ -131,24 +145,45 @@ function parseUpcomingTarget(raw) {
   if (!raw) return null;
 
   // Accept "courseId:assignmentId"
-  if (typeof raw === "string" && raw.includes(":") && !raw.trim().startsWith("{")) {
+  if (
+    typeof raw === "string" &&
+    raw.includes(":") &&
+    !raw.trim().startsWith("{")
+  ) {
     const [c, a] = raw.split(":");
     const courseId = Number(c);
     const assignmentId = Number(a);
-    if (Number.isFinite(courseId) && Number.isFinite(assignmentId)) return { courseId, assignmentId };
+    if (Number.isFinite(courseId) && Number.isFinite(assignmentId))
+      return { courseId, assignmentId };
   }
 
   // Accept JSON: {"courseId":...,"assignmentId":...} or variants
   try {
     const obj = JSON.parse(raw);
-    const courseId = Number(obj.courseId ?? obj.course_id ?? obj.cid ?? obj.course);
-    const assignmentId = Number(obj.assignmentId ?? obj.assignment_id ?? obj.id ?? obj.aid ?? obj.assignment);
-    if (Number.isFinite(courseId) && Number.isFinite(assignmentId)) return { courseId, assignmentId };
+    const courseId = Number(
+      obj.courseId ?? obj.course_id ?? obj.cid ?? obj.course
+    );
+    const assignmentId = Number(
+      obj.assignmentId ??
+        obj.assignment_id ??
+        obj.id ??
+        obj.aid ??
+        obj.assignment
+    );
+    if (Number.isFinite(courseId) && Number.isFinite(assignmentId))
+      return { courseId, assignmentId };
   } catch {
     // ignore
   }
 
   return null;
+}
+
+function firstLine(text, max = 120) {
+  if (!text) return "";
+  const t = String(text).replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
 export function UpcomingAssignments() {
@@ -158,6 +193,8 @@ export function UpcomingAssignments() {
     ({ signal }) => canvasApi.getUpcoming({ signal }),
     { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
   );
+
+  const [openDetailsKey, setOpenDetailsKey] = useState(null); // `${courseId}-${assignmentId}`
 
   const items = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
 
@@ -253,7 +290,9 @@ export function UpcomingAssignments() {
 
     const key = `${target.courseId}-${target.assignmentId}`;
     const exists = items.some(
-      (a) => Number(a.course_id) === target.courseId && Number(a.id) === target.assignmentId
+      (a) =>
+        Number(a.course_id) === target.courseId &&
+        Number(a.id) === target.assignmentId
     );
 
     // Clear storage regardless (avoid infinite jumping)
@@ -321,14 +360,26 @@ export function UpcomingAssignments() {
 
   return (
     <div className="stack" style={{ position: "relative" }}>
-      <div className="rowWrap" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+      <div
+        className="rowWrap"
+        style={{
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "center",
+        }}
+      >
         <div className="muted">
           Powered by <span className="mono">GET /api/upcoming</span>.
-          {upcomingQ.refreshing ? <span className="muted"> {" "}• Updating…</span> : null}
+          {upcomingQ.refreshing ? (
+            <span className="muted"> • Updating…</span>
+          ) : null}
         </div>
 
         {/* Controls */}
-        <div className="rowWrap" style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}>
+        <div
+          className="rowWrap"
+          style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}
+        >
           <button
             ref={filterBtnRef}
             className="btn"
@@ -367,14 +418,27 @@ export function UpcomingAssignments() {
       </div>
 
       {/* Filter popover — stack options vertically */}
-      <Popover open={filterOpen} onClose={() => setFilterOpen(false)} anchorRef={filterBtnRef} align="right" width={260}>
+      <Popover
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        anchorRef={filterBtnRef}
+        align="right"
+        width={260}
+      >
         <div className="stack">
           <div className="h3" style={{ marginBottom: 2 }}>
             Filter
           </div>
           <div className="muted">Show only assignments matching:</div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginTop: 6,
+            }}
+          >
             {[
               ["all", "All"],
               ["missing", "Missing"],
@@ -403,12 +467,20 @@ export function UpcomingAssignments() {
       </Popover>
 
       {/* Sorting popover */}
-      <Popover open={sortOpen} onClose={() => setSortOpen(false)} anchorRef={sortBtnRef} align="right" width={360}>
+      <Popover
+        open={sortOpen}
+        onClose={() => setSortOpen(false)}
+        anchorRef={sortBtnRef}
+        align="right"
+        width={360}
+      >
         <div className="stack">
           <div className="h3" style={{ marginBottom: 2 }}>
             Sorting blend
           </div>
-          <div className="muted">Left = prioritize due date • Right = prioritize points</div>
+          <div className="muted">
+            Left = prioritize due date • Right = prioritize points
+          </div>
 
           <div
             style={{
@@ -438,7 +510,10 @@ export function UpcomingAssignments() {
             </span>
           </div>
 
-          <div className="rowWrap" style={{ gap: 10, alignItems: "center", marginTop: 4 }}>
+          <div
+            className="rowWrap"
+            style={{ gap: 10, alignItems: "center", marginTop: 4 }}
+          >
             <span className="muted">Blend</span>
             <input
               type="number"
@@ -453,152 +528,218 @@ export function UpcomingAssignments() {
           </div>
 
           <div className="muted">
-            Tip: keep this around <span className="mono">0.25–0.45</span> to stay time-heavy.
+            Tip: keep this around <span className="mono">0.25–0.45</span> to
+            stay time-heavy.
           </div>
         </div>
       </Popover>
 
-      {filteredSorted.length === 0 ? (
-        <div className="muted">No assignments found for the selected filter.</div>
-      ) : null}
+      {/* === Upcoming assignments wrapper === */}
+      <div className="upcomingPanel">
+        <div className="upcomingPanelHeader">
+          <div className="upcomingPanelHeaderLeft">
+            <div className="upcomingPanelTitle">
+              Upcoming assignments
+              <span className="upcomingPanelCount mono">
+                {filteredSorted.length}
+              </span>
+            </div>
 
-      <ul className="list">
-        {filteredSorted.map((a) => {
-          const badge = getUrgencyBadge(a);
+            <div className="muted">
+              Filter: <span className="mono">{filterLabel}</span>
+              {upcomingQ.refreshing ? (
+                <span className="muted"> • Updating…</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
 
-          const isMissing =
-            !a.submitted && a.due_at && hoursUntil(a.due_at) != null && hoursUntil(a.due_at) < 0;
+        <div className="upcomingPanelBody">
+          {filteredSorted.length === 0 ? (
+            <div className="muted" style={{ padding: 10 }}>
+              No assignments found for the selected filter.
+            </div>
+          ) : (
+            <ul className="list listSpaced">
+              {filteredSorted.map((a) => {
+                const badge = getUrgencyBadge(a);
 
-          const courseLabel = a.course_name ?? "Unknown Course";
-          const dueLabel = fmtDue(a.due_at);
+                const isMissing =
+                  !a.submitted &&
+                  a.due_at &&
+                  hoursUntil(a.due_at) != null &&
+                  hoursUntil(a.due_at) < 0;
 
-          const desc = stripHtml(a.description);
-          const hasDesc = !!desc;
+                const courseLabel = a.course_name ?? "Unknown Course";
+                const dueLabel = fmtDue(a.due_at);
 
-          const focusId = `${a.course_id}-${a.id}`;
-          const isFocused = focusKey === focusId;
+                const desc = stripHtml(a.description);
+                const hasDesc = !!desc;
 
-          return (
-            <li
-              id={`asg-${focusId}`}
-              key={`${a.course_id}-${a.id}`}
-              className={`listItem ${isMissing ? "dangerItem" : ""}`}
-              style={
-                isFocused
-                  ? {
-                      outline: "2px solid rgba(255, 200, 0, 0.9)",
-                      boxShadow: "0 0 0 6px rgba(255, 200, 0, 0.18)",
-                      borderRadius: 12,
-                      transition: "box-shadow 200ms ease, outline 200ms ease",
-                    }
-                  : undefined
-              }
-            >
-              <div
-                style={{
-                  display: "flex",
-                  gap: 12,
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  width: "100%",
-                }}
-              >
-                <div className="listMain" style={{ width: "100%" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "space-between",
-                      gap: 10,
-                    }}
-                  >
-                    <div
-                      className="listTitle"
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {a.name}
+                const focusId = `${a.course_id}-${a.id}`;
+                const isFocused = focusKey === focusId;
 
-                      {/* NOTE: this relies on your styles: .badge, .badgeSuccess, etc */}
-                      <span className={`badge badge${badge.variant === "success"
-                        ? "Success"
-                        : badge.variant === "danger"
-                        ? "Danger"
-                        : badge.variant === "warning"
-                        ? "Warn"
-                        : badge.variant === "neutral"
-                        ? "Neutral"
-                        : "Neutral"}`}>
-                        {badge.label}
-                      </span>
+                const badgeClass =
+                  badge.variant === "success"
+                    ? "badgeSuccess"
+                    : badge.variant === "danger"
+                    ? "badgeDanger"
+                    : badge.variant === "warning"
+                    ? "badgeWarn"
+                    : "badgeNeutral";
 
-                      {typeof a.points_possible === "number" ? (
-                        <span className="muted">
-                          <span className="mono">{a.points_possible}</span> pts
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className={`muted ${isMissing ? "dangerText" : ""}`} style={{ whiteSpace: "nowrap" }}>
-                      Due: <span className="mono">{dueLabel}</span>
-                    </div>
-                  </div>
-
-                  <div className={`muted ${isMissing ? "dangerMuted" : ""}`} style={{ marginTop: 4 }}>
+                const subtitle = (
+                  <span className={`muted ${isMissing ? "dangerMuted" : ""}`}>
                     <span className="mono">{courseLabel}</span>
-                  </div>
+                    {" • "}
+                    Due:{" "}
+                    <span className={`mono ${isMissing ? "dangerText" : ""}`}>
+                      {dueLabel}
+                    </span>
+                    {typeof a.points_possible === "number" ? (
+                      <>
+                        {" • "}
+                        <span className="mono">{a.points_possible}</span> pts
+                      </>
+                    ) : null}
+                    {" • "}
+                    <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                  </span>
+                );
 
-                  <div style={{ marginTop: 8 }}>
-                    <WorkloadEstimateControl courseId={a.course_id} assignmentId={a.id} />
-                  </div>
+                const right = a.html_url ? (
+                  <a
+                    className="btn"
+                    href={a.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open assignment in Canvas"
+                    style={{ whiteSpace: "nowrap" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Open in Canvas
+                  </a>
+                ) : null;
 
-                  <div style={{ marginTop: 10 }}>
-                    <Expandable
-                      title="Details"
-                      subtitle={
-                        hasDesc ? (
-                          <span className="muted">Description available</span>
-                        ) : (
-                          <span className="muted">No description</span>
-                        )
-                      }
-                    >
-                      <div className="stack">
-                        {hasDesc ? (
-                          <div className="desc">{desc}</div>
-                        ) : (
-                          <div className="muted">No description provided.</div>
-                        )}
+                return (
+                  <li
+                    id={`asg-${focusId}`}
+                    key={`${a.course_id}-${a.id}`}
+                    className={`listItem ${isMissing ? "dangerItem" : ""} ${
+                      isFocused ? "isFocused" : ""
+                    }`}
+                  >
+                    <div className="assignmentRow">
+                      <div className="assignmentMain">
+                        <div className="assignmentTop">
+                          <div className="assignmentTitleRow">
+                            <div className="assignmentTitleRowLeft">
+                              <span className="assignmentName">{a.name}</span>
+
+                              <span
+                                className={`badge badge${
+                                  badge.variant === "success"
+                                    ? "Success"
+                                    : badge.variant === "danger"
+                                    ? "Danger"
+                                    : badge.variant === "warning"
+                                    ? "Warn"
+                                    : "Neutral"
+                                }`}
+                              >
+                                {badge.label}
+                              </span>
+
+                              {typeof a.points_possible === "number" ? (
+                                <span className="muted assignmentPts">
+                                  <span className="mono">
+                                    {a.points_possible}
+                                  </span>{" "}
+                                  pts
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div
+                            className={`muted ${
+                              isMissing ? "dangerMuted" : ""
+                            }`}
+                          >
+                            <span className="mono">{courseLabel}</span>
+                          </div>
+                        </div>
+
+                        <div className="assignmentControls">
+                          <WorkloadEstimateControl
+                            courseId={a.course_id}
+                            assignmentId={a.id}
+                          />
+                        </div>
+
+                        <div className="assignmentDetails">
+                          <Expandable
+                            title="Details"
+                            subtitle={
+                              hasDesc && openDetailsKey !== focusId ? (
+                                <span className="muted">{firstLine(desc)}</span>
+                              ) : hasDesc ? (
+                                <span className="muted"> </span>
+                              ) : (
+                                <span className="muted">No description</span>
+                              )
+                            }
+                            onToggleOpen={(isOpen) =>
+                              setOpenDetailsKey(isOpen ? focusId : null)
+                            }
+                          >
+                            <div className="stack">
+                              {hasDesc ? (
+                                <div className="preserveWhitespace">{desc}</div>
+                              ) : (
+                                <div className="muted">
+                                  No description provided.
+                                </div>
+                              )}
+                            </div>
+                          </Expandable>
+                        </div>
                       </div>
-                    </Expandable>
-                  </div>
-                </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {a.html_url ? (
-                    <a
-                      className="btn"
-                      href={a.html_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open assignment in Canvas"
-                      style={{ whiteSpace: "nowrap" }}
-                    >
-                      Open in Canvas
-                    </a>
-                  ) : null}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                      <div className="assignmentActions">
+                        <div
+                          className={`muted assignmentDueRight ${
+                            isMissing ? "dangerText" : ""
+                          }`}
+                        >
+                          Due: <span className="mono">{dueLabel}</span>
+                        </div>
 
-      <div className="muted">Tip: effort estimates are stored locally in your browser (per assignment).</div>
+                        {a.html_url ? (
+                          <a
+                            className="btn"
+                            href={a.html_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open assignment in Canvas"
+                          >
+                            Open in Canvas
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="upcomingPanelFooter muted">
+          Tip: effort estimates are stored locally in your browser (per
+          assignment).
+        </div>
+      </div>
     </div>
   );
 }
