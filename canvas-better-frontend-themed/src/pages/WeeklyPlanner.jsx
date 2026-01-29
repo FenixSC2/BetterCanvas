@@ -668,7 +668,7 @@ export function WeeklyPlanner() {
                   })
                 }
               />
-              Show completed (submitted)
+              Show submitted
             </label>
 
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
