@@ -1,5 +1,7 @@
+// SettingsModal.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../theme/useTheme";
+import { getEffortSnapMinutes, setEffortSnapMinutes } from "../lib/workloadEstimates";
 
 const THEME_OPTIONS = [
   { key: "classic", label: "Classic", desc: "Clean light theme" },
@@ -21,6 +23,9 @@ export function SettingsModal({ open, onClose }) {
   const { theme, density, setTheme, setDensity } = useTheme();
   const [activeSection, setActiveSection] = useState("themes");
 
+  // Effort settings draft
+  const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
+
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e) {
@@ -39,9 +44,16 @@ export function SettingsModal({ open, onClose }) {
     };
   }, [open]);
 
+  // Refresh effort drafts when opening modal
+  useEffect(() => {
+    if (!open) return;
+    setSnapDraft(getEffortSnapMinutes());
+  }, [open]);
+
   const sections = useMemo(
     () => [
       { key: "themes", label: "Themes" },
+      { key: "effort", label: "Effort" }, // <-- NEW
       { key: "notifications", label: "Notifications", disabled: true },
       { key: "gpa", label: "GPA visibility", disabled: true },
       { key: "other", label: "Other", disabled: true },
@@ -50,6 +62,14 @@ export function SettingsModal({ open, onClose }) {
   );
 
   if (!open) return null;
+
+  function applySnap() {
+    // sanitize: integer minutes, min 1
+    const raw = typeof snapDraft === "number" ? snapDraft : Number(snapDraft);
+    const safe = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 10;
+    setEffortSnapMinutes(safe);
+    setSnapDraft(getEffortSnapMinutes());
+  }
 
   return (
     <div className="modalOverlay" onMouseDown={onClose} role="presentation">
@@ -145,6 +165,47 @@ export function SettingsModal({ open, onClose }) {
                           <div className="segmentedDesc">{opt.desc}</div>
                         </button>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : activeSection === "effort" ? (
+              <div className="stack">
+                <div className="card">
+                  <div className="cardBody">
+                    <div className="h3">Effort</div>
+                    <div className="muted" style={{ marginBottom: 10 }}>
+                      Controls how the progress bar snaps when you drag it.
+                    </div>
+
+                    <div className="rowWrap" style={{ alignItems: "center" }}>
+                      <div style={{ minWidth: 220, fontWeight: 800 }}>
+                        Drag snapping increment
+                      </div>
+
+                      <input
+                        className="effortInput"
+                        type="text"
+                        inputMode="numeric"
+                        value={snapDraft}
+                        onChange={(e) => setSnapDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applySnap();
+                          }
+                        }}
+                        style={{ width: 120 }}
+                      />
+                      <span className="muted">minutes</span>
+
+                      <button type="button" className="btn" onClick={applySnap}>
+                        Apply
+                      </button>
+                    </div>
+
+                    <div className="muted" style={{ marginTop: 8 }}>
+                      Default: 10 minutes. Minimum: 1 minute.
                     </div>
                   </div>
                 </div>
