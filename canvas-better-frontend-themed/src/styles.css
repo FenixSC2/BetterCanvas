@@ -37,6 +37,16 @@
   --fontSm: 13px;
   --fontH2: 18px;
   --fontH3: 14px;
+
+  /* Badge danger scheme (light default) */
+  --badge-danger-bg: rgba(200, 40, 40, 0.18);
+  --badge-danger-border: rgba(200, 40, 40, 0.3);
+  --badge-danger-text: rgba(200, 40, 40, 0.95);
+
+  /* Strong danger scheme (dark themes / emphasized rows) */
+  --badge-danger-bg-strong: rgba(216, 19, 19, 0.92);
+  --badge-danger-border-strong: rgba(255, 120, 120, 0.85);
+  --badge-danger-text-strong: #ffffff;
 }
 
 /* ===== Theme variants ===== */
@@ -123,11 +133,20 @@ html[data-theme="contrast"] .toggleTrack.off,
 html[data-theme="forest"] .toggleTrack.off {
   background: rgba(255, 80, 80, 0.28);
 }
-
 html[data-theme="midnight"] .toggleTrack.on,
 html[data-theme="contrast"] .toggleTrack.on,
 html[data-theme="forest"] .toggleTrack.on {
   background: rgba(80, 255, 160, 0.22);
+}
+
+/* Dark themes: default danger badge uses strong scheme everywhere */
+[data-theme="midnight"],
+[data-theme="forest"],
+[data-theme="cyber"],
+[data-theme="contrast"] {
+  --badge-danger-bg: var(--badge-danger-bg-strong);
+  --badge-danger-border: var(--badge-danger-border-strong);
+  --badge-danger-text: var(--badge-danger-text-strong);
 }
 
 /* ===== Density variants ===== */
@@ -172,7 +191,6 @@ body {
   font-size: var(--fontBase);
 }
 
-/* Make controls inherit theme text */
 button,
 input,
 select,
@@ -181,7 +199,7 @@ textarea {
   color: inherit;
 }
 
-/* Remove default list bullets globally (your UI uses lists for layout) */
+/* lists are used for layout */
 ul,
 ol {
   list-style: none;
@@ -314,6 +332,11 @@ ol {
   filter: brightness(0.98);
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .iconBtn {
   display: inline-flex;
   align-items: center;
@@ -331,7 +354,12 @@ ol {
   filter: brightness(0.98);
 }
 
-/* ===== Settings button (fix the “bar through it”) ===== */
+.btnDanger {
+  border-color: rgba(200, 40, 40, 0.35);
+  background: rgba(200, 40, 40, 0.08);
+}
+
+/* ===== Settings floating button ===== */
 .settingsFloating {
   position: fixed;
   top: 14px;
@@ -358,7 +386,6 @@ details > summary::marker {
   content: "" !important;
 }
 
-/* Your Expandable uses .expandableSummary + inner .row */
 .expandableSummary {
   cursor: pointer;
 }
@@ -379,15 +406,12 @@ details > summary::marker {
   font-size: var(--fontSm);
   color: var(--muted);
   line-height: 1.25;
-
-  /* hard single-line preview */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
 
-/* Expanded body rhythm */
 details.expandable > .cardBody {
   display: grid;
   gap: var(--blockGap);
@@ -589,7 +613,7 @@ details.expandable > .cardBody {
   }
 }
 
-/* ===== LIST SYSTEM (the single source of truth across tabs) ===== */
+/* ===== LIST SYSTEM ===== */
 .list {
   display: grid;
   gap: var(--listGap);
@@ -602,7 +626,7 @@ details.expandable > .cardBody {
   border-radius: var(--radiusLg);
   background: var(--surface);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .listItem.dangerItem {
@@ -610,58 +634,7 @@ details.expandable > .cardBody {
   background: rgba(200, 40, 40, 0.06);
 }
 
-/* Stronger, theme-safe missing assignment card */
-.dangerItem {
-  position: relative;
-  overflow: hidden; /* required for the accent stripe */
-  border: 1px solid rgba(255, 80, 80, 0.55);
-  background: rgba(255, 255, 255, 0.02); /* basically neutral on all themes */
-  box-shadow:
-    0 0 0 1px rgba(255, 80, 80, 0.12),
-    0 6px 10px rgba(0, 0, 0, 0.18);
-}
-
-/* When focused + missing, keep visibility high */
-.dangerItem.isFocused {
-  box-shadow:
-    0 0 0 2px rgba(255, 110, 110, 0.35),
-    0 14px 32px rgba(0, 0, 0, 0.22);
-}
-
-.dangerItem .assignmentDetails .preserveWhitespace {
-  color: inherit;
-}
-
-/* Make Missing badge readable on darker red background */
-/* Badge should look like a “chip”, not blend into the card */
-.badgeDanger,
-.dangerItem .badgeDanger {
-  background: rgba(216, 19, 19, 0.92);
-  border-color: rgba(255, 120, 120, 0.85);
-  color: #fff;
-}
-
-.dangerItem::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  background: rgba(255, 60, 60, 0.85);
-  box-shadow: 0 0 18px rgba(255, 60, 60, 0.35);
-}
-
-.dangerItem .assignmentRow {
-  padding-left: 8px; /* matches stripe width */
-}
-
-/* Slight glow for missing title */
-.dangerItem .assignmentName {
-  text-shadow: 0 0 6px rgba(255, 80, 80, 0.35);
-}
-
-/* Embedded expandable: flatten ONLY the top-level expandable inside a listItem */
+/* Flatten ONLY the top-level expandable inside a listItem */
 .listItem > .expandable,
 .listItem > details {
   border: none;
@@ -683,12 +656,12 @@ details.expandable > .cardBody {
   padding: 0 var(--cardPad) var(--cardPad);
 }
 
-/* (Generic) cardBody inside list items */
+/* Generic cardBody inside list items */
 .listItem .cardBody {
   padding: 0 var(--cardPad) var(--cardPad);
 }
 
-/* ===== Preserve newlines + indentation for message bodies ===== */
+/* preserve newlines + indentation for message bodies */
 .preserveWhitespace {
   white-space: pre-wrap;
   word-break: break-word;
@@ -749,41 +722,15 @@ details.expandable > .cardBody {
   transform: translateX(14px);
 }
 
-/* ===== Danger / alert styling ===== */
+/* ===== Danger / badges ===== */
 .dangerText {
   color: rgb(200, 60, 60);
   font-weight: 800;
 }
-
 .dangerMuted {
   color: rgba(200, 60, 60, 0.85);
 }
 
-.dangerBadgeInline {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-weight: 800;
-  font-size: 12px;
-  line-height: 1.4;
-  border: 1px solid rgba(200, 40, 40, 0.35);
-  background: rgba(200, 40, 40, 0.18);
-  color: #d81313eb;
-}
-
-/* ===== Grade hidden pill ===== */
-.gradeHiddenPill {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px dashed var(--border2);
-  background: var(--surface2);
-  color: var(--muted);
-  font-style: italic;
-}
-
-/* ===== Badge styling ===== */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -801,23 +748,88 @@ details.expandable > .cardBody {
   background: rgba(20, 160, 70, 0.18);
   color: rgb(20, 140, 60);
 }
-.badgeDanger {
-  border-color: rgba(200, 40, 40, 0.35);
-  background: rgba(200, 40, 40, 0.18);
-  color: rgb(200, 60, 60);
-}
+
 .badgeWarn {
   border-color: rgba(220, 160, 40, 0.45);
   background: rgba(220, 160, 40, 0.22);
   color: rgb(170, 120, 20);
 }
+
 .badgeNeutral {
   border-color: var(--border2);
   background: var(--surface2);
   color: var(--text);
 }
 
-/* ===== UpcomingAssignments (clean, non-duplicated) ===== */
+.badgeDanger {
+  background: var(--badge-danger-bg);
+  border-color: var(--badge-danger-border);
+  color: var(--badge-danger-text);
+}
+
+/* force strong badge inside “missing emphasis” rows */
+.dangerItem .badgeDanger {
+  background: var(--badge-danger-bg-strong);
+  border-color: var(--badge-danger-border-strong);
+  color: var(--badge-danger-text-strong);
+}
+
+/* Stronger, theme-safe missing assignment card */
+.dangerItem {
+  position: relative;
+  overflow: hidden; /* required for the accent stripe */
+  border: 1px solid rgba(255, 80, 80, 0.55);
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 0 0 1px rgba(255, 80, 80, 0.12),
+    0 6px 10px rgba(0, 0, 0, 0.18);
+}
+
+.dangerItem.isFocused {
+  box-shadow: 0 0 0 2px rgba(255, 110, 110, 0.35),
+    0 14px 32px rgba(0, 0, 0, 0.22);
+}
+
+.dangerItem::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: rgba(255, 60, 60, 0.85);
+  box-shadow: 0 0 18px rgba(255, 60, 60, 0.35);
+}
+
+.dangerItem .assignmentRow {
+  padding-left: 8px; /* matches stripe width */
+}
+
+.dangerItem .assignmentName {
+  text-shadow: 0 0 6px rgba(255, 80, 80, 0.35);
+}
+
+.dangerItem .assignmentDetails .preserveWhitespace {
+  color: inherit;
+}
+
+/* Focus highlight for list items */
+.listItem.isFocused {
+  outline: 2px solid rgba(255, 200, 0, 0.9);
+  box-shadow: 0 0 0 6px rgba(255, 200, 0, 0.18);
+}
+
+/* ===== Grade hidden pill ===== */
+.gradeHiddenPill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border2);
+  background: var(--surface2);
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ===== UpcomingAssignments layout ===== */
 .assignmentRow {
   display: flex;
   align-items: flex-start;
@@ -873,7 +885,6 @@ details.expandable > .cardBody {
   width: 100%;
 }
 
-/* Right column: due + button pinned top-right */
 .assignmentActions {
   flex: 0 0 auto;
   padding: var(--cardPad);
@@ -882,7 +893,7 @@ details.expandable > .cardBody {
   align-items: flex-end;
   gap: 10px;
   min-width: 210px;
-  padding-top: calc(var(--cardPad) + 2px); /* extra breathing room from top */
+  padding-top: calc(var(--cardPad) + 2px);
 }
 
 .assignmentDueRight {
@@ -890,15 +901,7 @@ details.expandable > .cardBody {
   text-align: right;
 }
 
-/* Focus highlight */
-.listItem.isFocused {
-  outline: 2px solid rgba(255, 200, 0, 0.9);
-  box-shadow: 0 0 0 6px rgba(255, 200, 0, 0.18);
-}
-
-/* ===== Details (Expandable) inside assignments ===== */
-/* Goal: one consistent surface color (no multi-tone header/body) */
-
+/* Details (Expandable) inside assignments */
 .assignmentDetails details.expandable {
   border: 2px solid var(--border);
   border-radius: var(--radiusMd);
@@ -906,7 +909,6 @@ details.expandable > .cardBody {
   overflow: hidden;
 }
 
-/* Ensure the SUMMARY has the same background as the body */
 .assignmentDetails details.expandable > summary.cardBody.expandableSummary {
   background: var(--surface2);
   padding: 12px 14px;
@@ -914,31 +916,26 @@ details.expandable > .cardBody {
   border-bottom: 1px solid var(--border);
 }
 
-/* When closed, the border-bottom should not show as a “random extra line” */
 .assignmentDetails details.expandable:not([open])
   > summary.cardBody.expandableSummary {
   border-bottom-color: transparent;
 }
 
-/* Body background matches summary background */
 .assignmentDetails details.expandable > .cardBody.expandableBody {
   background: var(--surface2);
   padding: 10px 14px 14px;
 }
 
-/* Row alignment inside summary */
 .assignmentDetails .expandableSummary .row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-/* Hide the subtitle preview when open */
 .assignmentDetails details[open] .expandableSubtitle {
   display: none;
 }
 
-/* Body padding (override listItem .cardBody so expanded content renders nicely) */
 .assignmentDetails details.expandable > .cardBody,
 .assignmentDetails details > .cardBody,
 .assignmentDetails .expandable .cardBody,
@@ -947,12 +944,7 @@ details.expandable > .cardBody {
   padding: 0 14px 14px;
 }
 
-/* Hide the subtitle preview when open */
-.assignmentDetails details[open] .expandableSubtitle {
-  display: none;
-}
-
-/* UpcomingAssignments: wrapper card around the entire list */
+/* UpcomingAssignments: wrapper panel */
 .upcomingPanel {
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
@@ -990,13 +982,11 @@ details.expandable > .cardBody {
   padding: 12px 12px 6px 12px;
 }
 
-/* Make the list spacing look intentional inside the panel */
 .upcomingPanelBody .list {
   margin: 0;
   padding: 0;
 }
 
-/* Optional: slightly soften list items when inside this panel */
 .upcomingPanelBody .listItem {
   border-radius: 12px;
 }
@@ -1008,8 +998,9 @@ details.expandable > .cardBody {
 
 /* ===== Effort widget (WorkloadEstimateControl) ===== */
 .effortWidget {
+  position: relative;
   display: grid;
-  gap: 8px;
+  gap: 0px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radiusMd);
@@ -1027,7 +1018,7 @@ details.expandable > .cardBody {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .effortPill {
@@ -1092,7 +1083,6 @@ details.expandable > .cardBody {
   transition: width 180ms ease;
 }
 
-/* Progress colors */
 .effortBarFill.isRed {
   background: rgba(220, 60, 60, 0.9);
 }
@@ -1166,10 +1156,6 @@ details.expandable > .cardBody {
   background: var(--surface);
 }
 
-.effortApplyBtn {
-  white-space: nowrap;
-}
-
 .effortDivider {
   height: 1px;
   background: var(--border);
@@ -1185,11 +1171,6 @@ details.expandable > .cardBody {
 .effortCheckboxRow input[type="checkbox"] {
   width: 16px;
   height: 16px;
-}
-
-/* ===== Effort widget refinements ===== */
-.effortWidget {
-  position: relative; /* required so popover can be absolute + scroll naturally */
 }
 
 .effortCta {
@@ -1209,7 +1190,6 @@ details.expandable > .cardBody {
   filter: brightness(0.98);
 }
 
-/* number steppers (arrows) */
 .effortStepper {
   display: inline-flex;
   gap: 6px;
@@ -1233,17 +1213,16 @@ details.expandable > .cardBody {
   filter: brightness(0.98);
 }
 
-/* anchored popover that scrolls with page + opens to the right of gear */
+/* anchored popover (legacy) */
 .effortPopoverAnchored {
   position: absolute;
   top: 0;
-  left: calc(100% + 10px); /* to the right of the widget */
+  left: calc(100% + 10px);
   width: 380px;
   max-width: min(380px, 92vw);
   z-index: 50;
 }
 
-/* On narrow screens, drop below so it doesn't overflow */
 @media (max-width: 820px) {
   .effortPopoverAnchored {
     top: calc(100% + 10px);
@@ -1293,6 +1272,156 @@ details.expandable > .cardBody {
   margin: 0;
 }
 .effortInput[type="number"] {
-  -moz-appearance: textfield; /* Firefox */
+  -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* ===== Weekly Planner ===== */
+/* (1) Today emphasis */
+.plannerDayCardToday {
+  border: 2px solid rgba(80, 160, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(80, 160, 255, 0.12);
+}
+
+.plannerDayHeaderToday {
+  background: rgba(80, 160, 255, 0.08);
+  border-radius: 12px;
+  padding: 6px 8px;
+}
+
+/* (2) IMPORTANT: Do NOT clip planner assignment cards inside day lists */
+.plannerDayList .card {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+/* (3) Day list scroll container + FIX for scroll buttons anchoring */
+.plannerDayList {
+  /* Scroll container */
+  overflow-y: auto;
+  max-height: 520px;
+  scrollbar-gutter: stable;
+
+  /* Needed so absolute buttons anchor to THIS element (not a parent / page) */
+  position: relative;
+
+  /* make sure overlays (fades/buttons) paint over the scrolled content */
+  isolation: isolate;
+
+  /* Firefox */
+  scrollbar-width: thin;
+}
+
+html[data-density="compact"] .plannerDayList {
+  max-height: 460px;
+}
+
+/* WebKit scrollbar styling */
+.plannerDayList::-webkit-scrollbar {
+  width: 10px;
+}
+.plannerDayList::-webkit-scrollbar-track {
+  background: transparent;
+}
+.plannerDayList::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text), transparent 75%);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Fade hints */
+.plannerDayList::before,
+.plannerDayList::after {
+  content: "";
+  position: sticky;
+  left: 0;
+  right: 0;
+  height: 26px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.plannerDayList::before {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--surface), transparent 0%),
+    transparent
+  );
+}
+
+.plannerDayList::after {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface), transparent 0%),
+    transparent
+  );
+}
+
+/* Scroll arrow buttons (overlay) */
+.plannerScrollBtn {
+  position: absolute;
+
+  /* center horizontally */
+  left: 50%;
+  transform: translateX(-50%);
+
+  /* keep above list cards AND above fade overlays */
+  z-index: 20;
+
+  height: 34px;
+  width: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: color-mix(in srgb, var(--surface), transparent 25%);
+  box-shadow: var(--shadow);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 120ms ease, transform 120ms ease;
+
+  /* IMPORTANT: prevent the button itself from becoming a scroll target */
+  touch-action: manipulation;
+}
+
+.plannerScrollBtn:hover {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.03);
+}
+
+.plannerScrollBtn:active {
+  transform: translateX(-50%) scale(0.98);
+}
+
+.plannerScrollBtn.up {
+  top: 8px;
+}
+.plannerScrollBtn.down {
+  bottom: 8px;
+}
+
+.plannerScrollBtn svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.plannerScrollBtn.hidden {
+  display: none;
+}
+
+/* Optional: if your grid container ever gets a className="plannerGrid" */
+.plannerGrid {
+  align-items: start;
+  align-content: start;
+}
+.plannerGrid > .card {
+  align-self: start;
 }

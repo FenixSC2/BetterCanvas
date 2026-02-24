@@ -3,130 +3,62 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   addCompletedHours,
-  computeProgress,
-  computeRemainingHours,
-  formatHours,
   getEffortState,
-  resetProgress,
-  setCompleted,
-  getEffortSnapMinutes,
   setCompletedHours,
   setEstimateHours,
+  getEffortSnapMinutes,
 } from "../lib/workloadEstimates";
 
-/* --------------------- small numeric helpers --------------------- */
-function num(x) {
-  const n = typeof x === "number" ? x : Number(x);
-  return Number.isFinite(n) ? n : NaN;
+// remaining hours helper (formats to minutes when less than 1 hour, otherwise hours with 1 decimal)
+function fmtRemaining(hrs) {
+  const h = Number(hrs);
+  if (!Number.isFinite(h)) return "0h";
+
+  // Less than 1 hour → show minutes
+  if (h > 0 && h < 1) {
+    const mins = Math.max(1, Math.round(h * 60));
+    return `${mins}m`;
+  }
+
+  // Otherwise show hours
+  return `${fmt1(h)}h`;
 }
 
-function clampUiHours(x) {
-  const n = num(x);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(500, n));
-}
-
-function roundToStep(value, step = 0.5) {
-  const n = clampUiHours(value);
-  const s = step > 0 ? step : 0.5;
-  return Math.round(n / s) * s;
-}
-
-function clamp01(x) {
-  return Math.max(0, Math.min(1, x));
-}
-
-function snapToMinutes(hours, snapMinutes) {
-  const stepH = Math.max(1, snapMinutes) / 60;
-  const h = Number.isFinite(hours) ? hours : 0;
-  return Math.round(h / stepH) * stepH;
-}
-
-/**
- * Parse a decimal-ish string safely, returning NaN if unusable.
- * Supports empty string -> NaN
- */
-function parseHoursDraft(s) {
-  if (s == null) return NaN;
-  const t = String(s).trim();
-  if (!t) return NaN;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-/* --------------------- Stepper (+ / -) --------------------- */
-function Stepper({ value, onChange, step = 0.5, min = 0 }) {
-  const v = parseHoursDraft(value);
-  const safe = Number.isFinite(v) ? v : 0;
-
-  return (
-    <div className="effortStepper" aria-label="Adjust value">
-      <button
-        type="button"
-        className="effortStepBtn"
-        onClick={() => onChange(String(Math.max(min, roundToStep(safe - step, step))))}
-        aria-label="Decrease"
-        title="Decrease"
-      >
-        −
-      </button>
-      <button
-        type="button"
-        className="effortStepBtn"
-        onClick={() => onChange(String(roundToStep(safe + step, step)))}
-        aria-label="Increase"
-        title="Increase"
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
-/* --------------------- Popover --------------------- */
-/**
- * Anchored popover:
- * - portal to body
- * - fixed positioning (viewport coords)
- * - recomputes on scroll/resize so it "moves" with content
- * - closes on outside click + Escape
- */
-function Popover({
+/* ---------------- Anchored popover (portal) ---------------- */
+function AnchoredPopover({
   open,
   onClose,
-  anchorRef,
+  anchorEl,
   children,
   side = "right",
   gap = 10,
+  width = 420,
 }) {
   const panelRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, minWidth: 360 });
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     if (!open) return;
 
     function recompute() {
-      const anchor = anchorRef?.current;
-      if (!anchor) return;
+      if (!anchorEl) return;
 
-      const rect = anchor.getBoundingClientRect();
-      const width = 380;
+      const rect = anchorEl.getBoundingClientRect();
       const margin = 10;
 
-      let left =
-        side === "right" ? rect.right + gap : rect.left - gap - width;
+      let left = side === "right" ? rect.right + gap : rect.left - gap - width;
+      left = Math.max(
+        margin,
+        Math.min(left, window.innerWidth - width - margin),
+      );
 
-      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
-
+      // Align top with anchor, clamp
       let top = rect.top;
-      top = Math.max(margin, Math.min(top, window.innerHeight - margin));
+      const maxTop = window.innerHeight - margin;
+      top = Math.max(margin, Math.min(top, maxTop));
 
-      setPos({ top, left, minWidth: width });
+      setPos({ top, left });
     }
-
-    recompute();
-    window.addEventListener("resize", recompute);
-    window.addEventListener("scroll", recompute, true);
 
     function onKey(e) {
       if (e.key === "Escape") onClose?.();
@@ -134,16 +66,18 @@ function Popover({
 
     function onClick(e) {
       const panel = panelRef.current;
-      const anchor = anchorRef?.current;
-      if (!panel || !anchor) return;
+      if (!panel) return;
 
       const t = e.target;
       if (panel.contains(t)) return;
-      if (anchor.contains(t)) return;
+      if (anchorEl && anchorEl.contains(t)) return;
 
       onClose?.();
     }
 
+    recompute();
+    window.addEventListener("resize", recompute);
+    window.addEventListener("scroll", recompute, true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onClick);
 
@@ -153,508 +87,667 @@ function Popover({
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
     };
-  }, [open, onClose, anchorRef, side, gap]);
+  }, [open, onClose, anchorEl, side, gap, width]);
 
   if (!open) return null;
 
   return createPortal(
     <div
       ref={panelRef}
-      className="card"
       style={{
         position: "fixed",
         top: pos.top,
         left: pos.left,
-        width: 380,
+        width,
         zIndex: 9999,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
       }}
     >
-      <div className="cardBody">{children}</div>
+      {children}
     </div>,
-    document.body
+    document.body,
   );
 }
 
-/* --------------------- Main component --------------------- */
-export function WorkloadEstimateControl({ courseId, assignmentId }) {
+function clampHours(x) {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(200, x));
+}
+
+function fmt1(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "0.0";
+  return n.toFixed(1);
+}
+
+function computeRemainingHours(st) {
+  const est = Number(st?.estimateHours);
+  const comp = Number(st?.completedHours);
+  const E = Number.isFinite(est) ? est : 0;
+  const C = Number.isFinite(comp) ? comp : 0;
+  return Math.max(0, E - C);
+}
+
+function clampPct(x) {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(100, x));
+}
+
+function barColorClass(pct) {
+  // Uses the existing CSS classes in styles.css:
+  // .effortBarFill.isRed/.isYellow/.isYellowGreen/.isGreen
+  if (pct <= 25) return "isRed";
+  if (pct <= 50) return "isYellow";
+  if (pct <= 75) return "isYellowGreen";
+  return "isGreen";
+}
+
+function roundToStep(value, step) {
+  const v = Number(value);
+  const s = Number(step);
+  if (!Number.isFinite(v)) return 0;
+  if (!Number.isFinite(s) || s <= 0) return v;
+  return Math.round(v / s) * s;
+}
+
+export function WorkloadEstimateControl({
+  courseId,
+  assignmentId,
+  compactLabels = false,
+}) {
   const [tick, setTick] = useState(0);
 
-  // Inline "Input estimated hours" state
-  const [inlineEstimate, setInlineEstimate] = useState(false);
-  const inlineRef = useRef(null);
-
-  // Popover
+  // popover state
   const [open, setOpen] = useState(false);
-  const gearRef = useRef(null);
+  const [anchorEl, setAnchorEl] = useState(null);
 
-  // Global snap minutes (for dragging)
-  const [snapMinutes, setSnapMinutes] = useState(() => getEffortSnapMinutes());
+  // input state
+  const [draftHours, setDraftHours] = useState("");
+  const [addHoursDraft, setAddHoursDraft] = useState(""); // for "Add time" custom
+  const [err, setErr] = useState("");
 
-  // Drag state
+  // inline estimate UI (used when estimate <= 0)
+  const [showInlineEstimate, setShowInlineEstimate] = useState(false);
+  const [inlineEstimateDraft, setInlineEstimateDraft] = useState("");
+
+  // drag state for progress bar
+  const barRef = useRef(null);
   const draggingRef = useRef(false);
-  const dragRafRef = useRef(0);
-  const lastDragHoursRef = useRef(null);
-  const [dragPreviewPct, setDragPreviewPct] = useState(null);
 
-  // Focus inline estimate when it opens
+  // inline estimate input focus
+  const inlineEstimateRef = useRef(null);
+
   useEffect(() => {
-    if (!inlineEstimate) return;
-    requestAnimationFrame(() => inlineRef.current?.focus());
-  }, [inlineEstimate]);
+    if (!showInlineEstimate) return;
+    // Focus after render
+    requestAnimationFrame(() => inlineEstimateRef.current?.focus?.());
+  }, [showInlineEstimate]);
 
-  // Sync workload state across:
-  // - other tabs (storage)
-  // - same tab (custom event fired by workloadEstimates.js)
+  // Keep UI synced with localStorage changes (same-tab + cross-tab)
   useEffect(() => {
     function onStorage(e) {
-      // We only care if this key is about our assignment; you already had this filter.
       if (!e?.key) return;
-      const k = String(e.key);
-      if (!k.includes(String(courseId)) || !k.includes(String(assignmentId))) return;
-      if (!k.toLowerCase().includes("workload") && !k.toLowerCase().includes("effort")) return;
-      setTick((t) => t + 1);
-    }
-
-    function onLocalChanged(e) {
-      const d = e?.detail;
-      if (!d) return;
-      if (String(d.courseId) === String(courseId) && String(d.assignmentId) === String(assignmentId)) {
+      const lk = String(e.key).toLowerCase();
+      if (lk.includes("effort") || lk.includes("workload"))
         setTick((t) => t + 1);
-      }
     }
-
     window.addEventListener("storage", onStorage);
-    window.addEventListener("bettercanvas:workload:changed", onLocalChanged);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("bettercanvas:workload:changed", onLocalChanged);
-    };
-  }, [courseId, assignmentId]);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
-  // Sync snapMinutes when user changes it in Settings tab
+  // Patch localStorage.setItem so same-tab updates re-render
   useEffect(() => {
-    function onSettingsChanged() {
-      setSnapMinutes(getEffortSnapMinutes());
-    }
-    window.addEventListener("bettercanvas:workload:settingsChanged", onSettingsChanged);
-    window.addEventListener("storage", onSettingsChanged); // cross-tab
+    const original = localStorage.setItem;
+
+    localStorage.setItem = function patchedSetItem(key, value) {
+      original.call(this, key, value);
+      try {
+        if (typeof key === "string") {
+          const lk = key.toLowerCase();
+          if (lk.includes("effort") || lk.includes("workload")) {
+            setTick((t) => t + 1);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     return () => {
-      window.removeEventListener("bettercanvas:workload:settingsChanged", onSettingsChanged);
-      window.removeEventListener("storage", onSettingsChanged);
+      localStorage.setItem = original;
     };
   }, []);
 
-  const state = useMemo(() => {
-    void tick;
-    return getEffortState({ courseId, assignmentId });
+  const L = useMemo(() => {
+    return {
+      total: compactLabels ? "Total:" : "Total Estimated:",
+      rem: compactLabels ? "Rem:" : "Remaining:",
+      inputBtn: compactLabels
+        ? "Edit / track"
+        : "Edit estimated hours / track progress",
+    };
+  }, [compactLabels]);
+
+  const st = useMemo(() => {
+    try {
+      void tick;
+      return getEffortState({ courseId, assignmentId });
+    } catch {
+      return null;
+    }
   }, [courseId, assignmentId, tick]);
 
-  const progress = computeProgress(state);
-  const remaining = computeRemainingHours(state);
+  const estimate = Number.isFinite(Number(st?.estimateHours))
+    ? Number(st.estimateHours)
+    : 0;
+  const completed = Number.isFinite(Number(st?.completedHours))
+    ? Number(st.completedHours)
+    : 0;
+  const remaining = computeRemainingHours(st);
+  const isComplete = !!st?.completed;
+  const compactComplete = compactLabels && isComplete;
 
-  const pct = Math.round(progress * 100);
-  const hasEstimate = state.estimateHours > 0;
-
-  // ---- Piecewise color gradient (tuned) ----
-  // If you later pass "submitted", swap isFullyComplete = submitted instead.
-  const isFullyComplete = !!state.completed;
-
-  const p = clamp01(progress); // 0..1
-  let hue;
-  if (p <= 2 / 3) {
-    const t = p / (2 / 3); // 0..1
-    hue = 0 + t * 55; // red -> yellow
-  } else if (p < 0.99) {
-    const t = (p - 2 / 3) / (0.99 - 2 / 3); // 0..1
-    hue = 55 + t * (85 - 55); // yellow -> yellow-green
-  } else {
-    hue = isFullyComplete ? 120 : 85; // true green only for completed
+  // Helper fn: gives a checkbox next to completed badge on assignments in weekly planner (or other uses of the shortened "compact" mode) to quickly mark complete/incomplete by toggling between 0% and 100% completed.
+  function setCompletedChecked(checked) {
+    if (estimate <= 0) return;
+    if (checked) {
+      // Mark complete: set completed to full estimate
+      setCompletedHours({ courseId, assignmentId }, estimate);
+    } else {
+      // Unmark complete: reset to 0% (your request)
+      setCompletedHours({ courseId, assignmentId }, 0);
+    }
   }
 
-  const saturation = 72;
-  const lightness = 42;
-  const fillColor = `hsl(${hue} ${saturation}% ${lightness}%)`;
+  // --- snapping: try to read whatever your "global snapping" exposes ---
+  function getSnapStepHours() {
+    // SettingsModal controls snapping in MINUTES
+    const mins = Number(getEffortSnapMinutes?.());
+    const safeMins = Number.isFinite(mins) ? Math.max(1, Math.round(mins)) : 10; // default 10
+    return safeMins / 60; // convert to hours
+  }
 
-  // Draft inputs (apply pattern)
-  const [estimateDraft, setEstimateDraft] = useState(() =>
-    state.estimateHours > 0 ? String(state.estimateHours) : ""
-  );
-  const [addDraft, setAddDraft] = useState("");
+  // include tick so same-tab snap changes re-render (your setItem patch already bumps tick)
+  const snapStep = useMemo(() => getSnapStepHours(), [tick]);
 
-  // Reset drafts when popover closes
-  useEffect(() => {
-    if (!open) {
-      setEstimateDraft(state.estimateHours > 0 ? String(state.estimateHours) : "");
-      setAddDraft("");
-    }
-  }, [state.estimateHours, open]);
+  const pct = useMemo(() => {
+    if (estimate <= 0) return 0;
+    return clampPct((completed / estimate) * 100);
+  }, [estimate, completed]);
+
+  const fillCls = useMemo(() => barColorClass(pct), [pct]);
+
+  function closePopover() {
+    setOpen(false);
+    setAnchorEl(null);
+    setErr("");
+  }
 
   function applyEstimate() {
-    const h = clampUiHours(estimateDraft);
-    setEstimateHours({ courseId, assignmentId }, h);
-    setTick((t) => t + 1);
-  }
-
-  function applyAddCompleted() {
-    const d = clampUiHours(addDraft);
-    if (d <= 0) return;
-    addCompletedHours({ courseId, assignmentId }, d);
-    setAddDraft("");
-    // keep current behavior: close popover after Add
-    setOpen(false);
-    setTick((t) => t + 1);
-  }
-
-  function doResetProgress() {
-    resetProgress({ courseId, assignmentId });
-    setTick((t) => t + 1);
-  }
-
-  function setCompletedToggle(next) {
-    setCompleted({ courseId, assignmentId }, next);
-    setTick((t) => t + 1);
-  }
-
-  /* --------------------- drag to set completed --------------------- */
-  function commitCompletedHours(nextHours) {
-    const snapped = snapToMinutes(nextHours, snapMinutes);
-    setCompletedHours({ courseId, assignmentId }, snapped);
-
-    if (hasEstimate) {
-      if (snapped >= state.estimateHours) {
-        setCompleted({ courseId, assignmentId }, true);
-      } else if (state.completed) {
-        setCompleted({ courseId, assignmentId }, false);
-      }
+    const raw = Number(draftHours);
+    const h = clampHours(raw);
+    if (!Number.isFinite(raw) || h <= 0) {
+      setErr("Enter hours > 0.");
+      return;
     }
-
-    setTick((t) => t + 1);
+    setErr("");
+    setEstimateHours({ courseId, assignmentId }, h);
+    closePopover();
   }
 
-  function calcHoursFromPointer(e) {
-    if (!hasEstimate) return null;
+  function applyInlineEstimate() {
+    const raw = Number(inlineEstimateDraft);
+    const h = clampHours(raw);
+    if (!Number.isFinite(raw) || h <= 0) {
+      setErr("Enter hours > 0.");
+      return;
+    }
+    setErr("");
+    setEstimateHours({ courseId, assignmentId }, h);
+    setShowInlineEstimate(false);
+  }
 
-    const track = e.currentTarget;
-    const rect = track.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const ratio = clamp01(x / rect.width);
+  function openPopover(e) {
+    const btn = e?.currentTarget || null;
+    setShowInlineEstimate(false);
+    setErr("");
+    setDraftHours(estimate > 0 ? String(estimate) : "");
+    setAddHoursDraft("");
+    setAnchorEl(btn);
+    setOpen(true);
+  }
 
-    const targetHours = ratio * state.estimateHours;
-    const snapped = snapToMinutes(targetHours, snapMinutes);
+  function doAddCompleted(delta) {
+    const d = Number(delta);
+    const h = clampHours(d);
+    if (!Number.isFinite(d) || h === 0) return;
+    addCompletedHours({ courseId, assignmentId }, h);
+  }
 
-    return Math.max(0, Math.min(state.estimateHours, snapped));
+  function resetProgress() {
+    setCompletedHours({ courseId, assignmentId }, 0);
+  }
+
+  // ---------- draggable progress ----------
+  function setProgressFromClientX(clientX) {
+    if (estimate <= 0) return;
+    const el = barRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(rect.left, Math.min(clientX, rect.right));
+    const t = rect.width > 0 ? (x - rect.left) / rect.width : 0;
+
+    const targetCompletedRaw = t * estimate;
+    const snapped = roundToStep(targetCompletedRaw, snapStep);
+    const clamped = Math.max(0, Math.min(estimate, snapped));
+
+    setCompletedHours({ courseId, assignmentId }, clamped);
   }
 
   function onBarPointerDown(e) {
-    if (!hasEstimate) return;
-    e.preventDefault();
-
+    if (estimate <= 0) return;
     draggingRef.current = true;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
 
-    const nextH = calcHoursFromPointer(e);
-    if (nextH == null) return;
+    // capture pointer to keep receiving events even if pointer leaves
+    try {
+      e.currentTarget?.setPointerCapture?.(e.pointerId);
+    } catch {
+      // ignore
+    }
 
-    lastDragHoursRef.current = nextH;
-    const pctPreview = state.estimateHours > 0 ? (nextH / state.estimateHours) * 100 : 0;
-    setDragPreviewPct(pctPreview);
-
-    commitCompletedHours(nextH);
+    setProgressFromClientX(e.clientX);
   }
 
   function onBarPointerMove(e) {
     if (!draggingRef.current) return;
-    if (!hasEstimate) return;
-
-    const nextH = calcHoursFromPointer(e);
-    if (nextH == null) return;
-
-    lastDragHoursRef.current = nextH;
-    const pctPreview = state.estimateHours > 0 ? (nextH / state.estimateHours) * 100 : 0;
-    setDragPreviewPct(pctPreview);
-
-    if (dragRafRef.current) return;
-    dragRafRef.current = requestAnimationFrame(() => {
-      dragRafRef.current = 0;
-      const h = lastDragHoursRef.current;
-      if (h == null) return;
-      commitCompletedHours(h);
-    });
+    setProgressFromClientX(e.clientX);
   }
 
-  function endDrag() {
+  function onBarPointerUp(e) {
+    if (!draggingRef.current) return;
     draggingRef.current = false;
-    setDragPreviewPct(null);
-    if (dragRafRef.current) {
-      cancelAnimationFrame(dragRafRef.current);
-      dragRafRef.current = 0;
+
+    try {
+      e.currentTarget?.releasePointerCapture?.(e.pointerId);
+    } catch {
+      // ignore
     }
   }
 
-  const pctDisplay = dragPreviewPct != null ? Math.round(dragPreviewPct) : pct;
+  // ensure drag state clears if something weird happens
+  useEffect(() => {
+    function up() {
+      draggingRef.current = false;
+    }
+    window.addEventListener("pointerup", up);
+    window.addEventListener("blur", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("blur", up);
+    };
+  }, []);
 
   return (
-    <div
-      className={`effortWidget ${open ? "effortWidgetOpen" : ""}`}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="effortWidget">
       <div className="effortTopRow">
         <div className="effortNumbers">
-          {!hasEstimate ? (
-            inlineEstimate ? (
-              <div className="effortInlineSet">
+          <span className="effortPill">
+            <span className="muted">{L.total}</span>{" "}
+            <span className="mono">{fmt1(estimate)}h</span>
+          </span>
+
+          <span className="effortPill">
+            <span className="muted">{L.rem}</span>{" "}
+            <span className="mono">{fmtRemaining(remaining)}</span>
+          </span>
+
+          {!compactComplete && isComplete ? (
+            <span className="effortDone">Complete</span>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          className="effortGearBtn"
+          onClick={openPopover}
+          title={L.inputBtn}
+          aria-label={L.inputBtn}
+        >
+          ✎
+        </button>
+      </div>
+
+      {/* ✅ Draggable progress bar (snaps by global step) */}
+      {estimate <= 0 ? (
+        <div className="effortBarWrap">
+          {showInlineEstimate ? (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                ref={inlineEstimateRef}
+                className="effortInput"
+                type="number"
+                min="0"
+                step="0.25"
+                placeholder={compactLabels ? "Hours…" : "Estimated hours…"}
+                value={inlineEstimateDraft}
+                onChange={(e) => {
+                  setInlineEstimateDraft(e.target.value);
+                  setErr("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyInlineEstimate();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setShowInlineEstimate(false);
+                    setErr("");
+                  }
+                }}
+                style={{ width: 160 }}
+              />
+
+              <button
+                type="button"
+                className="btn"
+                onClick={applyInlineEstimate}
+              >
+                Apply
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowInlineEstimate(false);
+                  setErr("");
+                }}
+              >
+                Cancel
+              </button>
+
+              {err ? (
+                <div
+                  className="dangerText"
+                  style={{ fontSize: 12, width: "100%" }}
+                >
+                  {err}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="effortCta"
+              onClick={() => {
+                setOpen(false); // just to be safe; don't open popover here
+                setAnchorEl(null);
+                setErr("");
+                setInlineEstimateDraft("");
+                setShowInlineEstimate(true);
+              }}
+              style={{ gridColumn: "1 / -1", width: "fit-content" }}
+            >
+              {compactLabels ? "Set estimated hours" : "Set estimated hours"}
+            </button>
+          )}
+        </div>
+      ) : compactLabels && isComplete ? (
+        <div className="effortBarWrap">
+          <label
+            style={{
+              gridColumn: "1 / -1",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              userSelect: "none",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={true}
+              onChange={(e) => setCompletedChecked(e.target.checked)}
+            />
+            <span className="effortDone">Completed</span>
+          </label>
+        </div>
+      ) : (
+        <div className="effortBarWrap">
+          {/* your existing draggable bar exactly as-is */}
+          <div
+            ref={barRef}
+            className="effortBarTrack"
+            role="slider"
+            aria-label="Completed hours"
+            aria-valuemin={0}
+            aria-valuemax={estimate}
+            aria-valuenow={Math.max(0, Math.min(estimate, completed))}
+            tabIndex={estimate > 0 ? 0 : -1}
+            onPointerDown={onBarPointerDown}
+            onPointerMove={onBarPointerMove}
+            onPointerUp={onBarPointerUp}
+            onKeyDown={(e) => {
+              if (estimate <= 0) return;
+              const step = snapStep || 0.25;
+              if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const next = Math.min(
+                  estimate,
+                  roundToStep(completed + step, step),
+                );
+                setCompletedHours({ courseId, assignmentId }, next);
+              } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+                e.preventDefault();
+                const next = Math.max(0, roundToStep(completed - step, step));
+                setCompletedHours({ courseId, assignmentId }, next);
+              } else if (e.key === "Home") {
+                e.preventDefault();
+                setCompletedHours({ courseId, assignmentId }, 0);
+              } else if (e.key === "End") {
+                e.preventDefault();
+                setCompletedHours({ courseId, assignmentId }, estimate);
+              }
+            }}
+            style={{
+              cursor: estimate > 0 ? "ew-resize" : "default",
+              touchAction: "none",
+            }}
+            title={
+              estimate > 0
+                ? `Drag to set completed (snap ${snapStep}h)`
+                : "Set an estimate to enable tracking"
+            }
+          >
+            <div
+              className={`effortBarFill ${fillCls}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+
+          <div className="effortBarMeta mono">{Math.round(pct)}%</div>
+        </div>
+      )}
+
+      <AnchoredPopover
+        open={open}
+        onClose={closePopover}
+        anchorEl={anchorEl}
+        side="right" // ✅ default pop direction on the right
+        gap={10}
+        width={420}
+      >
+        <div className="effortPopover">
+          <div className="effortPopoverHeader">
+            <div style={{ fontWeight: 900 }}>
+              {compactLabels ? "Effort" : "Estimated hours & tracking"}
+            </div>
+            <button
+              type="button"
+              className="effortCloseBtn"
+              onClick={closePopover}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="effortPopoverBody">
+            {/* ---- Estimate editor ---- */}
+            <div className="effortField">
+              <div className="effortFieldLabel">Estimated hours</div>
+              <div className="effortFieldRow">
                 <input
-                  ref={inlineRef}
                   className="effortInput"
-                  // Use text to avoid native number spinners; Stepper provides +/-.
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Hours…"
-                  value={estimateDraft}
-                  onChange={(e) => setEstimateDraft(e.target.value)}
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={draftHours}
+                  onChange={(e) => {
+                    setDraftHours(e.target.value);
+                    setErr("");
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
                       applyEstimate();
-                      setInlineEstimate(false);
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      setInlineEstimate(false);
-                      setEstimateDraft("");
                     }
                   }}
+                  style={{ width: 140 }}
                 />
-
-                <Stepper
-                  value={estimateDraft}
-                  onChange={(v) => setEstimateDraft(v)}
-                  step={0.5}
-                  min={0}
-                />
+                <span className="muted">hours</span>
 
                 <button
                   type="button"
                   className="btn effortApplyBtn"
-                  onClick={() => {
-                    applyEstimate();
-                    setInlineEstimate(false);
-                  }}
+                  onClick={applyEstimate}
                 >
                   Apply
                 </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                className="effortCta"
-                onClick={() => {
-                  setEstimateDraft("");
-                  setInlineEstimate(true);
-                }}
-                title="Set an estimate for this assignment"
-              >
-                Input estimated hours
-              </button>
-            )
-          ) : (
-            <>
-              <span className="effortPill">
-                Total Estimated:{" "}
-                <span className="mono">{formatHours(state.estimateHours)}</span>
-              </span>
-              <span className="effortPill">
-                Remaining: <span className="mono">{formatHours(remaining)}</span>
-              </span>
-              {state.completed ? <span className="effortDone">✓ Completed</span> : null}
-            </>
-          )}
-        </div>
 
-        <button
-          ref={gearRef}
-          type="button"
-          className="effortGearBtn"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Edit effort"
-          title="Effort settings"
-        >
-          ⚙
-        </button>
-      </div>
-
-      <div className="effortBarWrap" aria-label={`Progress ${pctDisplay}%`}>
-        <div
-          className="effortBarTrack"
-          role={hasEstimate ? "slider" : undefined}
-          tabIndex={hasEstimate ? 0 : -1}
-          aria-valuemin={0}
-          aria-valuemax={hasEstimate ? state.estimateHours : 0}
-          aria-valuenow={hasEstimate ? state.completedHours : 0}
-          onPointerDown={onBarPointerDown}
-          onPointerMove={onBarPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          style={{ cursor: hasEstimate ? "ew-resize" : "default" }}
-          title={
-            hasEstimate
-              ? `Drag to set completed effort (snaps to ${snapMinutes} min)`
-              : "Set an estimate to enable dragging"
-          }
-        >
-          <div
-            className="effortBarFill"
-            style={{
-              width: `${pctDisplay}%`,
-              background: fillColor,
-            }}
-          />
-        </div>
-
-        <div className="effortBarMeta">
-          <span className="mono">{pctDisplay}%</span>
-        </div>
-      </div>
-
-      <Popover
-        open={open}
-        onClose={() => setOpen(false)}
-        anchorRef={gearRef}
-        side="right"
-      >
-        <div className="effortPopoverHeader">
-          <div style={{ fontWeight: 900 }}>Effort</div>
-          <button
-            type="button"
-            className="effortCloseBtn"
-            onClick={() => setOpen(false)}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="effortPopoverBody">
-          <div className="effortField">
-            <div className="effortFieldLabel">Estimated effort (hours)</div>
-            <div className="effortFieldRow">
-              <input
-                className="effortInput"
-                type="text"
-                inputMode="decimal"
-                placeholder="e.g. 5"
-                value={estimateDraft}
-                onChange={(e) => setEstimateDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    applyEstimate();
-                  }
-                }}
-              />
-
-              <Stepper
-                value={estimateDraft}
-                onChange={(v) => setEstimateDraft(v)}
-                step={0.5}
-                min={0}
-              />
-
-              <button
-                type="button"
-                className="btn effortApplyBtn"
-                onClick={applyEstimate}
-              >
-                Apply
-              </button>
-            </div>
-
-            <div className="muted" style={{ marginTop: 6 }}>
-              Sets the total work needed for this assignment.
-            </div>
-          </div>
-
-          <div className="effortDivider" />
-
-          <div className="effortField">
-            <div className="effortFieldLabel">Add completed effort (hours)</div>
-            <div className="effortFieldRow">
-              <input
-                className="effortInput"
-                type="text"
-                inputMode="decimal"
-                placeholder="e.g. 2"
-                value={addDraft}
-                onChange={(e) => setAddDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    applyAddCompleted();
-                  }
-                }}
-              />
-
-              <Stepper
-                value={addDraft}
-                onChange={(v) => setAddDraft(v)}
-                step={0.5}
-                min={0}
-              />
-
-              <button type="button" className="btn" onClick={applyAddCompleted}>
-                Add
-              </button>
-            </div>
-
-            <div className="muted" style={{ marginTop: 6 }}>
-              Completed: <span className="mono">{formatHours(state.completedHours)}</span>
-              {hasEstimate ? (
-                <>
-                  {" "}
-                  / <span className="mono">{formatHours(state.estimateHours)}</span>
-                </>
+              {err ? (
+                <div className="dangerText" style={{ fontSize: 12 }}>
+                  {err}
+                </div>
               ) : null}
             </div>
-          </div>
 
-          <div className="effortDivider" />
+            <div className="effortDivider" />
 
-          <div className="effortActionsRow">
-            <label className="effortCheckboxRow" title="Mark as completed in one click">
-              <input
-                type="checkbox"
-                checked={!!state.completed}
-                onChange={(e) => {
-                  const next = e.target.checked;
+            {/* ---- Add time / progress controls ---- */}
+            <div className="effortField">
+              <div className="effortFieldLabel">Track progress</div>
 
-                  if (next) {
-                    setCompletedToggle(true);
-                  } else {
-                    // Unchecking = undo complete AND reset progress (your requirement)
-                    setCompletedToggle(false);
-                    doResetProgress();
-                  }
-                }}
-              />
-              <span>Mark complete</span>
-            </label>
+              <div
+                className="effortFieldRow"
+                style={{ flexWrap: "wrap", gap: 8 }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => doAddCompleted(snapStep)}
+                  title={`+${snapStep}h`}
+                  disabled={estimate <= 0}
+                >
+                  +{fmtRemaining(snapStep)}
+                </button>
 
-            <button
-              type="button"
-              className="btn"
-              onClick={doResetProgress}
-              title="Set completed effort to 0"
-            >
-              Reset progress
-            </button>
-          </div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => doAddCompleted(0.5)}
+                  title="+0.5h"
+                  disabled={estimate <= 0}
+                >
+                  +30m
+                </button>
 
-          <div className="muted">
-            Marking an assignment as completed is not the same as submitting it.
-            "Complete" assignments will still show up until they are submitted in Canvas.
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => doAddCompleted(1)}
+                  title="+1h"
+                  disabled={estimate <= 0}
+                >
+                  +1h
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => doAddCompleted(2)}
+                  title="+2h"
+                  disabled={estimate <= 0}
+                >
+                  +2h
+                </button>
+              </div>
+
+              <div className="effortFieldRow" style={{ marginTop: 10 }}>
+                <input
+                  className="effortInput"
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  placeholder="Add hours…"
+                  value={addHoursDraft}
+                  onChange={(e) => setAddHoursDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const v = Number(addHoursDraft);
+                      if (Number.isFinite(v) && v !== 0) {
+                        doAddCompleted(v);
+                        setAddHoursDraft("");
+                      }
+                    }
+                  }}
+                  style={{ width: 140 }}
+                  disabled={estimate <= 0}
+                />
+                <span className="muted">hours</span>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    const v = Number(addHoursDraft);
+                    if (!Number.isFinite(v) || v === 0) return;
+                    doAddCompleted(v);
+                    setAddHoursDraft("");
+                  }}
+                  disabled={estimate <= 0}
+                  title="Add to completed hours"
+                >
+                  Add
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={resetProgress}
+                  disabled={completed <= 0}
+                  title="Reset completed hours to 0"
+                >
+                  Reset progress
+                </button>
+              </div>
+
+              <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                Drag the bar to set completed hours (snaps to {fmtRemaining(snapStep)}).
+              </div>
+            </div>
           </div>
         </div>
-      </Popover>
+      </AnchoredPopover>
     </div>
   );
 }

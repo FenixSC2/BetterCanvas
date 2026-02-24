@@ -593,7 +593,7 @@ export function MyInformation() {
                     {m.course_name ?? `Course ${m.course_id}`}
                   </span>
                   {" • "}
-                  <span className="dangerBadgeInline">MISSING</span>
+                  <span className="badge badgeDanger">Missing</span>
                   {" • "}
                   Due: <span className="mono">{fmtDue(m.due_at)}</span>
                   {typeof m.points_possible === "number"

@@ -409,7 +409,7 @@ export function MyCourses() {
                           }}
                         >
                           <span>{m.name || "Untitled assignment"}</span>
-                          <span className="dangerBadgeInline">MISSING</span>
+                          <span className="badge badgeDanger">Missing</span>
                         </span>
                       );
 
