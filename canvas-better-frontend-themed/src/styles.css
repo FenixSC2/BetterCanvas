@@ -1283,10 +1283,15 @@ details.expandable > .cardBody {
   box-shadow: 0 0 0 4px rgba(80, 160, 255, 0.12);
 }
 
-.plannerDayHeaderToday {
-  background: rgba(80, 160, 255, 0.08);
+/* Weekly Planner: make ALL day headers have identical padding/height */
+.plannerDayHeader {
   border-radius: 12px;
   padding: 6px 8px;
+}
+
+/* Today variant: ONLY change background/border, not padding */
+.plannerDayHeaderToday {
+  background: rgba(80, 160, 255, 0.08);
 }
 
 /* (2) IMPORTANT: Do NOT clip planner assignment cards inside day lists */
@@ -1331,49 +1336,56 @@ html[data-density="compact"] .plannerDayList {
   background-clip: content-box;
 }
 
-/* Fade hints */
-.plannerDayList::before,
-.plannerDayList::after {
-  content: "";
-  position: sticky;
-  left: 0;
-  right: 0;
-  height: 26px;
-  pointer-events: none;
-  z-index: 5;
+/* =========================================================
+   Weekly Planner: SINGLE OWNERSHIP RULES
+   - Fades are rendered in WeeklyPlanner.jsx (NOT CSS pseudo-elements)
+   - Scroll sizing/overflow/padding/gap are set inline in WeeklyPlanner.jsx
+   - Scroll button positioning is set inline in WeeklyPlanner.jsx
+   CSS here only handles visuals + safe defaults.
+   ========================================================= */
+
+/* ---- Scroll shell: the element that the buttons/fades visually sit on ---- */
+.plannerDayListShell {
+  position: relative;
+  overflow: hidden; /* keeps fade overlays + buttons from spilling out */
+  flex: 1 1 auto;
+  min-height: 0; /* critical for nested flex scroll areas */
 }
 
-.plannerDayList::before {
-  top: 0;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--surface), transparent 0%),
-    transparent
-  );
+/* ---- The ONLY scroller is .plannerDayList (inline styles own sizing) ---- */
+.plannerDayList {
+  /* Do NOT set overflow/max-height/min-height/padding here:
+     WeeklyPlanner.jsx already sets those inline. */
+
+  scrollbar-gutter: stable;
+  isolation: isolate; /* ensures overlays paint above list content cleanly */
+
+  /* Firefox */
+  scrollbar-width: thin;
 }
 
-.plannerDayList::after {
-  bottom: 0;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--surface), transparent 0%),
-    transparent
-  );
+/* WebKit scrollbar styling (safe; does not affect layout ownership) */
+.plannerDayList::-webkit-scrollbar {
+  width: 10px;
+}
+.plannerDayList::-webkit-scrollbar-track {
+  background: transparent;
+}
+.plannerDayList::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text), transparent 75%);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 
-/* Scroll arrow buttons (overlay) */
+/* ---- REMOVE CSS fades: JSX already renders fades conditionally ---- */
+/* Intentionally no .plannerDayList::before / ::after rules */
+
+/* ---- Scroll arrow buttons: VISUALS ONLY (positioning is inline) ---- */
 .plannerScrollBtn {
-  position: absolute;
+  /* Do NOT set position/left/top/bottom/transform/width/height here:
+     WeeklyPlanner.jsx sets them inline so the math stays in one place. */
 
-  /* center horizontally */
-  left: 50%;
-  transform: translateX(-50%);
-
-  /* keep above list cards AND above fade overlays */
-  z-index: 20;
-
-  height: 34px;
-  width: 44px;
   border-radius: 999px;
   border: 1px solid var(--border2);
   background: color-mix(in srgb, var(--surface), transparent 25%);
@@ -1387,32 +1399,24 @@ html[data-density="compact"] .plannerDayList {
   opacity: 0.65;
   transition: opacity 120ms ease, transform 120ms ease;
 
-  /* IMPORTANT: prevent the button itself from becoming a scroll target */
+  /* prevent the button itself from becoming a scroll target */
   touch-action: manipulation;
 }
 
 .plannerScrollBtn:hover {
   opacity: 1;
-  transform: translateX(-50%) scale(1.03);
 }
 
 .plannerScrollBtn:active {
-  transform: translateX(-50%) scale(0.98);
-}
-
-.plannerScrollBtn.up {
-  top: 8px;
-}
-.plannerScrollBtn.down {
-  bottom: 8px;
+  /* keep this subtle so it doesn’t fight inline transform translateX(-50%) */
+  transform: scale(0.98);
 }
 
 .plannerScrollBtn svg {
   display: block;
-  width: 18px;
-  height: 18px;
 }
 
+/* If you ever choose to toggle a hidden class */
 .plannerScrollBtn.hidden {
   display: none;
 }
@@ -1424,4 +1428,32 @@ html[data-density="compact"] .plannerDayList {
 }
 .plannerGrid > .card {
   align-self: start;
+}
+
+/* ---- Day column sizing ----
+   Do NOT enforce min-heights/max-heights here: WeeklyPlanner.jsx owns heights
+   via gridAutoRows and the inline flex layout.
+*/
+.plannerDayCard .cardBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* allows the inner list to flex + scroll */
+}
+
+.plannerDayEmpty {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Optional: keep “Today” highlight consistent (safe visual-only) */
+.plannerDayCardToday {
+  border: 2px solid rgba(80, 160, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(80, 160, 255, 0.12);
+}
+.plannerDayHeader {
+  border-radius: 12px;
+  padding: 6px 8px;
+}
+.plannerDayHeaderToday {
+  background: rgba(80, 160, 255, 0.08);
 }

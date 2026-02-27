@@ -12,6 +12,32 @@ import {
   setCompletedHours,
 } from "../lib/workloadEstimates";
 
+/* ---------------- UI tuning knobs ---------------- */
+const UI = {
+  // Grid layout
+  GRID_COLS: 4,
+  GRID_ROW_HEIGHT_PX: 660,
+  GRID_GAP_PX: 12,
+
+  // Day card layout
+  DAY_CARD_PADDING_PX: 10,
+  DAY_HEADER_GAP_PX: 10,
+  DAY_LIST_MARGIN_TOP_PX: 10,
+
+  // Scrollable list (inside each day card)
+  LIST_GAP_PX: 10,
+  LIST_SCROLL_PAD_RIGHT_PX: 4,
+
+  // Scroll controls / fades
+  FADE_HEIGHT_PX: 22,
+  BUTTON_SIZE_PX: 30,
+  BUTTON_INSET_PX: 6,
+
+  // Space reserved so content doesn’t sit underneath buttons
+  // (keep this close to button size + inset so you don't get "empty top" feeling)
+  BUTTON_RESERVED_PAD_PX: 22,
+};
+
 /* ---------------- date/time helpers ---------------- */
 function startOfDay(d) {
   const x = new Date(d);
@@ -106,14 +132,16 @@ function parseMaybeHours(raw) {
   return null;
 }
 
-// 
+/* ---------------- icons ---------------- */
 function DoubleChevronIcon({ direction = "down" }) {
-  // Your uploaded icon: double chevron. We'll draw it as SVG.
-  // direction: "up" | "down"
   const rotate = direction === "up" ? "rotate(180 12 12)" : undefined;
 
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      style={{ width: 20, height: 20 }}
+    >
       <g transform={rotate}>
         <path
           d="M6 7l6 6 6-6"
@@ -136,72 +164,179 @@ function DoubleChevronIcon({ direction = "down" }) {
   );
 }
 
+/* ---------------- Scrollable day list ---------------- */
 function ScrollableDayList({ children, style, className = "" }) {
-  const ref = useRef(null);
+  const scrollerRef = useRef(null);
+  const shellRef = useRef(null);
   const [canUp, setCanUp] = useState(false);
   const [canDown, setCanDown] = useState(false);
 
   function recompute() {
-    const el = ref.current;
+    const el = scrollerRef.current;
     if (!el) return;
     const { scrollTop, scrollHeight, clientHeight } = el;
 
+    // A tiny tolerance avoids flicker from fractional pixels
     setCanUp(scrollTop > 2);
     setCanDown(scrollTop + clientHeight < scrollHeight - 2);
   }
 
   useEffect(() => {
-    recompute();
-    const el = ref.current;
+    const el = scrollerRef.current;
+    const shell = shellRef.current;
     if (!el) return;
+
+    recompute();
 
     const onScroll = () => recompute();
     el.addEventListener("scroll", onScroll, { passive: true });
 
+    // Observe both the scroller and its shell so we recompute when layout changes
     const ro = new ResizeObserver(() => recompute());
     ro.observe(el);
+    if (shell) ro.observe(shell);
+
+    // Recompute after initial paint/layout settle
+    const t1 = setTimeout(recompute, 0);
+    const t2 = setTimeout(recompute, 50);
 
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
   }, []);
 
+  // Also recompute when children change (new cards, effort widget expands, etc.)
+  useEffect(() => {
+    const t = setTimeout(recompute, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children]);
+
   function scrollToTop() {
-    const el = ref.current;
+    const el = scrollerRef.current;
     if (!el) return;
     el.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function scrollToBottom() {
-    const el = ref.current;
+    const el = scrollerRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }
 
+  const btnStyle = (pos) => ({
+    position: "absolute",
+    left: "50%",
+    transform: "translateX(-50%)",
+    zIndex: 6,
+    width: UI.BUTTON_SIZE_PX,
+    height: UI.BUTTON_SIZE_PX,
+    borderRadius: 999,
+    display: "grid",
+    placeItems: "center",
+    ...(pos === "top"
+      ? { top: UI.BUTTON_INSET_PX }
+      : { bottom: UI.BUTTON_INSET_PX }),
+  });
+
   return (
-    <div className={`plannerDayList ${className}`} ref={ref} style={style}>
-      <button
-        type="button"
-        className={`plannerScrollBtn up ${canUp ? "" : "hidden"}`}
-        onClick={scrollToTop}
-        aria-label="Scroll to top"
-        title="Scroll to top"
-      >
-        <DoubleChevronIcon direction="up" />
-      </button>
+    <div
+      ref={shellRef}
+      className={`plannerDayListShell ${className}`}
+      style={{
+        ...style,
+        position: "relative",
+        overflow: "hidden",
+        flex: 1,
+        minHeight: 0, 
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* fades */}
+      {canUp ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: UI.FADE_HEIGHT_PX,
+            zIndex: 5,
+            pointerEvents: "none",
+            background:
+              "linear-gradient(to bottom, rgba(255,255,255,1), rgba(255,255,255,0))",
+          }}
+        />
+      ) : null}
 
-      <button
-        type="button"
-        className={`plannerScrollBtn down ${canDown ? "" : "hidden"}`}
-        onClick={scrollToBottom}
-        aria-label="Scroll to bottom"
-        title="Scroll to bottom"
-      >
-        <DoubleChevronIcon direction="down" />
-      </button>
+      {canDown ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: UI.FADE_HEIGHT_PX,
+            zIndex: 5,
+            pointerEvents: "none",
+            background:
+              "linear-gradient(to top, rgba(255,255,255,1), rgba(255,255,255,0))",
+          }}
+        />
+      ) : null}
 
-      {children}
+      {/* buttons */}
+      {canUp ? (
+        <button
+          type="button"
+          className="plannerScrollBtn up"
+          onClick={scrollToTop}
+          aria-label="Scroll to top"
+          title="Scroll to top"
+          style={btnStyle("top")}
+        >
+          <DoubleChevronIcon direction="up" />
+        </button>
+      ) : null}
+
+      {canDown ? (
+        <button
+          type="button"
+          className="plannerScrollBtn down"
+          onClick={scrollToBottom}
+          aria-label="Scroll to bottom"
+          title="Scroll to bottom"
+          style={btnStyle("bottom")}
+        >
+          <DoubleChevronIcon direction="down" />
+        </button>
+      ) : null}
+
+      {/* ONLY scrolling element */}
+      <div
+        ref={scrollerRef}
+        className="plannerDayList"
+        style={{
+          flex: 1,
+          height: 0,
+          minHeight: 0,
+          overflowY: "auto",
+          paddingRight: UI.LIST_SCROLL_PAD_RIGHT_PX,
+          paddingTop: UI.BUTTON_RESERVED_PAD_PX,
+          paddingBottom: UI.BUTTON_RESERVED_PAD_PX,
+          display: "flex",
+          flexDirection: "column",
+          gap: UI.LIST_GAP_PX,
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -247,7 +382,7 @@ function loadSplits() {
           s.courseId != null &&
           s.assignmentId != null &&
           s.dateISO &&
-          s.hours != null
+          s.hours != null,
       )
       .map((s) => ({
         id: String(s.id),
@@ -262,7 +397,7 @@ function loadSplits() {
         (s) =>
           Number.isFinite(s.courseId) &&
           Number.isFinite(s.assignmentId) &&
-          Number.isFinite(s.hours)
+          Number.isFinite(s.hours),
       );
   } catch {
     return [];
@@ -290,11 +425,11 @@ function saveEffortKeyMap(map) {
 function navigateToAssignment(courseId, assignmentId) {
   localStorage.setItem(
     "nav:upcoming:target",
-    JSON.stringify({ courseId, assignmentId, ts: Date.now() })
+    JSON.stringify({ courseId, assignmentId, ts: Date.now() }),
   );
 
   window.dispatchEvent(
-    new CustomEvent("canvasbetter:navigate", { detail: { tab: "upcoming" } })
+    new CustomEvent("canvasbetter:navigate", { detail: { tab: "upcoming" } }),
   );
 }
 
@@ -335,7 +470,7 @@ function AnchoredPopover({
       let left = side === "right" ? rect.right + gap : rect.left - gap - width;
       left = Math.max(
         margin,
-        Math.min(left, window.innerWidth - width - margin)
+        Math.min(left, window.innerWidth - width - margin),
       );
 
       let top = rect.top;
@@ -391,7 +526,7 @@ function AnchoredPopover({
     >
       <div className="cardBody">{children}</div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -400,13 +535,13 @@ export function WeeklyPlanner() {
   const plannerQ = useCachedAsync(
     "planner:upcoming",
     ({ signal }) => canvasApi.getUpcoming({ signal }),
-    { ttlMs: 60 * 1000 }
+    { ttlMs: 60 * 1000 },
   );
 
   const itemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
 
   const [weekStart, setWeekStart] = useState(() =>
-    startOfWeekMonday(new Date())
+    startOfWeekMonday(new Date()),
   );
   const [settings, setSettings] = useState(() => loadPlannerSettings());
 
@@ -666,7 +801,7 @@ export function WeeklyPlanner() {
       return setErrMsg(
         courseId,
         assignmentId,
-        `Can't split more than remaining (${cap.toFixed(1)}h).`
+        `Can't split more than remaining (${cap.toFixed(1)}h).`,
       );
 
     if (targetISO < todayISO)
@@ -675,7 +810,7 @@ export function WeeklyPlanner() {
       return setErrMsg(
         courseId,
         assignmentId,
-        `Can't split after due date (${dueISO}).`
+        `Can't split after due date (${dueISO}).`,
       );
 
     clearErrMsg(courseId, assignmentId);
@@ -684,7 +819,7 @@ export function WeeklyPlanner() {
       (s) =>
         s.courseId === courseId &&
         s.assignmentId === assignmentId &&
-        s.dateISO === targetISO
+        s.dateISO === targetISO,
     );
 
     if (existingIdx >= 0) {
@@ -719,7 +854,7 @@ export function WeeklyPlanner() {
 
   const toggleSplitCompleted = (splitId, checked) => {
     setSplits((prev) =>
-      prev.map((s) => (s.id === splitId ? { ...s, completed: !!checked } : s))
+      prev.map((s) => (s.id === splitId ? { ...s, completed: !!checked } : s)),
     );
 
     const s = splits.find((x) => x.id === splitId);
@@ -736,7 +871,7 @@ export function WeeklyPlanner() {
       addCompletedHours({ courseId, assignmentId }, h);
 
       setSplits((prev) =>
-        prev.map((x) => (x.id === splitId ? { ...x, effortApplied: true } : x))
+        prev.map((x) => (x.id === splitId ? { ...x, effortApplied: true } : x)),
       );
       setStorageTick((t) => t + 1);
       return;
@@ -750,7 +885,7 @@ export function WeeklyPlanner() {
     setCompletedHours({ courseId, assignmentId }, next);
 
     setSplits((prev) =>
-      prev.map((x) => (x.id === splitId ? { ...x, effortApplied: false } : x))
+      prev.map((x) => (x.id === splitId ? { ...x, effortApplied: false } : x)),
     );
     setStorageTick((t) => t + 1);
   };
@@ -759,7 +894,9 @@ export function WeeklyPlanner() {
     const btn = e?.currentTarget || null;
 
     const todayISO = isoDay(new Date());
-    const dueISO = assignment?.due_at ? isoDay(new Date(assignment.due_at)) : null;
+    const dueISO = assignment?.due_at
+      ? isoDay(new Date(assignment.due_at))
+      : null;
     const defaultDateISO =
       dueISO && todayISO <= dueISO ? todayISO : dueISO || "";
 
@@ -796,13 +933,18 @@ export function WeeklyPlanner() {
     const targetISO = String(splitPopDateISO || "");
 
     if (!targetISO) return setSplitPopErr("Pick a split date.");
-    if (!Number.isFinite(h) || h <= 0) return setSplitPopErr("Enter split hours > 0.");
-    if (targetISO < todayISO) return setSplitPopErr("Can't split into a past date.");
-    if (dueISO && targetISO > dueISO) return setSplitPopErr(`Can't split after due date (${dueISO}).`);
+    if (!Number.isFinite(h) || h <= 0)
+      return setSplitPopErr("Enter split hours > 0.");
+    if (targetISO < todayISO)
+      return setSplitPopErr("Can't split into a past date.");
+    if (dueISO && targetISO > dueISO)
+      return setSplitPopErr(`Can't split after due date (${dueISO}).`);
 
     // Only enforce cap if we have an estimate
     if (cap != null && h > cap + 1e-9)
-      return setSplitPopErr(`Can't split more than remaining (${cap.toFixed(1)}h).`);
+      return setSplitPopErr(
+        `Can't split more than remaining (${cap.toFixed(1)}h).`,
+      );
 
     setSplitPopErr("");
 
@@ -843,7 +985,7 @@ export function WeeklyPlanner() {
       const list = splitsByKey.get(key) || [];
       return list.reduce(
         (acc, s) => acc + (Number.isFinite(s.hours) ? s.hours : 0),
-        0
+        0,
       );
     };
 
@@ -854,7 +996,7 @@ export function WeeklyPlanner() {
 
       if (splitDay >= start && splitDay < end) {
         const dayIdx = Math.floor(
-          (splitDay.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+          (splitDay.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
         );
         const list = buckets.get(dayIdx) || [];
         list.push({ __kind: "split", split: s });
@@ -879,7 +1021,7 @@ export function WeeklyPlanner() {
 
       if (due >= start && due < end) {
         const dayIdx = Math.floor(
-          (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+          (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
         );
         const list = buckets.get(dayIdx) || [];
         list.push({
@@ -903,7 +1045,7 @@ export function WeeklyPlanner() {
               : (itemsRaw || []).find(
                   (it) =>
                     it.course_id === x.split.courseId &&
-                    it.id === x.split.assignmentId
+                    it.id === x.split.assignmentId,
                 );
           const ay =
             y.__kind === "base"
@@ -911,7 +1053,7 @@ export function WeeklyPlanner() {
               : (itemsRaw || []).find(
                   (it) =>
                     it.course_id === y.split.courseId &&
-                    it.id === y.split.assignmentId
+                    it.id === y.split.assignmentId,
                 );
           const ac = (ax?.course_name || "").toLowerCase();
           const bc = (ay?.course_name || "").toLowerCase();
@@ -1163,7 +1305,8 @@ export function WeeklyPlanner() {
             </div>
 
             <div className="muted" style={{ marginLeft: "auto" }}>
-              Tip: Missing/Submitted = Canvas state • Complete = workload progress • Yellow bar = split
+              Tip: Missing/Submitted = Canvas state • Complete = workload
+              progress • Yellow bar = split
             </div>
           </div>
         </div>
@@ -1173,31 +1316,40 @@ export function WeeklyPlanner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          gap: 12,
+          gridTemplateColumns: `repeat(${UI.GRID_COLS}, minmax(0, 1fr))`,
+          gridAutoRows: `${UI.GRID_ROW_HEIGHT_PX}px`,
+          gap: UI.GRID_GAP_PX,
           width: "100%",
-          
         }}
       >
         {view.days.map((day, idx) => {
           const list = view.buckets.get(idx) || [];
           const total = view.dayTotals[idx];
           const overloaded = total > capacity + 1e-9;
-
           const isToday = isoDay(day) === isTodayISO;
 
           return (
             <div
               key={day.toISOString()}
               className={`card plannerDayCard${isToday ? " plannerDayCardToday" : ""}`}
+              style={{ height: "100%" }}
             >
-              <div className="cardBody" style={{ padding: 10 }}>
+              <div
+                className="cardBody"
+                style={{
+                  padding: UI.DAY_CARD_PADDING_PX,
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                }}
+              >
                 <div
                   className={`plannerDayHeader${isToday ? " plannerDayHeaderToday" : ""}`}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 10,
+                    gap: UI.DAY_HEADER_GAP_PX,
                     alignItems: "baseline",
                   }}
                 >
@@ -1223,28 +1375,29 @@ export function WeeklyPlanner() {
                 </div>
 
                 {list.length === 0 ? (
-                  <div className="muted" style={{ marginTop: 8 }}>
+                  <div
+                    className="plannerDayEmpty muted"
+                    style={{ marginTop: 8 }}
+                  >
                     No due items.
                   </div>
                 ) : (
                   <ScrollableDayList
                     style={{
-                      marginTop: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                      maxHeight: "520px",
-                      overflowY: "auto",
-                      paddingRight: 4,
+                      marginTop: UI.DAY_LIST_MARGIN_TOP_PX,
+                      flex: 1,
+                      minHeight: 0,
                     }}
                   >
                     {list.map((entry) => {
+                      // --- your existing card rendering stays the same ---
+                      // (unchanged from your pasted file; keep everything below as-is)
                       if (entry.__kind === "split") {
                         const s = entry.split;
                         const a = (itemsRaw || []).find(
                           (x) =>
                             x.course_id === s.courseId &&
-                            x.id === s.assignmentId
+                            x.id === s.assignmentId,
                         );
 
                         const name = a?.name || `Assignment ${s.assignmentId}`;
@@ -1265,8 +1418,13 @@ export function WeeklyPlanner() {
                           <div key={`split-${s.id}`} className="card">
                             <div className="cardBody" style={{ padding: 0 }}>
                               <div className="plannerCard">
-                                <div className={`plannerBar plannerBar-${barVariant}`} />
-                                <div className="plannerContent" style={{ padding: 10 }}>
+                                <div
+                                  className={`plannerBar plannerBar-${barVariant}`}
+                                />
+                                <div
+                                  className="plannerContent"
+                                  style={{ padding: 10 }}
+                                >
                                   <div
                                     style={{
                                       display: "flex",
@@ -1281,7 +1439,14 @@ export function WeeklyPlanner() {
                                     >
                                       {name}
                                     </div>
-                                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
+                                      }}
+                                    >
                                       {renderSingleStatusBadge({
                                         missing,
                                         submitted,
@@ -1304,8 +1469,13 @@ export function WeeklyPlanner() {
                                     <span className="mono">{courseLabel}</span>
                                   </div>
 
-                                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                                    <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
+                                  <div
+                                    className="muted"
+                                    style={{ marginTop: 6, fontSize: 12 }}
+                                  >
+                                    <span style={{ fontWeight: 900 }}>
+                                      Due on:
+                                    </span>{" "}
                                     <span className="mono">
                                       {dueDate || "—"} {dueTime || ""}
                                     </span>
@@ -1336,28 +1506,41 @@ export function WeeklyPlanner() {
                                         onChange={(e) =>
                                           toggleSplitCompleted(
                                             s.id,
-                                            e.target.checked
+                                            e.target.checked,
                                           )
                                         }
                                       />
                                       Completed
                                     </label>
 
-                                    <div className="muted" style={{ fontSize: 12 }}>
+                                    <div
+                                      className="muted"
+                                      style={{ fontSize: 12 }}
+                                    >
                                       Planned:{" "}
                                       <span className="mono">
-                                        {(s.completed ? 0 : s.hours).toFixed(1)}h
+                                        {(s.completed ? 0 : s.hours).toFixed(1)}
+                                        h
                                       </span>{" "}
-                                      on <span className="mono">{s.dateISO}</span>
+                                      on{" "}
+                                      <span className="mono">{s.dateISO}</span>
                                     </div>
 
-                                    <button className="btn btnDanger" onClick={() => removeSplit(s.id)}>
+                                    <button
+                                      className="btn btnDanger"
+                                      onClick={() => removeSplit(s.id)}
+                                    >
                                       Remove
                                     </button>
 
                                     <button
                                       className="btn"
-                                      onClick={() => navigateToAssignment(s.courseId, s.assignmentId)}
+                                      onClick={() =>
+                                        navigateToAssignment(
+                                          s.courseId,
+                                          s.assignmentId,
+                                        )
+                                      }
                                     >
                                       View assignment
                                     </button>
@@ -1387,12 +1570,15 @@ export function WeeklyPlanner() {
 
                       const missing = isMissing(a);
                       const submitted = !!a.submitted;
-                      const complete = !submitted && isWorkloadComplete(a.course_id, a.id);
+                      const complete =
+                        !submitted && isWorkloadComplete(a.course_id, a.id);
 
                       const todayISO = isoDay(new Date());
-                      const dueISO = a?.due_at ? isoDay(new Date(a.due_at)) : null;
+                      const dueISO = a?.due_at
+                        ? isoDay(new Date(a.due_at))
+                        : null;
 
-                      const cap = maxRemainingFor(a); // null means no cap (no estimate)
+                      const cap = maxRemainingFor(a);
                       const canSplit =
                         !!a?.due_at &&
                         !submitted &&
@@ -1403,8 +1589,13 @@ export function WeeklyPlanner() {
                         <div key={`${a.course_id}-${a.id}`} className="card">
                           <div className="cardBody" style={{ padding: 0 }}>
                             <div className="plannerCard">
-                              <div className={`plannerBar plannerBar-${barVariant}`} />
-                              <div className="plannerContent" style={{ padding: 10 }}>
+                              <div
+                                className={`plannerBar plannerBar-${barVariant}`}
+                              />
+                              <div
+                                className="plannerContent"
+                                style={{ padding: 10 }}
+                              >
                                 <div
                                   style={{
                                     display: "flex",
@@ -1412,11 +1603,26 @@ export function WeeklyPlanner() {
                                     gap: 10,
                                   }}
                                 >
-                                  <div className="plannerTitle" title={a.name} style={{ fontWeight: 900 }}>
+                                  <div
+                                    className="plannerTitle"
+                                    title={a.name}
+                                    style={{ fontWeight: 900 }}
+                                  >
                                     {a.name}
                                   </div>
-                                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                    {renderSingleStatusBadge({ missing, submitted, complete })}
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      gap: 8,
+                                      alignItems: "center",
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    {renderSingleStatusBadge({
+                                      missing,
+                                      submitted,
+                                      complete,
+                                    })}
                                   </div>
                                 </div>
 
@@ -1434,14 +1640,22 @@ export function WeeklyPlanner() {
                                   <span className="mono">{courseLabel}</span>
                                 </div>
 
-                                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                                  <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
+                                <div
+                                  className="muted"
+                                  style={{ marginTop: 6, fontSize: 12 }}
+                                >
+                                  <span style={{ fontWeight: 900 }}>
+                                    Due on:
+                                  </span>{" "}
                                   <span className="mono">
                                     {dueDate || "—"} {dueTime || ""}
                                   </span>
                                 </div>
 
-                                <div className="plannerEffortCompact" style={{ marginTop: 10 }}>
+                                <div
+                                  className="plannerEffortCompact"
+                                  style={{ marginTop: 10 }}
+                                >
                                   <WorkloadEstimateControl
                                     courseId={a.course_id}
                                     assignmentId={a.id}
@@ -1449,8 +1663,14 @@ export function WeeklyPlanner() {
                                   />
                                 </div>
 
-                                <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                                  Planned today: <span className="mono">{plannedForThisDueDay.toFixed(1)}h</span>
+                                <div
+                                  className="muted"
+                                  style={{ marginTop: 8, fontSize: 12 }}
+                                >
+                                  Planned today:{" "}
+                                  <span className="mono">
+                                    {plannedForThisDueDay.toFixed(1)}h
+                                  </span>
                                 </div>
 
                                 <div style={{ marginTop: 10 }}>
@@ -1486,7 +1706,9 @@ export function WeeklyPlanner() {
 
                                     <button
                                       className="btn"
-                                      onClick={() => navigateToAssignment(a.course_id, a.id)}
+                                      onClick={() =>
+                                        navigateToAssignment(a.course_id, a.id)
+                                      }
                                       style={{
                                         flex: 1,
                                         minWidth: 0,
@@ -1502,7 +1724,10 @@ export function WeeklyPlanner() {
                                   </div>
 
                                   {splitErrors[keyFor(a.course_id, a.id)] ? (
-                                    <div className="dangerText" style={{ marginTop: 6, fontSize: 12 }}>
+                                    <div
+                                      className="dangerText"
+                                      style={{ marginTop: 6, fontSize: 12 }}
+                                    >
                                       {splitErrors[keyFor(a.course_id, a.id)]}
                                     </div>
                                   ) : null}
@@ -1521,7 +1746,7 @@ export function WeeklyPlanner() {
         })}
 
         {/* Next up */}
-        <div className="card">
+        <div className="card" style={{ height: "100%" }}>
           <div className="cardBody" style={{ padding: 10 }}>
             <div className="h3" style={{ margin: 0 }}>
               Next up
@@ -1554,36 +1779,79 @@ export function WeeklyPlanner() {
 
                   const missing = isMissing(a);
                   const submitted = !!a.submitted;
-                  const complete = !submitted && isWorkloadComplete(a.course_id, a.id);
+                  const complete =
+                    !submitted && isWorkloadComplete(a.course_id, a.id);
 
                   return (
                     <div key={`next-${a.course_id}-${a.id}`} className="card">
                       <div className="cardBody" style={{ padding: 0 }}>
                         <div className="plannerCard">
                           <div className={`plannerBar plannerBar-${variant}`} />
-                          <div className="plannerContent" style={{ padding: 10 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                              <div className="plannerTitle" title={a.name} style={{ fontWeight: 900 }}>
+                          <div
+                            className="plannerContent"
+                            style={{ padding: 10 }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                              }}
+                            >
+                              <div
+                                className="plannerTitle"
+                                title={a.name}
+                                style={{ fontWeight: 900 }}
+                              >
                                 {a.name}
                               </div>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                {renderSingleStatusBadge({ missing, submitted, complete })}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {renderSingleStatusBadge({
+                                  missing,
+                                  submitted,
+                                  complete,
+                                })}
                               </div>
                             </div>
 
-                            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                            <div
+                              className="muted"
+                              style={{ marginTop: 6, fontSize: 12 }}
+                            >
                               <span className="mono">{courseLabel}</span>
                             </div>
 
-                            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                            <div
+                              className="muted"
+                              style={{ marginTop: 6, fontSize: 12 }}
+                            >
                               <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
                               <span className="mono">
                                 {dueDate || "—"} {dueTime || ""}
                               </span>
                             </div>
 
-                            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                              <button className="btn" onClick={() => navigateToAssignment(a.course_id, a.id)}>
+                            <div
+                              style={{
+                                marginTop: 10,
+                                display: "flex",
+                                gap: 10,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <button
+                                className="btn"
+                                onClick={() =>
+                                  navigateToAssignment(a.course_id, a.id)
+                                }
+                              >
                                 View assignment
                               </button>
                             </div>
@@ -1703,7 +1971,11 @@ export function WeeklyPlanner() {
                 />
                 <span className="muted">hours</span>
 
-                <button type="button" className="btn" onClick={applySplitFromPopover}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={applySplitFromPopover}
+                >
                   Apply
                 </button>
               </div>
@@ -1713,7 +1985,10 @@ export function WeeklyPlanner() {
             </div>
 
             {splitPopErr ? (
-              <div className="dangerText" style={{ marginTop: 10, fontSize: 12 }}>
+              <div
+                className="dangerText"
+                style={{ marginTop: 10, fontSize: 12 }}
+              >
                 {splitPopErr}
               </div>
             ) : null}
@@ -1783,7 +2058,7 @@ export function WeeklyPlanner() {
               className="btn btnDanger"
               onClick={() => {
                 const ok = window.confirm(
-                  "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone."
+                  "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone.",
                 );
                 if (!ok) return;
 
