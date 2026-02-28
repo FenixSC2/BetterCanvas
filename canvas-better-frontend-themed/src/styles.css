@@ -149,6 +149,15 @@ html[data-theme="forest"] .toggleTrack.on {
   --badge-danger-text: var(--badge-danger-text-strong);
 }
 
+/* Ensure fades on weeekly planner page match the theme */
+.plannerFadeColorTop {
+  background: linear-gradient(to bottom, var(--surface), rgba(255, 255, 255, 0));
+}
+
+.plannerFadeColorBot {
+  background: linear-gradient(to top, var(--surface), rgba(255, 255, 255, 0));
+}
+
 /* ===== Density variants ===== */
 html[data-density="compact"] {
   --pagePad: 12px;
@@ -305,6 +314,7 @@ ol {
 
 /* ===== Cards ===== */
 .card {
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radiusLg);
   background: var(--surface);
@@ -313,6 +323,7 @@ ol {
 }
 
 .cardBody {
+  height: 100%;
   padding: var(--cardPad);
 }
 
@@ -1299,27 +1310,6 @@ details.expandable > .cardBody {
   height: auto;
   max-height: none;
   overflow: visible;
-}
-
-/* (3) Day list scroll container + FIX for scroll buttons anchoring */
-.plannerDayList {
-  /* Scroll container */
-  overflow-y: auto;
-  max-height: 520px;
-  scrollbar-gutter: stable;
-
-  /* Needed so absolute buttons anchor to THIS element (not a parent / page) */
-  position: relative;
-
-  /* make sure overlays (fades/buttons) paint over the scrolled content */
-  isolation: isolate;
-
-  /* Firefox */
-  scrollbar-width: thin;
-}
-
-html[data-density="compact"] .plannerDayList {
-  max-height: 460px;
 }
 
 /* WebKit scrollbar styling */

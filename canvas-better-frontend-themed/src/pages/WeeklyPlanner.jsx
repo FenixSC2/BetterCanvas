@@ -16,7 +16,7 @@ import {
 const UI = {
   // Grid layout
   GRID_COLS: 4,
-  GRID_ROW_HEIGHT_PX: 660,
+  GRID_ROW_HEIGHT_PX: 460,
   GRID_GAP_PX: 12,
 
   // Day card layout
@@ -260,6 +260,7 @@ function ScrollableDayList({ children, style, className = "" }) {
       {canUp ? (
         <div
           aria-hidden="true"
+          className="plannerFadeColorTop"
           style={{
             position: "absolute",
             top: 0,
@@ -268,8 +269,6 @@ function ScrollableDayList({ children, style, className = "" }) {
             height: UI.FADE_HEIGHT_PX,
             zIndex: 5,
             pointerEvents: "none",
-            background:
-              "linear-gradient(to bottom, rgba(255,255,255,1), rgba(255,255,255,0))",
           }}
         />
       ) : null}
@@ -277,6 +276,7 @@ function ScrollableDayList({ children, style, className = "" }) {
       {canDown ? (
         <div
           aria-hidden="true"
+          className="plannerFadeColorBot"
           style={{
             position: "absolute",
             bottom: 0,
@@ -285,8 +285,6 @@ function ScrollableDayList({ children, style, className = "" }) {
             height: UI.FADE_HEIGHT_PX,
             zIndex: 5,
             pointerEvents: "none",
-            background:
-              "linear-gradient(to top, rgba(255,255,255,1), rgba(255,255,255,0))",
           }}
         />
       ) : null}
@@ -328,8 +326,8 @@ function ScrollableDayList({ children, style, className = "" }) {
           minHeight: 0,
           overflowY: "auto",
           paddingRight: UI.LIST_SCROLL_PAD_RIGHT_PX,
-          paddingTop: UI.BUTTON_RESERVED_PAD_PX,
-          paddingBottom: UI.BUTTON_RESERVED_PAD_PX,
+          paddingTop: 0,
+          paddingBottom: 0,
           display: "flex",
           flexDirection: "column",
           gap: UI.LIST_GAP_PX,
