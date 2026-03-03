@@ -36,6 +36,8 @@ const UI = {
   // Space reserved so content doesn’t sit underneath buttons
   // (keep this close to button size + inset so you don't get "empty top" feeling)
   BUTTON_RESERVED_PAD_PX: 22,
+  // How many "next up" items to show by default
+  NEXT_UP_LIMIT: 4,
 };
 
 /* ---------------- date/time helpers ---------------- */
@@ -1150,7 +1152,7 @@ export function WeeklyPlanner() {
       .filter((x) => Number.isFinite(x.t) && x.t >= after)
       .filter((x) => (settings.showCompleted ? true : !x.a.submitted))
       .sort((x, y) => x.t - y.t)
-      .slice(0, 3) // ✅ limit
+      .slice(0, UI.NEXT_UP_LIMIT) // ✅ limit
       .map((x) => x.a);
     return upcoming;
   }, [items, view.end, settings.showCompleted]);
@@ -1763,7 +1765,16 @@ export function WeeklyPlanner() {
 
         {/* Next up */}
         <div className="card" style={{ height: "100%" }}>
-          <div className="cardBody" style={{ padding: 10 }}>
+          <div
+            className="cardBody"
+            style={{
+              padding: 10,
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
             <div className="h3" style={{ margin: 0 }}>
               Next up
             </div>
@@ -1776,13 +1787,8 @@ export function WeeklyPlanner() {
                 No upcoming items found after this week.
               </div>
             ) : (
-              <div
-                style={{
-                  marginTop: 10,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                }}
+              <ScrollableDayList
+                style={{ marginTop: UI.DAY_LIST_MARGIN_TOP_PX, flex: 1, minHeight: 0 }}
               >
                 {nextUp.map((a) => {
                   const dueTime = fmtTime(a.due_at);
@@ -1877,7 +1883,7 @@ export function WeeklyPlanner() {
                     </div>
                   );
                 })}
-              </div>
+              </ScrollableDayList>
             )}
           </div>
         </div>
