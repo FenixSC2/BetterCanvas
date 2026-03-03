@@ -348,6 +348,88 @@ ol {
   cursor: not-allowed;
 }
 
+/* Form controls matching theme surfaces (used in WeeklyPlanner settings) */
+.select,
+input[type="number"],
+input[type="text"],
+textarea {
+  padding: 8px 10px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Stabilize capacity numeric width to avoid layout shifts when digits change */
+.capacityValue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.capacityNumber {
+  display: inline-block;
+  width: 4ch; /* reserve space for values up to 12.0 */
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.capacityUnit {
+  white-space: nowrap;
+}
+
+/* Keep range inputs visually compact but theme-aware */
+input[type="range"] {
+  appearance: none;
+  height: 28px;
+  background: transparent;
+}
+
+/* The visible slider track + thumb (cross-browser) */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface2), var(--surface) 20%);
+  border: 1px solid var(--border2);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--text);
+  border: 2px solid var(--surface);
+  margin-top: -4px; /* center thumb on track */
+}
+
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface2), var(--surface) 20%);
+  border: 1px solid var(--border2);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--text);
+  border: 2px solid var(--surface);
+}
+
+/* Ensure focus state is visible */
+input[type="range"]:focus {
+  outline: none;
+}
+input[type="range"]:focus::-webkit-slider-runnable-track {
+  box-shadow: 0 0 0 4px rgba(80, 160, 255, 0.08);
+}
+
+/* For select arrows on some platforms, ensure text color matches */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 .iconBtn {
   display: inline-flex;
   align-items: center;
@@ -426,6 +508,17 @@ details > summary::marker {
 details.expandable > .cardBody {
   display: grid;
   gap: var(--blockGap);
+}
+
+/* Ensure expandable/details bodies size to their contents instead of
+   inheriting the generic .cardBody height:100% rule. This prevents the
+   description content from being pushed outside the dropdown container. */
+details.expandable > .cardBody,
+.listItem > details > .cardBody,
+.listItem > .expandable > .cardBody,
+.expandable .cardBody {
+  height: auto;
+  overflow: visible;
 }
 
 /* ===== Modal ===== */

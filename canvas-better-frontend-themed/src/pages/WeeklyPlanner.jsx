@@ -164,6 +164,29 @@ function DoubleChevronIcon({ direction = "down" }) {
   );
 }
 
+// Toggle function component (used in settings)
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      className="toggle"
+    >
+      <span className={`toggleTrack ${checked ? "on" : "off"}`}>
+        <span className={`toggleThumb ${checked ? "on" : ""}`} />
+      </span>
+    </button>
+  );
+}
+
 /* ---------------- Scrollable day list ---------------- */
 function ScrollableDayList({ children, style, className = "" }) {
   const scrollerRef = useRef(null);
@@ -251,7 +274,7 @@ function ScrollableDayList({ children, style, className = "" }) {
         position: "relative",
         overflow: "hidden",
         flex: 1,
-        minHeight: 0, 
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
       }}
@@ -1224,12 +1247,12 @@ export function WeeklyPlanner() {
             style={{ gap: 14, alignItems: "center", marginTop: 12 }}
           >
             <div className="muted">
-              Daily capacity:{" "}
-              <span className="mono" title="Used to warn about overloaded days">
-                {capacity.toFixed(1)}h/day
+              Daily capacity: {" "}
+              <span className="capacityValue" title="Used to warn about overloaded days">
+                <span className="mono capacityNumber">{capacity.toFixed(1)}</span>
+                <span className="capacityUnit">h/day</span>
               </span>
             </div>
-
             <input
               type="range"
               min="0.5"
@@ -1240,7 +1263,6 @@ export function WeeklyPlanner() {
               style={{ width: 220 }}
               aria-label="Daily capacity hours"
             />
-
             <input
               type="number"
               min="0.5"
@@ -1252,15 +1274,11 @@ export function WeeklyPlanner() {
               aria-label="Daily capacity numeric"
               title="Type a capacity value"
             />
-
-            <label
-              className="muted"
-              style={{ display: "flex", alignItems: "center", gap: 8 }}
-            >
-              <input
-                type="checkbox"
+            
+            <div className="toggleRow">
+              <span className="muted">Show submitted:</span>
+              <Toggle
                 checked={!!settings.showCompleted}
-                onClick={(e) => e.stopPropagation()}
                 onChange={() =>
                   setSettings((s) => {
                     const next = { ...s, showCompleted: !s.showCompleted };
@@ -1268,9 +1286,11 @@ export function WeeklyPlanner() {
                     return next;
                   })
                 }
+                label={
+                  settings.showCompleted ? "Hide submitted" : "Show submitted"
+                }
               />
-              Show submitted
-            </label>
+            </div>
 
             <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
               <span className="muted">Course:</span>
@@ -1288,7 +1308,6 @@ export function WeeklyPlanner() {
                 ))}
               </select>
             </div>
-
             <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
               <span className="muted">Sort:</span>
               <select
@@ -1301,7 +1320,6 @@ export function WeeklyPlanner() {
                 <option value="course">Course</option>
               </select>
             </div>
-
             <div className="muted" style={{ marginLeft: "auto" }}>
               Tip: Missing/Submitted = Canvas state • Complete = workload
               progress • Yellow bar = split

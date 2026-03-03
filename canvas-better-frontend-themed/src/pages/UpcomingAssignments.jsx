@@ -194,7 +194,8 @@ export function UpcomingAssignments() {
     { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
   );
 
-  const [openDetailsKey, setOpenDetailsKey] = useState(null); // `${courseId}-${assignmentId}`
+  // track which details panels are open (allow multiple)
+  const [openDetailsKeys, setOpenDetailsKeys] = useState(() => new Set());
 
   const items = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
 
@@ -680,8 +681,9 @@ export function UpcomingAssignments() {
                         <div className="assignmentDetails">
                           <Expandable
                             title="Details"
+                            defaultOpen={openDetailsKeys.has(focusId)}
                             subtitle={
-                              hasDesc && openDetailsKey !== focusId ? (
+                              hasDesc && !openDetailsKeys.has(focusId) ? (
                                 <span className="muted">{firstLine(desc)}</span>
                               ) : hasDesc ? (
                                 <span className="muted"> </span>
@@ -689,9 +691,14 @@ export function UpcomingAssignments() {
                                 <span className="muted">No description</span>
                               )
                             }
-                            onToggleOpen={(isOpen) =>
-                              setOpenDetailsKey(isOpen ? focusId : null)
-                            }
+                            onToggle={(isOpen) => {
+                              setOpenDetailsKeys((prev) => {
+                                const next = new Set(prev);
+                                if (isOpen) next.add(focusId);
+                                else next.delete(focusId);
+                                return next;
+                              });
+                            }}
                           >
                             <div className="stack">
                               {hasDesc ? (

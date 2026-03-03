@@ -53,9 +53,8 @@ export function SettingsModal({ open, onClose }) {
   const sections = useMemo(
     () => [
       { key: "themes", label: "Themes" },
-      { key: "effort", label: "Effort" }, // <-- NEW
+      { key: "effort", label: "Effort" }, 
       { key: "notifications", label: "Notifications", disabled: true },
-      { key: "gpa", label: "GPA visibility", disabled: true },
       { key: "other", label: "Other", disabled: true },
     ],
     []
