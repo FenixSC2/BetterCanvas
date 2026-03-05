@@ -1540,3 +1540,201 @@ details.expandable > .cardBody,
 .plannerDayHeaderToday {
   background: rgba(80, 160, 255, 0.08);
 }
+
+/* ===== Auth Pages ===== */
+
+.authContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--pagePad);
+  background: var(--bg);
+}
+
+.authPanel {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  padding: 32px;
+  box-shadow: var(--shadow);
+}
+
+.authTitle {
+  font-size: var(--fontH2);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.authSubtitle {
+  font-size: var(--fontSm);
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.authForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--blockGap);
+}
+
+.authField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.authField label {
+  font-size: var(--fontSm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.authInput,
+.authTextarea {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: var(--fontBase);
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.authInput:focus,
+.authTextarea:focus {
+  outline: none;
+  border-color: rgba(80, 160, 255, 0.6);
+  background: var(--surface);
+}
+
+.authTextarea {
+  resize: vertical;
+  min-height: 100px;
+  font-family: monospace;
+}
+
+.authButton {
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radiusSm);
+  background: rgba(80, 160, 255, 0.85);
+  color: #ffffff;
+  font-size: var(--fontBase);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.authButton:hover:not(:disabled) {
+  background: rgba(80, 160, 255, 1);
+}
+
+.authButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.authButtonDanger {
+  background: rgba(200, 40, 40, 0.75);
+}
+
+.authButtonDanger:hover:not(:disabled) {
+  background: rgba(200, 40, 40, 0.95);
+}
+
+.authButtonSecondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.authButtonSecondary:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border2);
+}
+
+.authError {
+  padding: 10px 12px;
+  border-radius: var(--radiusSm);
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-text);
+  border: 1px solid var(--badge-danger-border);
+  font-size: var(--fontSm);
+}
+
+.authSuccess {
+  padding: 10px 12px;
+  border-radius: var(--radiusSm);
+  background: rgba(40, 200, 40, 0.18);
+  color: rgba(40, 200, 40, 0.95);
+  border: 1px solid rgba(40, 200, 40, 0.3);
+  font-size: var(--fontSm);
+}
+
+.authHint {
+  font-size: var(--fontSm);
+  color: var(--muted);
+  margin: 4px 0 0 0;
+}
+
+.authLink {
+  color: rgba(80, 160, 255, 0.85);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.authLink:hover {
+  color: rgba(80, 160, 255, 1);
+  text-decoration: underline;
+}
+
+.authFooter {
+  text-align: center;
+  font-size: var(--fontSm);
+  color: var(--muted);
+  margin-top: 16px;
+}
+
+.authFooter a {
+  color: rgba(80, 160, 255, 0.85);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.authFooter a:hover {
+  color: rgba(80, 160, 255, 1);
+  text-decoration: underline;
+}
+
+.authInstructions {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  padding: 12px;
+  font-size: var(--fontSm);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.authInstructions ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.authInstructions li {
+  margin: 4px 0;
+}
+
+.authInstructions code {
+  background: var(--surface);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.9em;
+}

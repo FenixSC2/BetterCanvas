@@ -5,9 +5,18 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 async function request(path, { signal } = {}) {
   loadingBus.start(); 
   try {
-    const res = await fetch(`${API_BASE}${path}`, { signal });
+    const res = await fetch(`${API_BASE}${path}`, { signal, credentials: "include" });
 
     if (!res.ok) {
+      // Handle 401 Unauthorized - user session expired or token revoked
+      if (res.status === 401) {
+        // Clear auth state and redirect to login
+        window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+        const err = new Error("Session expired. Please log in again.");
+        err.status = 401;
+        throw err;
+      }
+
       const text = await res.text().catch(() => "");
       const err = new Error(text || `${res.status} ${res.statusText}`);
       err.status = res.status;

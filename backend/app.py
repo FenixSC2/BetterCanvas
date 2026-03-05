@@ -12,15 +12,35 @@ from typing import Tuple
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Cookie
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dateutil import parser as dateparser
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
 
 # imports for caching / background sync
 import asyncio
 from threading import Lock
+
+# Auth imports
+from auth import (
+    User,
+    CanvasToken,
+    get_db,
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    get_canvas_token,
+    store_canvas_token,
+    revoke_canvas_token,
+    verify_password,
+    UserCreate,
+    UserResponse,
+    CanvasTokenRequest,
+    CanvasTokenStatus,
+)
 
 load_dotenv()
 
@@ -230,23 +250,89 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === Session management ===
+SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-in-production")
+
+# In-memory session store (dict: session_id -> {"user_id": int, "expires": float})
+_sessions: Dict[str, Dict[str, Any]] = {}
+_sessions_lock = Lock()
+
+def create_session(user_id: int) -> str:
+    """Create a new session for a user."""
+    import secrets
+    session_id = secrets.token_urlsafe(32)
+    expires_at = time.time() + (30 * 24 * 60 * 60)  # 30 days
+    
+    with _sessions_lock:
+        _sessions[session_id] = {"user_id": user_id, "expires": expires_at}
+    
+    return session_id
+
+def get_session_user_id(session_id: str) -> Optional[int]:
+    """Retrieve user_id from a valid session."""
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+        if not session:
+            return None
+        if time.time() > session["expires"]:
+            _sessions.pop(session_id, None)
+            return None
+        return session["user_id"]
+
+def invalidate_session(session_id: str) -> None:
+    """Invalidate a session."""
+    with _sessions_lock:
+        _sessions.pop(session_id, None)
+
+def get_current_user(session_id: Optional[str] = Cookie(None), db: Session = Depends(get_db)) -> User:
+    """Dependency to get the currently logged-in user."""
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    user_id = get_session_user_id(session_id)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Session invalid or expired")
+    
+    user = get_user_by_id(user_id, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    return user
+
 # === Utilities ===
-def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Any:
+    """Make a single Canvas API request. Uses user token if provided, otherwise global token."""
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
-    r = session.get(url, params=params, timeout=20)
+    
+    # Build headers with the appropriate token
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    else:
+        headers["Authorization"] = f"Bearer {CANVAS_API_TOKEN}"
+    
+    r = requests.Session().get(url, params=params, timeout=20, headers=headers)
     if not r.ok:
         _raise_canvas_http(r, url)
     return r.json()
 
-def canvas_get_paginated(path: str, params: Optional[Dict[str, Any]] = None) -> List[Any]:
+def canvas_get_paginated(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> List[Any]:
+    """Make a paginated Canvas API request. Uses user token if provided, otherwise global token."""
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
     results: List[Any] = []
 
     local_params = (params.copy() if params else {})
     local_params.setdefault("per_page", 100)
+    
+    # Build headers with the appropriate token
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    else:
+        headers["Authorization"] = f"Bearer {CANVAS_API_TOKEN}"
 
     while url:
-        r = session.get(url, params=local_params, timeout=20)
+        r = requests.Session().get(url, params=local_params, timeout=20, headers=headers)
         if not r.ok:
             _raise_canvas_http(r, url)
 
@@ -502,8 +588,8 @@ def mock_enrollments() -> List[dict]:
     ]
 
 # === Canvas-specific getters used by the app ===
-def get_student_profile() -> Profile:
-    data = canvas_get_single("/users/self/profile")
+def get_student_profile(token: Optional[str] = None) -> Profile:
+    data = canvas_get_single("/users/self/profile", token=token)
     if data is None:
         raise HTTPException(status_code=500, detail="No profile returned from Canvas")
     return Profile(
@@ -515,8 +601,8 @@ def get_student_profile() -> Profile:
         avatar_url=data.get("avatar_url"),
     )
 
-def get_active_student_course_ids() -> List[int]:
-    enrollments = canvas_get_paginated("/users/self/enrollments", params={"per_page": 100})
+def get_active_student_course_ids(token: Optional[str] = None) -> List[int]:
+    enrollments = canvas_get_paginated("/users/self/enrollments", params={"per_page": 100}, token=token)
 
     active_ids: List[int] = []
     for e in enrollments:
@@ -538,12 +624,12 @@ def get_active_student_course_ids() -> List[int]:
             out.append(cid)
     return out
 
-def get_active_courses() -> List[Course]:
-    active_ids = get_active_student_course_ids()
+def get_active_courses(token: Optional[str] = None) -> List[Course]:
+    active_ids = get_active_student_course_ids(token=token)
     cleaned: List[Course] = []
 
     for cid in active_ids:
-        details = canvas_get_single(f"/courses/{cid}")
+        details = canvas_get_single(f"/courses/{cid}", token=token)
 
         name = (
             details.get("name")
@@ -575,10 +661,10 @@ def get_active_courses() -> List[Course]:
     cleaned = filter_courses_to_latest_term(cleaned)
     return cleaned
 
-def get_course_assignments(course_id: int, include_submission=True, limit: Optional[int] = None) -> List[Assignment]:
+def get_course_assignments(course_id: int, include_submission=True, limit: Optional[int] = None, token: Optional[str] = None) -> List[Assignment]:
     params = {"include[]": "submission"} if include_submission else None
     try:
-        raw_assignments = canvas_get_paginated(f"/courses/{course_id}/assignments", params=params)
+        raw_assignments = canvas_get_paginated(f"/courses/{course_id}/assignments", params=params, token=token)
     except HTTPException as exc:
         if exc.status_code == 403:
             logger.info(f"403 when fetching assignments for course {course_id} — skipping")
@@ -615,12 +701,12 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
     parsed.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
     return parsed[:limit] if limit else parsed
 
-def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheMode = CacheMode.auto) -> List[Assignment]:
+def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[Assignment]:
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
 
     # Only keep courses you consider "current"
-    courses = get_courses(mode=mode)
+    courses = get_courses(mode=mode, token=token)
     course_map = {c.id: c for c in courses}
     allowed_course_ids = set(course_map.keys())
 
@@ -687,47 +773,50 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
     return out
 
 # === Unified getters with cache policy ===
-def get_profile(mode: CacheMode = CacheMode.auto) -> Profile:
+def get_profile(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> Profile:
     key = "profile"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    p = mock_profile() if MOCK_MODE else get_student_profile()
+    # Use token if provided, otherwise fall back to MOCK_MODE
+    p = get_student_profile(token=token) if token else (mock_profile() if MOCK_MODE else get_student_profile(token=token))
     cache_set(key, p)
     return p
 
-def get_enrollments(mode: CacheMode = CacheMode.auto) -> List[dict]:
+def get_enrollments(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[dict]:
     key = "enrollments"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    e = mock_enrollments() if MOCK_MODE else canvas_get_paginated("/users/self/enrollments")
+    # Use token if provided, otherwise fall back to MOCK_MODE
+    e = canvas_get_paginated("/users/self/enrollments", token=token) if token else (mock_enrollments() if MOCK_MODE else canvas_get_paginated("/users/self/enrollments", token=token))
     cache_set(key, e)
     return e
 
-def get_courses(mode: CacheMode = CacheMode.auto) -> List[Course]:
+def get_courses(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[Course]:
     key = "courses"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    courses = mock_courses() if MOCK_MODE else get_active_courses()
+    # Use token if provided, otherwise fall back to MOCK_MODE
+    courses = get_active_courses(token=token) if token else (mock_courses() if MOCK_MODE else get_active_courses(token=token))
     cache_set(key, courses)
     return courses
 
-def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto) -> List[Assignment]:
+def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[Assignment]:
     key = f"assignments:{course_id}"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    asgs = (
-        mock_course_assignments(course_id, limit=None)
-        if MOCK_MODE
-        else get_course_assignments(course_id, include_submission=True, limit=None)
-    )
+    # Use token if provided, otherwise fall back to MOCK_MODE
+    if token:
+        asgs = get_course_assignments(course_id, include_submission=True, limit=None, token=token)
+    else:
+        asgs = mock_course_assignments(course_id, limit=None) if MOCK_MODE else get_course_assignments(course_id, include_submission=True, limit=None, token=token)
     cache_set(key, asgs)
     return asgs
 
@@ -940,16 +1029,60 @@ def build_overview(mode: CacheMode = CacheMode.auto) -> OverviewResponse:
 
 # === FastAPI endpoints (cache-aware) ===
 @app.get("/api/profile", response_model=Profile)
-def api_profile(cache: CacheMode = Query(CacheMode.auto)):
-    return get_profile(mode=cache)
+def api_profile(
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    """Get user profile. Uses user token if authenticated, otherwise global token."""
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
+    return get_profile(mode=cache, token=token)
 
 @app.get("/api/courses", response_model=List[Course])
-def api_courses(cache: CacheMode = Query(CacheMode.auto)):
-    return get_courses(mode=cache)
+def api_courses(
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    """Get user courses. Uses user token if authenticated, otherwise global token."""
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
+    return get_courses(mode=cache, token=token)
 
 @app.get("/api/courses/{course_id}/assignments", response_model=List[Assignment])
-def api_course_assignments(course_id: int, limit: Optional[int] = None, cache: CacheMode = Query(CacheMode.auto)):
-    asgs = get_course_assignments_for(course_id, mode=cache)
+def api_course_assignments(
+    course_id: int,
+    limit: Optional[int] = None,
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    """Get assignments for a course. Uses user token if authenticated, otherwise global token."""
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
+    asgs = get_course_assignments_for(course_id, mode=cache, token=token)
     return asgs[:limit] if limit else asgs
 
 @app.get("/api/upcoming", response_model=List[Assignment])
@@ -957,7 +1090,19 @@ def api_upcoming(
     limit: Optional[int] = 50,
     days_ahead: int = 30,
     cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
+    """Get upcoming assignments. Uses user token if authenticated, otherwise global token."""
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
     lim = limit or 50
     key = f"upcoming:v2:limit={lim}:days={days_ahead}"
 
@@ -966,24 +1111,44 @@ def api_upcoming(
         if v:
             return v
 
-    if MOCK_MODE:
-        out = mock_upcoming(limit=lim)
+    # Use token if provided, otherwise fall back to MOCK_MODE
+    if token:
+        out = get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token)
     else:
-        out = get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache)
+        out = mock_upcoming(limit=lim) if MOCK_MODE else get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token)
 
     cache_set(key, out)
     return out
 
+@app.get("/api/mock-mode/enabled")
+def api_mock_mode_status():
+    """Check if mock mode is enabled."""
+    return {"mock_mode": MOCK_MODE}
+
 @app.get("/api/dashboard")
-def api_dashboard(upcoming_limit: int = 20, cache: CacheMode = Query(CacheMode.auto)):
-    # Dashboard is a "bundle": respect cache mode.
-    profile = get_profile(mode=cache)
-    courses = get_courses(mode=cache)
-    upcoming = api_upcoming(limit=upcoming_limit, cache=cache)
+def api_dashboard(
+    upcoming_limit: int = 20,
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    """Dashboard bundle. Uses user token if authenticated, otherwise global token."""
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
+    profile = get_profile(mode=cache, token=token)
+    courses = get_courses(mode=cache, token=token)
+    upcoming = api_upcoming(limit=upcoming_limit, cache=cache, session_id=session_id, db=db)
     return {
-        "profile": profile.dict(),
-        "courses": [c.dict() for c in courses],
-        "upcoming": [a.dict() for a in upcoming],
+        "profile": profile.model_dump(mode='json'),
+        "courses": [c.model_dump(mode='json') for c in courses],
+        "upcoming": [a.model_dump(mode='json') for a in upcoming],
     }
 
 @app.get("/api/courses/summary", response_model=List[CourseSummary])
@@ -1039,6 +1204,100 @@ def debug_canvas():
         "token_present": bool(CANVAS_API_TOKEN and CANVAS_API_TOKEN != "your_token_here"),
         "profile_probe": canvas_get_single("/users/self/profile"),
     }
+
+# === Auth endpoints ===
+@app.post("/api/auth/register", response_model=UserResponse)
+def auth_register(payload: UserCreate, db: Session = Depends(get_db)):
+    """Register a new user."""
+    existing = get_user_by_email(payload.email, db)
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    
+    try:
+        user = create_user(payload.email, payload.password, db)
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(status_code=400, detail="Registration failed")
+    
+    return user
+
+@app.post("/api/auth/login")
+def auth_login(payload: UserCreate, db: Session = Depends(get_db)):
+    """Login with email and password. Returns session cookie."""
+    user = get_user_by_email(payload.email, db)
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    session_id = create_session(user.id)
+    response = JSONResponse({"success": True, "user": UserResponse.model_validate(user).model_dump(mode='json')})
+    response.set_cookie(
+        "session_id",
+        session_id,
+        max_age=30 * 24 * 60 * 60,  # 30 days
+        secure=False,  # set True in production with HTTPS
+        httponly=True,
+        samesite="lax"
+    )
+    return response
+
+@app.post("/api/auth/logout")
+def auth_logout(session_id: Optional[str] = Cookie(None)):
+    """Logout the current user."""
+    if session_id:
+        invalidate_session(session_id)
+    
+    response = JSONResponse({"success": True})
+    response.delete_cookie("session_id")
+    return response
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def auth_me(current_user: User = Depends(get_current_user)):
+    """Get the currently logged-in user."""
+    return current_user
+
+@app.post("/api/auth/token")
+def auth_token_submit(payload: CanvasTokenRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Submit or update Canvas token for the user."""
+    try:
+        # Validate the token by attempting a simple Canvas API call
+        if not MOCK_MODE:
+            try:
+                # Try to get user profile - a simple validation call
+                response = requests.get(
+                    f"{CANVAS_API_BASE}/users/self",
+                    headers={"Authorization": f"Bearer {payload.token}"},
+                    timeout=10
+                )
+                if response.status_code == 401:
+                    raise HTTPException(status_code=400, detail="Invalid Canvas token. Please check your token and try again.")
+                elif response.status_code != 200:
+                    raise HTTPException(status_code=400, detail=f"Canvas API error: {response.status_code}. Please try again.")
+            except requests.RequestException as e:
+                raise HTTPException(status_code=400, detail=f"Failed to validate token: {str(e)}")
+        
+        store_canvas_token(current_user.id, payload.token, db)
+        return {"success": True, "message": "Token saved successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token storage error for user {current_user.id}: {e}")
+        raise HTTPException(status_code=400, detail="Failed to store token")
+
+@app.get("/api/auth/token/status", response_model=CanvasTokenStatus)
+def auth_token_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Check if user has a Canvas token saved."""
+    db_token = db.query(CanvasToken).filter(CanvasToken.user_id == current_user.id).first()
+    
+    if not db_token:
+        return CanvasTokenStatus(has_token=False)
+    
+    return CanvasTokenStatus(has_token=True, updated_at=db_token.updated_at)
+
+@app.delete("/api/auth/token")
+def auth_token_revoke(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Revoke the user's Canvas token."""
+    revoke_canvas_token(current_user.id, db)
+    return {"success": True, "message": "Token revoked"}
 
 @app.get("/api/debug/cache")
 def debug_cache():
