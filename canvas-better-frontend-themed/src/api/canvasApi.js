@@ -5,7 +5,19 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 async function request(path, { signal } = {}) {
   loadingBus.start(); 
   try {
-    const res = await fetch(`${API_BASE}${path}`, { signal, credentials: "include" });
+    const headers = { "credentials": "include" };
+    
+    // Add session ID from localStorage as a header (fallback for cross-origin requests)
+    const sessionId = localStorage.getItem("session_id");
+    if (sessionId) {
+      headers["X-Session-ID"] = sessionId;
+    }
+    
+    const res = await fetch(`${API_BASE}${path}`, { 
+      signal, 
+      credentials: "include",
+      headers
+    });
 
     if (!res.ok) {
       // Handle 401 Unauthorized - user session expired or token revoked

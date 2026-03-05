@@ -12,7 +12,7 @@ from typing import Tuple
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
-from fastapi import FastAPI, HTTPException, Query, Depends, Cookie
+from fastapi import FastAPI, HTTPException, Query, Depends, Cookie, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -284,8 +284,12 @@ def invalidate_session(session_id: str) -> None:
     with _sessions_lock:
         _sessions.pop(session_id, None)
 
-def get_current_user(session_id: Optional[str] = Cookie(None), db: Session = Depends(get_db)) -> User:
-    """Dependency to get the currently logged-in user."""
+def get_current_user(session_id: Optional[str] = Cookie(None), db: Session = Depends(get_db), x_session_id: Optional[str] = Header(None)) -> User:
+    """Dependency to get the currently logged-in user. Checks both cookie and X-Session-ID header."""
+    # Try header first (fallback for local dev with cross-origin requests)
+    if x_session_id:
+        session_id = x_session_id
+    
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -387,6 +391,7 @@ def get_announcements(
     days_back: int = 14,
     limit: int = 30,
     mode: CacheMode = CacheMode.auto,
+    token: Optional[str] = None,
 ) -> List[Announcement]:
     # Cache key
     key = f"announcements:days_back={days_back}:limit={limit}"
@@ -396,7 +401,7 @@ def get_announcements(
             return v
 
     # Only current courses (your get_courses() already filters to latest term)
-    courses = get_courses(mode=mode)
+    courses = get_courses(mode=mode, token=token)
     course_map = {c.id: c for c in courses}
 
     if not course_map:
@@ -420,6 +425,7 @@ def get_announcements(
             "active_only": "true",
             "per_page": 100,
         },
+        token=token,
     )
 
     out: List[Announcement] = []
@@ -820,20 +826,20 @@ def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto,
     cache_set(key, asgs)
     return asgs
 
-def get_course_summaries(next_limit: int, missing_limit: int, mode: CacheMode = CacheMode.auto) -> List[CourseSummary]:
+def get_course_summaries(next_limit: int, missing_limit: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[CourseSummary]:
     key = f"course_summaries:next={next_limit}:miss={missing_limit}"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    s = build_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=mode)
+    s = build_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=mode, token=token)
     cache_set(key, s)
     return s
 
 # === Course summaries ===
-def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: CacheMode = CacheMode.auto) -> List[CourseSummary]:
-    courses = get_courses(mode=mode)
-    enrollments = get_enrollments(mode=mode)
+def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[CourseSummary]:
+    courses = get_courses(mode=mode, token=token)
+    enrollments = get_enrollments(mode=mode, token=token)
 
     grades_by_course: dict[int, dict[str, Any]] = {}
     for e in enrollments:
@@ -854,7 +860,7 @@ def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: C
     for c in courses:
         cid = c.id
         grade = grades_by_course.get(cid, {})
-        asgs = get_course_assignments_for(cid, mode=mode)
+        asgs = get_course_assignments_for(cid, mode=mode, token=token)
 
         future = [a for a in asgs if a.due_at and a.due_at >= now]
         future.sort(key=lambda a: sort_key_due_at(a.due_at))
@@ -948,8 +954,8 @@ def letter_to_points(letter: Optional[str]) -> Optional[float]:
             base -= 0.33
     return max(0.0, min(4.0, base))
 
-def build_overview(mode: CacheMode = CacheMode.auto) -> OverviewResponse:
-    summaries = get_course_summaries(next_limit=3, missing_limit=50, mode=mode)
+def build_overview(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> OverviewResponse:
+    summaries = get_course_summaries(next_limit=3, missing_limit=50, mode=mode, token=token)
 
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=24)
@@ -961,7 +967,7 @@ def build_overview(mode: CacheMode = CacheMode.auto) -> OverviewResponse:
 
     due_soon: List[DueSoonItem] = []
     for s in summaries:
-        asgs = get_course_assignments_for(s.id, mode=mode)
+        asgs = get_course_assignments_for(s.id, mode=mode, token=token)
         for a in asgs:
             if not a.due_at:
                 continue
@@ -1152,12 +1158,38 @@ def api_dashboard(
     }
 
 @app.get("/api/courses/summary", response_model=List[CourseSummary])
-def api_courses_summary(next_limit: int = 3, missing_limit: int = 10, cache: CacheMode = Query(CacheMode.auto)):
-    return get_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=cache)
+def api_courses_summary(
+    next_limit: int = 3,
+    missing_limit: int = 10,
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    return get_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=cache, token=token)
 
 @app.get("/api/overview", response_model=OverviewResponse)
-def api_overview(cache: CacheMode = Query(CacheMode.auto)):
-    return build_overview(mode=cache)
+def api_overview(
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    return build_overview(mode=cache, token=token)
 
 @app.post("/api/cache/clear")
 def api_cache_clear():
@@ -1169,10 +1201,20 @@ def api_announcements(
     days_back: int = 14,
     limit: int = 30,
     cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
-    if MOCK_MODE:
-        return []  # or add a mock_announcements() later
-    return get_announcements(days_back=days_back, limit=limit, mode=cache)
+    token = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    if MOCK_MODE and not token:
+        return []
+    return get_announcements(days_back=days_back, limit=limit, mode=cache, token=token)
 
 # === Background sync loop ===
 _sync_task: Optional[asyncio.Task] = None
@@ -1229,12 +1271,13 @@ def auth_login(payload: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     session_id = create_session(user.id)
-    response = JSONResponse({"success": True, "user": UserResponse.model_validate(user).model_dump(mode='json')})
+    response = JSONResponse({"success": True, "user": UserResponse.model_validate(user).model_dump(mode='json'), "session_id": session_id})
     response.set_cookie(
         "session_id",
         session_id,
         max_age=30 * 24 * 60 * 60,  # 30 days
-        secure=False,  # set True in production with HTTPS
+        path="/",
+        secure=False,  # Allow HTTP in local development
         httponly=True,
         samesite="lax"
     )

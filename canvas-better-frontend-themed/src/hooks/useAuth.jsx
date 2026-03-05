@@ -79,7 +79,26 @@ export function AuthProvider({ children }) {
 
       const data = await res.json();
       setUser(data.user);
+      setHasToken(false);
       
+      // Store session ID in localStorage if provided
+      if (data.session_id) {
+        localStorage.setItem("session_id", data.session_id);
+      }
+      
+      // Verify session is working and check token status
+      try {
+        const meRes = await fetch(`${API_BASE}/api/auth/me`, {
+          credentials: "include",
+        });
+        if (meRes.ok) {
+          const userData = await meRes.json();
+          setUser(userData);
+        }
+      } catch (err) {
+        console.error("Failed to verify session:", err);
+      }
+
       // Check if user already has a saved token
       try {
         const tokenRes = await fetch(`${API_BASE}/api/auth/token/status`, {
@@ -141,6 +160,7 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null);
       setHasToken(false);
+      localStorage.removeItem("session_id");
       setLoading(false);
     }
   }, []);
