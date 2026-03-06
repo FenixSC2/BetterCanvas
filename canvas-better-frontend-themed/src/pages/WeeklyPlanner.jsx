@@ -1185,12 +1185,163 @@ export function WeeklyPlanner() {
     <div className="stack" style={{ width: "100%" }}>
       {/* Compact overrides so the effort widget takes less vertical space inside planner cards */}
       <style>{`
-        .plannerEffortCompact .effortWidget { padding: 8px !important; }
-        .plannerEffortCompact .effortTopRow { margin-bottom: 6px !important; }
-        .plannerEffortCompact .effortPill { padding: 4px 8px !important; }
-        .plannerEffortCompact .effortDone { padding: 4px 8px !important; }
-        .plannerEffortCompact .effortBarWrap { margin-top: 6px !important; }
-        .plannerEffortCompact .effortCta { padding: 8px 10px !important; }
+        .plannerEffortCompact { min-width: 0; }
+        .plannerEffortCompact .effortWidget {
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          padding: 6px 8px !important;
+        }
+        .plannerEffortCompact .effortTopRow {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) auto;
+          margin-bottom: 6px !important;
+          gap: 6px !important;
+          align-items: center !important;
+          width: 100%;
+        }
+        .plannerEffortCompact .effortTopRow > * { min-width: 0; }
+        .plannerEffortCompact .effortNumbers {
+          flex: 1 1 auto;
+          max-width: none;
+          gap: 6px !important;
+          flex-wrap: nowrap !important;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .plannerEffortCompact .effortPill,
+        .plannerEffortCompact .effortDone {
+          padding: 3px 7px !important;
+          font-size: 12px !important;
+          line-height: 1.15;
+        }
+        .plannerEffortCompact .effortPill {
+          width: auto;
+          flex: 1 1 0%;
+          min-width: 0;
+          max-width: 100%;
+          gap: 4px;
+          justify-content: space-between;
+          white-space: nowrap;
+        }
+        .plannerEffortCompact .effortPill .muted {
+          flex: 0 0 auto;
+          font-size: 0.92em;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: nowrap;
+        }
+        .plannerEffortCompact .effortPill .mono {
+          flex: 0 0 auto;
+          margin-left: 6px;
+        }
+        .plannerEffortCompact .effortPill .mono,
+        .plannerEffortCompact .effortBarMeta,
+        .plannerEffortCompact .capacityNumber {
+          font-variant-numeric: tabular-nums;
+          font-feature-settings: "tnum" 1;
+        }
+        .plannerEffortCompact .effortGearBtn {
+          width: 32px !important;
+          height: 32px !important;
+          font-size: 16px !important;
+          border-radius: 9px !important;
+          flex: 0 0 auto;
+          justify-self: end;
+        }
+        .plannerEffortCompact .effortBarWrap {
+          width: 100%;
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          margin-top: 6px !important;
+          gap: 8px !important;
+          overflow: hidden;
+        }
+        .plannerEffortCompact .effortBarTrack {
+          height: 10px !important;
+          width: 100%;
+          min-width: 0;
+        }
+        .plannerEffortCompact .effortBarMeta {
+          min-width: 0 !important;
+          width: 3.5ch;
+          justify-self: end;
+          white-space: nowrap;
+          text-align: right;
+          font-size: 12px !important;
+        }
+        .plannerEffortCompact .effortCta {
+          padding: 7px 9px !important;
+          font-size: 12px !important;
+        }
+
+        /* Extra-dense planner card effort UI on narrower laptop widths */
+        @media (max-width: 1520px) {
+          .plannerDayCard .plannerEffortCompact .effortWidget {
+            padding: 5px 7px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortTopRow {
+            gap: 5px !important;
+            margin-bottom: 5px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortNumbers {
+            gap: 5px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortPill,
+          .plannerDayCard .plannerEffortCompact .effortDone {
+            padding: 2px 6px !important;
+            font-size: 11px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortGearBtn {
+            width: 30px !important;
+            height: 30px !important;
+            font-size: 15px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortBarTrack {
+            height: 9px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortBarMeta {
+            width: 3.8ch;
+            font-size: 11px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortCta {
+            padding: 6px 8px !important;
+            font-size: 11px !important;
+          }
+        }
+
+        @media (max-width: 1360px) {
+          .plannerDayCard .plannerEffortCompact .effortWidget {
+            padding: 4px 6px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortTopRow {
+            gap: 4px !important;
+            margin-bottom: 4px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortPill,
+          .plannerDayCard .plannerEffortCompact .effortDone {
+            padding: 2px 5px !important;
+            font-size: 10px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortGearBtn {
+            width: 28px !important;
+            height: 28px !important;
+            font-size: 14px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortBarWrap {
+            gap: 6px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortBarTrack {
+            height: 8px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortBarMeta {
+            width: 3.6ch;
+            font-size: 10px !important;
+          }
+          .plannerDayCard .plannerEffortCompact .effortCta {
+            padding: 6px 7px !important;
+            font-size: 10px !important;
+          }
+        }
       `}</style>
 
       <div className="card">
