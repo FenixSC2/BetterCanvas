@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { clearCachedAsync } from "../hooks/useCachedAsync";
 
 export function TokenEntry() {
   const { user, logout, error: authError, setTokenStatus, hasToken: contextHasToken } = useAuth();
@@ -77,6 +78,13 @@ export function TokenEntry() {
       setSuccess(true);
       setHasToken(true);
       setTokenStatus(true);
+      
+      // Small delay to ensure token is saved before triggering refetch
+      setTimeout(() => {
+        // Emit auth change event so all data fetches happen now that we have a token
+        window.dispatchEvent(new CustomEvent("auth:changed"));
+      }, 100);
+      
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setLocalError(err.message || "Failed to save token");
@@ -106,6 +114,9 @@ export function TokenEntry() {
       setHasToken(false);
       setSuccess(false);
       setTokenStatus(false);
+      
+      // Clear cached Canvas data since token is revoked
+      clearCachedAsync();
     } catch (err) {
       setLocalError(err.message || "Failed to revoke token");
     } finally {

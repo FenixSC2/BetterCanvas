@@ -7,7 +7,8 @@ import os
 import bcrypt
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from pathlib import Path
+from sqlalchemy import Column, Integer, String, DateTime, create_engine, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
@@ -22,12 +23,28 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+def _load_or_create_token_encryption_key() -> str:
+    """Load token encryption key from env or a local persistent file."""
+    env_key = os.getenv("TOKEN_ENCRYPTION_KEY")
+    if env_key:
+        return env_key
+
+    key_file = Path(__file__).resolve().parent / ".token_encryption_key"
+    if key_file.exists():
+        existing = key_file.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+
+    generated = Fernet.generate_key().decode()
+    try:
+        key_file.write_text(generated, encoding="utf-8")
+    except OSError:
+        # Fallback still works for current process; user can set env var later.
+        pass
+    return generated
+
 # Encryption key for token storage
-TOKEN_ENCRYPTION_KEY = os.getenv("TOKEN_ENCRYPTION_KEY")
-if not TOKEN_ENCRYPTION_KEY:
-    # Generate a new key if not set
-    TOKEN_ENCRYPTION_KEY = Fernet.generate_key().decode()
-    print(f"Generated new TOKEN_ENCRYPTION_KEY. Set this in your .env:\nTOKEN_ENCRYPTION_KEY={TOKEN_ENCRYPTION_KEY}")
+TOKEN_ENCRYPTION_KEY = _load_or_create_token_encryption_key()
 
 cipher_suite = Fernet(TOKEN_ENCRYPTION_KEY.encode() if isinstance(TOKEN_ENCRYPTION_KEY, str) else TOKEN_ENCRYPTION_KEY)
 
@@ -48,6 +65,19 @@ class CanvasToken(Base):
     token_encrypted = Column(String)  # encrypted Canvas token
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class HiddenAssignment(Base):
+    __tablename__ = "hidden_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    assignment_id = Column(Integer)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Composite unique constraint: each user can hide each assignment once
+    __table_args__ = (
+        UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_hidden_assignment'),
+    )
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -132,6 +162,46 @@ def revoke_canvas_token(user_id: int, db: Session) -> bool:
         db.commit()
         return True
     return False
+
+def hide_assignment(user_id: int, course_id: int, assignment_id: int, db: Session) -> HiddenAssignment:
+    """Add an assignment to the user's hidden list."""
+    existing = db.query(HiddenAssignment).filter(
+        HiddenAssignment.user_id == user_id,
+        HiddenAssignment.course_id == course_id,
+        HiddenAssignment.assignment_id == assignment_id
+    ).first()
+    
+    if existing:
+        return existing
+    
+    hidden = HiddenAssignment(
+        user_id=user_id,
+        course_id=course_id,
+        assignment_id=assignment_id
+    )
+    db.add(hidden)
+    db.commit()
+    db.refresh(hidden)
+    return hidden
+
+def unhide_assignment(user_id: int, course_id: int, assignment_id: int, db: Session) -> bool:
+    """Remove an assignment from the user's hidden list."""
+    hidden = db.query(HiddenAssignment).filter(
+        HiddenAssignment.user_id == user_id,
+        HiddenAssignment.course_id == course_id,
+        HiddenAssignment.assignment_id == assignment_id
+    ).first()
+    
+    if hidden:
+        db.delete(hidden)
+        db.commit()
+        return True
+    return False
+
+def get_hidden_assignments(user_id: int, db: Session) -> list:
+    """Get all hidden assignments for a user as a list of (course_id, assignment_id) tuples."""
+    hidden = db.query(HiddenAssignment).filter(HiddenAssignment.user_id == user_id).all()
+    return [(h.course_id, h.assignment_id) for h in hidden]
 
 # === Pydantic schemas ===
 class UserCreate(BaseModel):

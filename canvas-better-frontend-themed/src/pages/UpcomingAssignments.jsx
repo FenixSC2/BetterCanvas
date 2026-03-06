@@ -5,7 +5,7 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
-import { useCachedAsync } from "../hooks/useCachedAsync";
+import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -194,10 +194,34 @@ export function UpcomingAssignments() {
     { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
   );
 
+  // Keep a stable ref to the latest refresh so intervals/mount effects
+  // don't capture a stale closure (useCachedAsync recreates refresh each render)
+  const refreshRef = useRef(null);
+  refreshRef.current = upcomingQ.refresh;
+
+  // Clear upcoming cache once on mount, then kick off the first fetch
+  useEffect(() => {
+    clearCachedAsync("upcoming:");
+    refreshRef.current?.();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 2.5 minutes while the page is open
+  useEffect(() => {
+    const POLL_MS = 2.5 * 60 * 1000;
+    const t = setInterval(() => {
+      refreshRef.current?.();
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, []);
+
   // track which details panels are open (allow multiple)
   const [openDetailsKeys, setOpenDetailsKeys] = useState(() => new Set());
 
   const items = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+
+  // Apply same loading logic as announcements
+  const upcomingLoading =
+    (upcomingQ.loading || upcomingQ.data == null) && !upcomingQ.error;
 
   // Filter: all | missing | upcoming | undated
   const [filterMode, setFilterMode] = useState("all");
@@ -251,11 +275,36 @@ export function UpcomingAssignments() {
       return h != null && h >= 0;
     };
 
-    // 1) filter
-    let list = [...items];
-    if (filterMode === "missing") list = list.filter(isMissing);
-    if (filterMode === "upcoming") list = list.filter(isUpcoming);
-    if (filterMode === "undated") list = list.filter(isUndated);
+    // Filter out completed assignments that are past their due date
+    const shouldShow = (a) => {
+      // If completed and past due date, don't show
+      if (a.submitted && a.due_at) {
+        const h = hoursUntil(a.due_at);
+        if (h != null && h < 0) return false;
+      }
+      return true;
+    };
+
+    // 1) filter - missing assignments always appear at top, then apply selected filter
+    let list = [...items].filter(shouldShow);
+    const missing = list.filter(isMissing);
+    const nonMissing = list.filter((a) => !isMissing(a));
+
+    let filtered;
+    if (filterMode === "missing") {
+      filtered = missing;
+      list = missing; // Only show missing items, don't duplicate
+    } else if (filterMode === "upcoming") {
+      filtered = nonMissing.filter(isUpcoming);
+      list = [...missing, ...filtered];
+    } else if (filterMode === "undated") {
+      filtered = nonMissing.filter(isUndated);
+      list = [...missing, ...filtered];
+    } else {
+      // "all"
+      filtered = nonMissing;
+      list = [...missing, ...filtered];
+    }
 
     // 2) sorting with invariants: missing first, completed last
     list.sort((a, b) => {
@@ -343,12 +392,8 @@ export function UpcomingAssignments() {
     };
   }, [filteredSorted]);
 
-  if (upcomingQ.error) return <ErrorBox error={upcomingQ.error} />;
+  if (upcomingQ.error) return <ErrorBox error={upcomingQ.error} />
 
-  // Only show the big loading screen if we truly have nothing yet
-  if (upcomingQ.loading && items.length === 0) {
-    return <Loading label="Loading upcoming assignments…" />;
-  }
 
   const filterLabel =
     filterMode === "all"
@@ -556,7 +601,9 @@ export function UpcomingAssignments() {
         </div>
 
         <div className="upcomingPanelBody">
-          {filteredSorted.length === 0 ? (
+          {upcomingLoading ? (
+            <Loading label="Loading upcoming assignments…" />
+          ) : filteredSorted.length === 0 ? (
             <div className="muted" style={{ padding: 10 }}>
               No assignments found for the selected filter.
             </div>

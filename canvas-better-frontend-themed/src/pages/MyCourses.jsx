@@ -116,6 +116,30 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
+// Three-state toggle for all/none/mixed states
+function TriStateToggle({ state, onChange, label }) {
+  // state can be: "all-on", "all-off", or "mixed"
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onChange();
+      }}
+      role="switch"
+      aria-checked={state === "all-on" ? true : state === "all-off" ? false : "mixed"}
+      aria-label={label}
+      title={label}
+      className="toggle"
+    >
+      <span className={`toggleTrack ${state === "all-on" ? "on" : state === "all-off" ? "off" : "mixed"}`}>
+        <span className={`toggleThumb ${state === "all-on" ? "on" : state === "all-off" ? "off" : "mixed"}`} />
+      </span>
+    </button>
+  );
+}
+
 export function MyCourses() {
   // grade visibility per-course, persisted in localStorage
   const COURSE_GRADE_VIS_KEY = "courses:gradeVisibilityById";
@@ -179,6 +203,45 @@ export function MyCourses() {
     return copy;
   }, [summaries]);
 
+  // Calculate master toggle state based on all courses
+  const masterGradeState = useMemo(() => {
+    if (sorted.length === 0) return "all-on"; // default when no courses
+
+    let allOn = true;
+    let allOff = true;
+
+    for (const course of sorted) {
+      const visible = isGradeVisible(course.id);
+      if (visible) allOff = false;
+      if (!visible) allOn = false;
+    }
+
+    if (allOn) return "all-on";
+    if (allOff) return "all-off";
+    return "mixed";
+  }, [sorted, gradeVisibleById]);
+
+  // Handle master toggle click
+  function handleMasterToggle() {
+    if (sorted.length === 0) return;
+
+    let nextState;
+    if (masterGradeState === "all-on") {
+      nextState = false; // turn all off
+    } else if (masterGradeState === "all-off") {
+      nextState = true; // turn all on
+    } else {
+      // mixed → all off
+      nextState = false;
+    }
+
+    const updates = {};
+    for (const course of sorted) {
+      updates[String(course.id)] = nextState;
+    }
+    setGradeVisibleById(updates);
+  }
+
   if (loading && summaries.length === 0)
     return <Loading label="Loading course summaries…" />;
   if (err && summaries.length === 0) return <ErrorBox error={err} />;
@@ -193,6 +256,35 @@ export function MyCourses() {
           </span>
         ) : null}
       </div>
+
+      {sorted.length > 0 ? (
+        <div className="card">
+          <div className="cardBody">
+            <div className="row" style={{ alignItems: "center", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div className="h3">Grade Visibility</div>
+                <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
+                  {masterGradeState === "all-on" ? "All grades shown" : 
+                   masterGradeState === "all-off" ? "All grades hidden" : 
+                   "Some grades shown, some hidden"}
+                </div>
+              </div>
+              <div className="toggleRow">
+                <span className="muted">Show All Grades:</span>
+                <TriStateToggle
+                  state={masterGradeState}
+                  onChange={handleMasterToggle}
+                  label={
+                    masterGradeState === "all-on" ? "Hide all grades" :
+                    masterGradeState === "all-off" ? "Show all grades" :
+                    "Set all grades visibility"
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {err ? <ErrorBox error={err} /> : null}
 

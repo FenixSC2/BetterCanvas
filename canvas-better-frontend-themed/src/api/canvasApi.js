@@ -2,7 +2,7 @@
 import { loadingBus } from "../lib/loadingBus";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-async function request(path, { signal } = {}) {
+async function request(path, { signal, method = "GET" } = {}) {
   loadingBus.start(); 
   try {
     const headers = { "credentials": "include" };
@@ -14,7 +14,8 @@ async function request(path, { signal } = {}) {
     }
     
     const res = await fetch(`${API_BASE}${path}`, { 
-      signal, 
+      signal,
+      method,
       credentials: "include",
       headers
     });
@@ -26,6 +27,14 @@ async function request(path, { signal } = {}) {
         window.dispatchEvent(new CustomEvent("auth:unauthorized"));
         const err = new Error("Session expired. Please log in again.");
         err.status = 401;
+        throw err;
+      }
+
+      // Handle 403 Forbidden - Canvas token required (user is authenticated but needs to add token)
+      if (res.status === 403) {
+        const err = new Error("Canvas token required. Please add your Canvas API token.");
+        err.status = 403;
+        err.needsToken = true;
         throw err;
       }
 
@@ -84,4 +93,21 @@ export const canvasApi = {
         )}&cache=${encodeURIComponent(cache)}`,
         opts
       ),
+
+    // Hidden assignments management
+    getHiddenAssignments: (opts) => request("/api/hidden-assignments", opts),
+    
+    addHiddenAssignment: (courseId, assignmentId, opts) =>
+      request(
+        `/api/hidden-assignments?course_id=${courseId}&assignment_id=${assignmentId}`,
+        { ...opts, method: "POST" }
+      ),
+    
+    removeHiddenAssignment: (courseId, assignmentId, opts) =>
+      request(
+        `/api/hidden-assignments/${courseId}/${assignmentId}`,
+        { ...opts, method: "DELETE" }
+      ),
+    
+    getCandidatesForHiding: (opts) => request("/api/candidates-for-hiding", opts),
 };

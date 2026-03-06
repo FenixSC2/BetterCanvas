@@ -6,6 +6,7 @@ import {
   setEffortSnapMinutes,
 } from "../lib/workloadEstimates";
 import { useAuth } from "../hooks/useAuth";
+import { canvasApi } from "../api/canvasApi";
 
 const THEME_OPTIONS = [
   { key: "classic", label: "Classic", desc: "Clean light theme" },
@@ -27,6 +28,31 @@ const DENSITY_OPTIONS = [
   { key: "compact", label: "Compact", desc: "Smaller text & tighter spacing" },
 ];
 
+// Helper function to determine urgency badge
+function getAssignmentBadge(assignment) {
+  if (!assignment) return { label: "Unknown", variant: "neutral" };
+
+  const now = Date.now();
+  const dueTime = assignment.due_at ? new Date(assignment.due_at).getTime() : null;
+
+  if (!dueTime) {
+    return { label: "Undated", variant: "neutral" };
+  }
+
+  const hoursUntil = (dueTime - now) / (1000 * 60 * 60);
+
+  if (hoursUntil < 0) {
+    return { label: "Missing", variant: "danger" };
+  }
+  if (hoursUntil <= 12) {
+    return { label: "Due soon", variant: "warning" };
+  }
+  if (hoursUntil <= 48) {
+    return { label: "Upcoming", variant: "neutral" };
+  }
+  return { label: "Scheduled", variant: "neutral" };
+}
+
 export function SettingsModal({
   open,
   onClose,
@@ -40,6 +66,13 @@ export function SettingsModal({
 
   // Effort settings draft
   const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
+
+  // Hidden assignments state
+  const [hiddenAssignments, setHiddenAssignments] = useState([]);
+  const [candidatesForHiding, setCandidatesForHiding] = useState([]);
+  const [hiddenLoading, setHiddenLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [hideLoading, setHideLoading] = useState(null); // track which assignment is being hidden
 
   useEffect(() => {
     if (!open) return;
@@ -65,10 +98,32 @@ export function SettingsModal({
     setSnapDraft(getEffortSnapMinutes());
   }, [open]);
 
+  // Load hidden assignments when opening the hidden assignments section
+  useEffect(() => {
+    if (!open || activeSection !== "hidden" || !user) return;
+
+    setHiddenLoading(true);
+    Promise.all([
+      canvasApi.getHiddenAssignments(),
+      canvasApi.getCandidatesForHiding(),
+    ])
+      .then(([hiddenRes, candidatesRes]) => {
+        setHiddenAssignments(hiddenRes.hidden_assignments || []);
+        setCandidatesForHiding(candidatesRes.candidates || []);
+      })
+      .catch((err) => {
+        console.error("Failed to load hidden assignments:", err);
+      })
+      .finally(() => {
+        setHiddenLoading(false);
+      });
+  }, [open, activeSection, user]);
+
   const sections = useMemo(
     () => [
       { key: "themes", label: "Themes" },
       { key: "effort", label: "Effort" },
+      { key: "hidden", label: "Hidden assignments" },
       { key: "account", label: "Account" },
       { key: "notifications", label: "Notifications", disabled: true },
       { key: "other", label: "Other", disabled: true },
@@ -84,6 +139,41 @@ export function SettingsModal({
     const safe = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 10;
     setEffortSnapMinutes(safe);
     setSnapDraft(getEffortSnapMinutes());
+  }
+
+  async function handleHideAssignment(courseId, assignmentId) {
+    setHideLoading(`${courseId}:${assignmentId}`);
+    try {
+      await canvasApi.addHiddenAssignment(courseId, assignmentId);
+      // Update hidden assignments list
+      setHiddenAssignments((prev) => [
+        ...prev,
+        { course_id: courseId, assignment_id: assignmentId },
+      ]);
+    } catch (err) {
+      console.error("Failed to hide assignment:", err);
+      alert("Failed to hide assignment. Please try again.");
+    } finally {
+      setHideLoading(null);
+    }
+  }
+
+  async function handleUnhideAssignment(courseId, assignmentId) {
+    setHideLoading(`${courseId}:${assignmentId}`);
+    try {
+      await canvasApi.removeHiddenAssignment(courseId, assignmentId);
+      // Update hidden assignments list
+      setHiddenAssignments((prev) =>
+        prev.filter(
+          (a) => !(a.course_id === courseId && a.assignment_id === assignmentId)
+        )
+      );
+    } catch (err) {
+      console.error("Failed to unhide assignment:", err);
+      alert("Failed to unhide assignment. Please try again.");
+    } finally {
+      setHideLoading(null);
+    }
   }
 
   async function handleAuthAction() {
@@ -311,6 +401,174 @@ export function SettingsModal({
                     <div className="muted" style={{ marginTop: 8 }}>
                       Default: 10 minutes. Minimum: 1 minute.
                     </div>
+                  </div>
+                </div>
+              </div>
+            ) : activeSection === "hidden" ? (
+              <div className="stack">
+                <div className="card">
+                  <div className="cardBody">
+                    <div className="h3">Hidden assignments</div>
+                    <div className="muted" style={{ marginBottom: 12 }}>
+                      Assignments you've hidden won't appear in missing counts or be flagged as missing across all tabs.
+                    </div>
+
+                    {!user || demoMode ? (
+                      <div className="muted">Sign in to manage hidden assignments.</div>
+                    ) : hiddenLoading ? (
+                      <div className="muted">Loading...</div>
+                    ) : (
+                      <>
+                        {/* Add/hide new assignments */}
+                        <div style={{ marginBottom: 20 }}>
+                          <div className="muted" style={{ marginBottom: 8, fontWeight: 600 }}>
+                            Search and hide assignments
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Search by assignment name..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "8px 12px",
+                              marginBottom: 8,
+                              border: "1px solid var(--border)",
+                              borderRadius: "4px",
+                              fontSize: "var(--fontBase)",
+                            }}
+                          />
+                          
+                          <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                            {candidatesForHiding.length === 0 ? (
+                              <div className="muted" style={{ padding: 12 }}>
+                                All assignments are already submitted or no candidates found.
+                              </div>
+                            ) : (
+                              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                                {candidatesForHiding
+                                  .filter((a) =>
+                                    a.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                  )
+                                  .map((a) => {
+                                    const isHidden = hiddenAssignments.some(
+                                      (h) => h.course_id === a.course_id && h.assignment_id === a.id
+                                    );
+                                    const isLoading = hideLoading === `${a.course_id}:${a.id}`;
+                                    const badge = getAssignmentBadge(a);
+                                    const badgeClass =
+                                      badge.variant === "danger"
+                                        ? "badgeDanger"
+                                        : badge.variant === "warning"
+                                        ? "badgeWarn"
+                                        : "badgeNeutral";
+                                    
+                                    return (
+                                      <li
+                                        key={`${a.course_id}:${a.id}`}
+                                        style={{
+                                          padding: "12px",
+                                          borderBottom: "1px solid var(--border)",
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          alignItems: "flex-start",
+                                          gap: "12px",
+                                        }}
+                                      >
+                                        <div style={{ flexGrow: 1 }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                                            <div style={{ fontWeight: 500 }}>{a.name}</div>
+                                            <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                                          </div>
+                                          <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
+                                            {a.course_name}
+                                          </div>
+                                        </div>
+                                        {!isHidden && (
+                                          <button
+                                            type="button"
+                                            className="btn"
+                                            onClick={() => handleHideAssignment(a.course_id, a.id)}
+                                            disabled={isLoading}
+                                            style={{ marginTop: "4px", whiteSpace: "nowrap", flexShrink: 0 }}
+                                          >
+                                            {isLoading ? "Hiding..." : "Hide"}
+                                          </button>
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Manage hidden assignments */}
+                        {hiddenAssignments.length > 0 && (
+                          <div>
+                            <div className="muted" style={{ marginBottom: 8, fontWeight: 600 }}>
+                              Hidden assignments ({hiddenAssignments.length})
+                            </div>
+                            <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                                {hiddenAssignments.map((h) => {
+                                  const isLoading = hideLoading === `${h.course_id}:${h.id}`;
+                                  const badge = getAssignmentBadge(h);
+                                  const badgeClass =
+                                    badge.variant === "danger"
+                                      ? "badgeDanger"
+                                      : badge.variant === "warning"
+                                      ? "badgeWarn"
+                                      : "badgeNeutral";
+                                  
+                                  return (
+                                    <li
+                                      key={`${h.course_id}:${h.id}`}
+                                      style={{
+                                        padding: "12px",
+                                        borderBottom: "1px solid var(--border)",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "flex-start",
+                                        gap: "12px",
+                                      }}
+                                    >
+                                      <div style={{ flexGrow: 1 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                                          <div style={{ fontWeight: 500 }}>
+                                            {h.name}
+                                          </div>
+                                          <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                                        </div>
+                                        <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
+                                          {h.course_name}
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="btn"
+                                        onClick={() => handleUnhideAssignment(h.course_id, h.id)}
+                                        disabled={isLoading}
+                                        style={{
+                                          marginTop: "4px",
+                                          whiteSpace: "nowrap",
+                                          flexShrink: 0,
+                                          background: "var(--badge-success-bg)",
+                                          color: "var(--badge-success-text)",
+                                          border: "1px solid var(--badge-success-border)",
+                                        }}
+                                      >
+                                        {isLoading ? "Unhiding..." : "Unhide"}
+                                      </button>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

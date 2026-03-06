@@ -28,6 +28,7 @@ from threading import Lock
 from auth import (
     User,
     CanvasToken,
+    HiddenAssignment,
     get_db,
     create_user,
     get_user_by_email,
@@ -36,6 +37,9 @@ from auth import (
     store_canvas_token,
     revoke_canvas_token,
     verify_password,
+    hide_assignment,
+    unhide_assignment,
+    get_hidden_assignments,
     UserCreate,
     UserResponse,
     CanvasTokenRequest,
@@ -50,22 +54,14 @@ logger = logging.getLogger("canvas_backend")
 
 # === Configuration ===
 CANVAS_BASE_URL = os.getenv("CANVAS_BASE_URL", "https://northeastern.instructure.com").rstrip("/")
-CANVAS_API_TOKEN = os.getenv("CANVAS_API_TOKEN", "your_token_here")
-MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "y")
 
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
 SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "180"))
 
-if not MOCK_MODE and (not CANVAS_API_TOKEN or CANVAS_API_TOKEN == "your_token_here"):
-    logger.warning("CANVAS_API_TOKEN looks unset and MOCK_MODE is off. Canvas calls may fail.")
-
 _cache_lock = Lock()
 _cache: dict[str, dict[str, Any]] = {}  # key -> {"ts": float, "value": Any}
-
-HEADERS = {
-    "Authorization": f"Bearer {CANVAS_API_TOKEN}",
-    "Accept": "application/json",
-}
+_demo_sessions: Dict[str, Dict[str, Any]] = {}  # session_id -> {"expires": float} for demo mode
+_demo_sessions_lock = Lock()
 
 # === Cache mode ===
 class CacheMode(str, Enum):
@@ -73,9 +69,6 @@ class CacheMode(str, Enum):
     fresh = "fresh"  # bypass cache and fetch now (updates cache)
 
 def _use_cache(mode: CacheMode) -> bool:
-    # In MOCK_MODE we prefer fresh so edits show immediately
-    if MOCK_MODE:
-        return False
     return mode != CacheMode.fresh
 
 # === Caching ===
@@ -101,7 +94,7 @@ def cache_clear(prefix: str | None = None):
             if k.startswith(prefix):
                 _cache.pop(k, None)
 
-def get_assignment_detail(course_id: int, assignment_id: int, mode: CacheMode) -> dict[str, Any]:
+def get_assignment_detail(course_id: int, assignment_id: int, mode: CacheMode, token: Optional[str] = None) -> dict[str, Any]:
     key = f"assignment_detail:{course_id}:{assignment_id}"
     if _use_cache(mode):
         v = cache_get(key)
@@ -111,6 +104,7 @@ def get_assignment_detail(course_id: int, assignment_id: int, mode: CacheMode) -
     data = canvas_get_single(
         f"/courses/{course_id}/assignments/{assignment_id}",
         params={"include[]": ["submission"]},
+        token=token,
     )
     cache_set(key, data)
     return data
@@ -224,7 +218,6 @@ retries = Retry(
     status_forcelist=[429, 500, 502, 503, 504],
 )
 session.mount("https://", HTTPAdapter(max_retries=retries))
-session.headers.update(HEADERS)
 
 def _raise_canvas_http(r: requests.Response, url: str):
     detail: Any
@@ -268,6 +261,28 @@ def create_session(user_id: int) -> str:
     
     return session_id
 
+def create_demo_session() -> str:
+    """Create a demo session for unauthenticated mock mode access."""
+    import secrets
+    session_id = secrets.token_urlsafe(32)
+    expires_at = time.time() + (24 * 60 * 60)  # 1 day for demo
+    
+    with _demo_sessions_lock:
+        _demo_sessions[session_id] = {"expires": expires_at}
+    
+    return session_id
+
+def is_demo_session(session_id: str) -> bool:
+    """Check if a session is in demo mode."""
+    with _demo_sessions_lock:
+        session = _demo_sessions.get(session_id)
+        if not session:
+            return False
+        if time.time() > session["expires"]:
+            _demo_sessions.pop(session_id, None)
+            return False
+        return True
+
 def get_session_user_id(session_id: str) -> Optional[int]:
     """Retrieve user_id from a valid session."""
     with _sessions_lock:
@@ -284,12 +299,15 @@ def invalidate_session(session_id: str) -> None:
     with _sessions_lock:
         _sessions.pop(session_id, None)
 
-def get_current_user(session_id: Optional[str] = Cookie(None), db: Session = Depends(get_db), x_session_id: Optional[str] = Header(None)) -> User:
-    """Dependency to get the currently logged-in user. Checks both cookie and X-Session-ID header."""
+def get_session_id(session_id: Optional[str] = Cookie(None), x_session_id:Optional[str] = Header(None, alias="X-Session-ID")) -> Optional[str]:
+    """Helper dependency to get session ID from either cookie or X-Session-ID header."""
     # Try header first (fallback for local dev with cross-origin requests)
     if x_session_id:
-        session_id = x_session_id
-    
+        return x_session_id
+    return session_id
+
+def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Session = Depends(get_db)) -> User:
+    """Dependency to get the currently logged-in user. Checks both cookie and X-Session-ID header."""
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -305,38 +323,40 @@ def get_current_user(session_id: Optional[str] = Cookie(None), db: Session = Dep
 
 # === Utilities ===
 def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Any:
-    """Make a single Canvas API request. Uses user token if provided, otherwise global token."""
+    """Make a single Canvas API request. Requires a user token."""
+    if not token:
+        raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
+    
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
     
-    # Build headers with the appropriate token
-    headers = {"Accept": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    else:
-        headers["Authorization"] = f"Bearer {CANVAS_API_TOKEN}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
     
-    r = requests.Session().get(url, params=params, timeout=20, headers=headers)
+    r = session.get(url, params=params, timeout=20, headers=headers)
     if not r.ok:
         _raise_canvas_http(r, url)
     return r.json()
 
 def canvas_get_paginated(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> List[Any]:
-    """Make a paginated Canvas API request. Uses user token if provided, otherwise global token."""
+    """Make a paginated Canvas API request. Requires a user token."""
+    if not token:
+        raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
+    
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
     results: List[Any] = []
 
     local_params = (params.copy() if params else {})
     local_params.setdefault("per_page", 100)
     
-    # Build headers with the appropriate token
-    headers = {"Accept": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    else:
-        headers["Authorization"] = f"Bearer {CANVAS_API_TOKEN}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
 
     while url:
-        r = requests.Session().get(url, params=local_params, timeout=20, headers=headers)
+        r = session.get(url, params=local_params, timeout=20, headers=headers)
         if not r.ok:
             _raise_canvas_http(r, url)
 
@@ -707,9 +727,11 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
     parsed.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
     return parsed[:limit] if limit else parsed
 
-def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[Assignment]:
+def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: Optional[int] = None, db: Optional[Session] = None) -> List[Assignment]:
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
+    # Include past assignments (up to 90 days) to capture missing/overdue assignments
+    start = now - timedelta(days=90)
 
     # Only keep courses you consider "current"
     courses = get_courses(mode=mode, token=token)
@@ -720,10 +742,11 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
     items = canvas_get_paginated(
         "/planner/items",
         params={
-            "start_date": now.isoformat(),
+            "start_date": start.isoformat(),
             "end_date": end.isoformat(),
             "per_page": 100,
         },
+        token=token,
     )
 
     # Extract upcoming assignment IDs for current courses
@@ -740,7 +763,7 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
             continue
 
         due = parse_iso(it.get("plannable_date"))
-        if not due or due < now:
+        if not due:
             continue
 
         upcoming_refs.append((cid, pid, due))
@@ -751,8 +774,14 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
 
     # Enrich: fetch details only for these few items (cached)
     out: list[Assignment] = []
+    hidden_set = set(get_hidden_assignments(user_id, db)) if user_id and db else set()
+    
     for cid, aid, due in upcoming_refs:
-        d = get_assignment_detail(cid, aid, mode=mode)
+        # Skip if hidden
+        if (cid, aid) in hidden_set:
+            continue
+            
+        d = get_assignment_detail(cid, aid, mode=mode, token=token)
 
         sub = d.get("submission") if isinstance(d.get("submission"), dict) else {}
         submitted = bool(sub.get("submitted_at"))
@@ -785,8 +814,7 @@ def get_profile(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -
         v = cache_get(key)
         if v:
             return v
-    # Use token if provided, otherwise fall back to MOCK_MODE
-    p = get_student_profile(token=token) if token else (mock_profile() if MOCK_MODE else get_student_profile(token=token))
+    p = get_student_profile(token=token)
     cache_set(key, p)
     return p
 
@@ -796,8 +824,7 @@ def get_enrollments(mode: CacheMode = CacheMode.auto, token: Optional[str] = Non
         v = cache_get(key)
         if v:
             return v
-    # Use token if provided, otherwise fall back to MOCK_MODE
-    e = canvas_get_paginated("/users/self/enrollments", token=token) if token else (mock_enrollments() if MOCK_MODE else canvas_get_paginated("/users/self/enrollments", token=token))
+    e = canvas_get_paginated("/users/self/enrollments", token=token)
     cache_set(key, e)
     return e
 
@@ -807,37 +834,38 @@ def get_courses(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -
         v = cache_get(key)
         if v:
             return v
-    # Use token if provided, otherwise fall back to MOCK_MODE
-    courses = get_active_courses(token=token) if token else (mock_courses() if MOCK_MODE else get_active_courses(token=token))
+    courses = get_active_courses(token=token)
     cache_set(key, courses)
     return courses
 
-def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[Assignment]:
+def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: Optional[int] = None, db: Optional[Session] = None) -> List[Assignment]:
     key = f"assignments:{course_id}"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    # Use token if provided, otherwise fall back to MOCK_MODE
-    if token:
-        asgs = get_course_assignments(course_id, include_submission=True, limit=None, token=token)
-    else:
-        asgs = mock_course_assignments(course_id, limit=None) if MOCK_MODE else get_course_assignments(course_id, include_submission=True, limit=None, token=token)
+    asgs = get_course_assignments(course_id, include_submission=True, limit=None, token=token)
+    
+    # Filter out hidden assignments
+    if user_id and db:
+        hidden_set = set(get_hidden_assignments(user_id, db))
+        asgs = [a for a in asgs if (a.course_id, a.id) not in hidden_set]
+    
     cache_set(key, asgs)
     return asgs
 
-def get_course_summaries(next_limit: int, missing_limit: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[CourseSummary]:
+def get_course_summaries(next_limit: int, missing_limit: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: Optional[int] = None, db: Optional[Session] = None) -> List[CourseSummary]:
     key = f"course_summaries:next={next_limit}:miss={missing_limit}"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
-    s = build_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=mode, token=token)
+    s = build_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=mode, token=token, user_id=user_id, db=db)
     cache_set(key, s)
     return s
 
 # === Course summaries ===
-def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> List[CourseSummary]:
+def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: Optional[int] = None, db: Optional[Session] = None) -> List[CourseSummary]:
     courses = get_courses(mode=mode, token=token)
     enrollments = get_enrollments(mode=mode, token=token)
 
@@ -860,7 +888,7 @@ def build_course_summaries(next_limit: int = 3, missing_limit: int = 10, mode: C
     for c in courses:
         cid = c.id
         grade = grades_by_course.get(cid, {})
-        asgs = get_course_assignments_for(cid, mode=mode, token=token)
+        asgs = get_course_assignments_for(cid, mode=mode, token=token, user_id=user_id, db=db)
 
         future = [a for a in asgs if a.due_at and a.due_at >= now]
         future.sort(key=lambda a: sort_key_due_at(a.due_at))
@@ -954,8 +982,8 @@ def letter_to_points(letter: Optional[str]) -> Optional[float]:
             base -= 0.33
     return max(0.0, min(4.0, base))
 
-def build_overview(mode: CacheMode = CacheMode.auto, token: Optional[str] = None) -> OverviewResponse:
-    summaries = get_course_summaries(next_limit=3, missing_limit=50, mode=mode, token=token)
+def build_overview(mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: Optional[int] = None, db: Optional[Session] = None) -> OverviewResponse:
+    summaries = get_course_summaries(next_limit=3, missing_limit=50, mode=mode, token=token, user_id=user_id, db=db)
 
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=24)
@@ -967,7 +995,7 @@ def build_overview(mode: CacheMode = CacheMode.auto, token: Optional[str] = None
 
     due_soon: List[DueSoonItem] = []
     for s in summaries:
-        asgs = get_course_assignments_for(s.id, mode=mode, token=token)
+        asgs = get_course_assignments_for(s.id, mode=mode, token=token, user_id=user_id, db=db)
         for a in asgs:
             if not a.due_at:
                 continue
@@ -1037,10 +1065,14 @@ def build_overview(mode: CacheMode = CacheMode.auto, token: Optional[str] = None
 @app.get("/api/profile", response_model=Profile)
 def api_profile(
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Get user profile. Uses user token if authenticated, otherwise global token."""
+    """Get user profile. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return mock_profile()
+    
     token = None
     if session_id:
         try:
@@ -1055,10 +1087,14 @@ def api_profile(
 @app.get("/api/courses", response_model=List[Course])
 def api_courses(
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Get user courses. Uses user token if authenticated, otherwise global token."""
+    """Get user courses. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return mock_courses()
+    
     token = None
     if session_id:
         try:
@@ -1075,11 +1111,17 @@ def api_course_assignments(
     course_id: int,
     limit: Optional[int] = None,
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Get assignments for a course. Uses user token if authenticated, otherwise global token."""
+    """Get assignments for a course. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        asgs = mock_course_assignments(course_id, limit=None)
+        return asgs[:limit] if limit else asgs
+    
     token = None
+    user_id = None
     if session_id:
         try:
             user_id = get_session_user_id(session_id)
@@ -1088,7 +1130,7 @@ def api_course_assignments(
         except Exception:
             pass
     
-    asgs = get_course_assignments_for(course_id, mode=cache, token=token)
+    asgs = get_course_assignments_for(course_id, mode=cache, token=token, user_id=user_id, db=db)
     return asgs[:limit] if limit else asgs
 
 @app.get("/api/upcoming", response_model=List[Assignment])
@@ -1096,11 +1138,16 @@ def api_upcoming(
     limit: Optional[int] = 50,
     days_ahead: int = 30,
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Get upcoming assignments. Uses user token if authenticated, otherwise global token."""
+    """Get upcoming assignments. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return mock_upcoming(limit=limit or 50)
+    
     token = None
+    user_id = None
     if session_id:
         try:
             user_id = get_session_user_id(session_id)
@@ -1117,28 +1164,50 @@ def api_upcoming(
         if v:
             return v
 
-    # Use token if provided, otherwise fall back to MOCK_MODE
-    if token:
-        out = get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token)
-    else:
-        out = mock_upcoming(limit=lim) if MOCK_MODE else get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token)
+    out = get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token, user_id=user_id, db=db)
 
     cache_set(key, out)
     return out
 
+@app.get("/api/demo/enable")
+def api_demo_enable():
+    """Enable demo mode - returns a demo session ID."""
+    session_id = create_demo_session()
+    response = JSONResponse({"success": True, "session_id": session_id, "demo": True})
+    response.set_cookie(
+        "session_id",
+        session_id,
+        max_age=24 * 60 * 60,  # 1 day
+        path="/",
+        secure=False,
+        httponly=True,
+        samesite="lax"
+    )
+    return response
+
 @app.get("/api/mock-mode/enabled")
-def api_mock_mode_status():
-    """Check if mock mode is enabled."""
-    return {"mock_mode": MOCK_MODE}
+def api_mock_mode_status(session_id: Optional[str] = Depends(get_session_id)):
+    """Check if current session is in demo mode."""
+    if session_id and is_demo_session(session_id):
+        return {"mock_mode": True, "demo": True}
+    return {"mock_mode": False, "demo": False}
 
 @app.get("/api/dashboard")
 def api_dashboard(
     upcoming_limit: int = 20,
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Dashboard bundle. Uses user token if authenticated, otherwise global token."""
+    """Dashboard bundle. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return {
+            "profile": mock_profile().model_dump(mode='json'),
+            "courses": [c.model_dump(mode='json') for c in mock_courses()],
+            "upcoming": [a.model_dump(mode='json') for a in mock_upcoming(limit=upcoming_limit)],
+        }
+    
     token = None
     if session_id:
         try:
@@ -1162,10 +1231,77 @@ def api_courses_summary(
     next_limit: int = 3,
     missing_limit: int = 10,
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
+    """Get course summaries. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        # Return mock summaries for demo
+        courses = mock_courses()
+        enrollments = mock_enrollments()
+        
+        grades_by_course: dict[int, dict[str, Any]] = {}
+        for e in enrollments:
+            cid = e.get("course_id")
+            if cid:
+                g = e.get("grades") or {}
+                grades_by_course[cid] = {
+                    "current_score": g.get("current_score"),
+                    "current_grade": g.get("current_grade"),
+                }
+        
+        now = datetime.now(timezone.utc)
+        summaries: List[CourseSummary] = []
+        for c in courses:
+            cid = c.id
+            grade = grades_by_course.get(cid, {})
+            asgs = mock_course_assignments(cid, limit=None)
+            
+            future = [a for a in asgs if a.due_at and a.due_at >= now]
+            future.sort(key=lambda a: sort_key_due_at(a.due_at))
+            next_asgs = future[:next_limit]
+            
+            missing: List[MissingItem] = []
+            for a in asgs:
+                if not a.due_at or a.due_at >= now or a.submitted:
+                    continue
+                if a.submission_types and "none" in a.submission_types:
+                    continue
+                missing.append(
+                    MissingItem(
+                        assignment_id=a.id,
+                        course_id=cid,
+                        course_name=c.name,
+                        name=a.name,
+                        due_at=a.due_at,
+                        points_possible=a.points_possible,
+                        html_url=a.html_url,
+                    )
+                )
+            
+            missing.sort(key=lambda m: (m.due_at is None, m.due_at or datetime.min.replace(tzinfo=timezone.utc)))
+            
+            summaries.append(
+                CourseSummary(
+                    id=cid,
+                    name=c.name,
+                    course_code=c.course_code,
+                    syllabus_url=c.syllabus_url,
+                    html_url=c.html_url,
+                    current_score=grade.get("current_score"),
+                    current_grade=grade.get("current_grade"),
+                    next_assignments=next_asgs,
+                    missing_count=len(missing),
+                    missing=missing[:missing_limit],
+                )
+            )
+        
+        summaries.sort(key=lambda s: (s.name or "").lower())
+        return summaries
+    
     token = None
+    user_id = None
     if session_id:
         try:
             user_id = get_session_user_id(session_id)
@@ -1173,15 +1309,152 @@ def api_courses_summary(
                 token = get_canvas_token(user_id, db)
         except Exception:
             pass
-    return get_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=cache, token=token)
+    return get_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=cache, token=token, user_id=user_id, db=db)
 
 @app.get("/api/overview", response_model=OverviewResponse)
 def api_overview(
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
+    """Get dashboard overview. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        # Return mock overview for demo
+        courses = mock_courses()
+        enrollments = mock_enrollments()
+        
+        grades_by_course: dict[int, dict[str, Any]] = {}
+        for e in enrollments:
+            if e.get("type") != "StudentEnrollment":
+                continue
+            cid = e.get("course_id")
+            if not cid:
+                continue
+            g = e.get("grades") or {}
+            grades_by_course[cid] = {
+                "current_score": g.get("current_score"),
+                "current_grade": g.get("current_grade"),
+            }
+        
+        now = datetime.now(timezone.utc)
+        summaries: List[CourseSummary] = []
+        for c in courses:
+            cid = c.id
+            grade = grades_by_course.get(cid, {})
+            asgs = mock_course_assignments(cid, limit=None)
+            
+            future = [a for a in asgs if a.due_at and a.due_at >= now]
+            future.sort(key=lambda a: sort_key_due_at(a.due_at))
+            next_asgs = future[:3]
+            
+            missing: List[MissingItem] = []
+            for a in asgs:
+                if not a.due_at or a.due_at >= now or a.submitted:
+                    continue
+                if a.submission_types and "none" in a.submission_types:
+                    continue
+                missing.append(
+                    MissingItem(
+                        assignment_id=a.id,
+                        course_id=cid,
+                        course_name=c.name,
+                        name=a.name,
+                        due_at=a.due_at,
+                        points_possible=a.points_possible,
+                        html_url=a.html_url,
+                    )
+                )
+            
+            missing.sort(key=lambda m: (m.due_at is None, m.due_at or datetime.min.replace(tzinfo=timezone.utc)))
+            
+            summaries.append(
+                CourseSummary(
+                    id=cid,
+                    name=c.name,
+                    course_code=c.course_code,
+                    syllabus_url=c.syllabus_url,
+                    html_url=c.html_url,
+                    current_score=grade.get("current_score"),
+                    current_grade=grade.get("current_grade"),
+                    next_assignments=next_asgs,
+                    missing_count=len(missing),
+                    missing=missing[:50],
+                )
+            )
+        
+        summaries.sort(key=lambda s: (s.name or "").lower())
+        
+        cutoff = now + timedelta(hours=24)
+        all_missing: List[MissingItem] = []
+        for s in summaries:
+            all_missing.extend(s.missing or [])
+        all_missing.sort(key=lambda m: (m.due_at is None, m.due_at or datetime.min.replace(tzinfo=timezone.utc)))
+        
+        due_soon: List[DueSoonItem] = []
+        for s in summaries:
+            asgs = mock_course_assignments(s.id, limit=None)
+            for a in asgs:
+                if not a.due_at or a.submitted or not (now <= a.due_at <= cutoff):
+                    continue
+                due_soon.append(
+                    DueSoonItem(
+                        assignment_id=a.id,
+                        course_id=s.id,
+                        course_name=s.name,
+                        name=a.name,
+                        due_at=a.due_at,
+                        points_possible=a.points_possible,
+                        html_url=a.html_url,
+                    )
+                )
+        due_soon.sort(key=lambda x: x.due_at)
+        
+        grade_items: List[GradeItem] = []
+        points: List[float] = []
+        
+        for s in summaries:
+            actual_letter = s.current_grade
+            score = s.current_score
+            display_letter = actual_letter
+            grade_is_estimated = False
+            
+            if not display_letter and score is not None:
+                est = score_to_letter(score)
+                if est:
+                    display_letter = est
+                    grade_is_estimated = True
+            
+            grade_items.append(
+                GradeItem(
+                    course_id=s.id,
+                    course_name=s.name,
+                    course_code=s.course_code,
+                    current_grade=actual_letter,
+                    current_score=score,
+                    display_grade=display_letter,
+                    grade_is_estimated=grade_is_estimated,
+                )
+            )
+            
+            p = letter_to_points(display_letter)
+            if p is not None:
+                points.append(p)
+        
+        gpa = round(sum(points) / len(points), 2) if points else None
+        
+        return OverviewResponse(
+            missing=all_missing,
+            missing_count=len(all_missing),
+            due_next_24h=due_soon,
+            due_next_24h_count=len(due_soon),
+            gpa=gpa,
+            grades=grade_items,
+            any_estimated_grades=False,
+        )
+    
     token = None
+    user_id = None
     if session_id:
         try:
             user_id = get_session_user_id(session_id)
@@ -1189,7 +1462,7 @@ def api_overview(
                 token = get_canvas_token(user_id, db)
         except Exception:
             pass
-    return build_overview(mode=cache, token=token)
+    return build_overview(mode=cache, token=token, user_id=user_id, db=db)
 
 @app.post("/api/cache/clear")
 def api_cache_clear():
@@ -1201,9 +1474,14 @@ def api_announcements(
     days_back: int = 14,
     limit: int = 30,
     cache: CacheMode = Query(CacheMode.auto),
-    session_id: Optional[str] = Cookie(None),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
+    """Get announcements. Demo mode returns empty list, authenticated mode uses real data."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return []
+    
     token = None
     if session_id:
         try:
@@ -1212,8 +1490,6 @@ def api_announcements(
                 token = get_canvas_token(user_id, db)
         except Exception:
             pass
-    if MOCK_MODE and not token:
-        return []
     return get_announcements(days_back=days_back, limit=limit, mode=cache, token=token)
 
 # === Background sync loop ===
@@ -1223,16 +1499,12 @@ async def sync_loop():
     while True:
         try:
             logger.info("Background sync: refreshing cached Canvas data…")
+            
+            # Only sync if we have authenticated users with tokens
+            # This is a background job that doesn't have user context, so we skip it
+            # Users will sync when they make requests
 
-            _ = get_profile(mode=CacheMode.fresh)
-            _ = get_enrollments(mode=CacheMode.fresh)
-            _ = get_courses(mode=CacheMode.fresh)
-
-            # Only refresh summaries periodically (it will pull assignments anyway)
-            if not MOCK_MODE:
-                _ = get_course_summaries(next_limit=3, missing_limit=10, mode=CacheMode.fresh)
-
-            logger.info("Background sync: done.")
+            logger.info("Background sync: skipped (no global token available)")
         except Exception:
             logger.exception("Background sync failed (will retry)")
 
@@ -1241,10 +1513,8 @@ async def sync_loop():
 @app.get("/api/debug/canvas")
 def debug_canvas():
     return {
-        "mock_mode": MOCK_MODE,
         "canvas_base_url": CANVAS_BASE_URL,
-        "token_present": bool(CANVAS_API_TOKEN and CANVAS_API_TOKEN != "your_token_here"),
-        "profile_probe": canvas_get_single("/users/self/profile"),
+        "auth_mode": "per-user token",
     }
 
 # === Auth endpoints ===
@@ -1284,7 +1554,7 @@ def auth_login(payload: UserCreate, db: Session = Depends(get_db)):
     return response
 
 @app.post("/api/auth/logout")
-def auth_logout(session_id: Optional[str] = Cookie(None)):
+def auth_logout(session_id: Optional[str] = Depends(get_session_id)):
     """Logout the current user."""
     if session_id:
         invalidate_session(session_id)
@@ -1303,21 +1573,19 @@ def auth_token_submit(payload: CanvasTokenRequest, current_user: User = Depends(
     """Submit or update Canvas token for the user."""
     try:
         # Validate the token by attempting a simple Canvas API call
-        if not MOCK_MODE:
-            try:
-                # Try to get user profile - a simple validation call
-                response = requests.get(
-                    f"{CANVAS_API_BASE}/users/self",
-                    headers={"Authorization": f"Bearer {payload.token}"},
-                    timeout=10
-                )
-                if response.status_code == 401:
-                    raise HTTPException(status_code=400, detail="Invalid Canvas token. Please check your token and try again.")
-                elif response.status_code != 200:
-                    raise HTTPException(status_code=400, detail=f"Canvas API error: {response.status_code}. Please try again.")
-            except requests.RequestException as e:
-                raise HTTPException(status_code=400, detail=f"Failed to validate token: {str(e)}")
-        
+        try:
+            response = requests.get(
+                f"{CANVAS_BASE_URL}/api/v1/users/self",
+                headers={"Authorization": f"Bearer {payload.token}"},
+                timeout=10
+            )
+            if response.status_code == 401:
+                raise HTTPException(status_code=400, detail="Invalid Canvas token. Please check your token and try again.")
+            elif response.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Canvas API error: {response.status_code}. Please try again.")
+        except requests.RequestException as e:
+            raise HTTPException(status_code=400, detail=f"Failed to validate token: {str(e)}")
+
         store_canvas_token(current_user.id, payload.token, db)
         return {"success": True, "message": "Token saved successfully"}
     except HTTPException:
@@ -1334,6 +1602,12 @@ def auth_token_status(current_user: User = Depends(get_current_user), db: Sessio
     if not db_token:
         return CanvasTokenStatus(has_token=False)
     
+    # If decryption fails (e.g., stale key from earlier run), treat as missing token.
+    token = get_canvas_token(current_user.id, db)
+    if not token:
+        revoke_canvas_token(current_user.id, db)
+        return CanvasTokenStatus(has_token=False)
+    
     return CanvasTokenStatus(has_token=True, updated_at=db_token.updated_at)
 
 @app.delete("/api/auth/token")
@@ -1342,20 +1616,120 @@ def auth_token_revoke(current_user: User = Depends(get_current_user), db: Sessio
     revoke_canvas_token(current_user.id, db)
     return {"success": True, "message": "Token revoked"}
 
+# === Hidden Assignments Management ===
+@app.get("/api/hidden-assignments")
+def get_hidden_assignments_endpoint(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all hidden assignments for the current user with full details."""
+    token = get_canvas_token(current_user.id, db)
+    if not token:
+        raise HTTPException(status_code=403, detail="Canvas token required")
+    
+    hidden = get_hidden_assignments(current_user.id, db)
+    courses = get_courses(mode=CacheMode.auto, token=token)
+    course_map = {c.id: c for c in courses}
+    
+    hidden_details = []
+    for course_id, assignment_id in hidden:
+        try:
+            assignment_detail = get_assignment_detail(course_id, assignment_id, mode=CacheMode.auto, token=token)
+            course = course_map.get(course_id)
+            course_name = course.name if course else "Unknown course"
+            
+            hidden_details.append({
+                "id": assignment_id,
+                "course_id": course_id,
+                "course_name": course_name,
+                "name": assignment_detail.get("name") or f"Assignment {assignment_id}",
+                "due_at": parse_iso(assignment_detail.get("due_at")).isoformat() if parse_iso(assignment_detail.get("due_at")) else None,
+                "points_possible": assignment_detail.get("points_possible"),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to fetch details for hidden assignment {course_id}:{assignment_id}: {e}")
+            # Fallback with minimal info
+            course = course_map.get(course_id)
+            course_name = course.name if course else "Unknown course"
+            hidden_details.append({
+                "id": assignment_id,
+                "course_id": course_id,
+                "course_name": course_name,
+                "name": f"Assignment {assignment_id}",
+                "due_at": None,
+                "points_possible": None,
+            })
+    
+    return {"hidden_assignments": hidden_details}
+
+@app.post("/api/hidden-assignments")
+def add_hidden_assignment(
+    course_id: int = Query(...),
+    assignment_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Hide an assignment from the user's view."""
+    hide_assignment(current_user.id, course_id, assignment_id, db)
+    return {"success": True, "message": "Assignment hidden"}
+
+@app.delete("/api/hidden-assignments/{course_id}/{assignment_id}")
+def remove_hidden_assignment(
+    course_id: int,
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Unhide an assignment."""
+    success = unhide_assignment(current_user.id, course_id, assignment_id, db)
+    return {
+        "success": success,
+        "message": "Assignment unhidden" if success else "Assignment not found in hidden list"
+    }
+
+@app.get("/api/candidates-for-hiding")
+def get_candidates_for_hiding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get incomplete/unsubmitted assignments that could be hidden."""
+    token = get_canvas_token(current_user.id, db)
+    if not token:
+        raise HTTPException(status_code=403, detail="Canvas token required")
+    
+    # Get all assignments from all courses
+    courses = get_courses(mode=CacheMode.auto, token=token)
+    candidates = []
+    
+    for course in courses:
+        assignments = get_course_assignments_for(course.id, mode=CacheMode.auto, token=token)
+        for a in assignments:
+            # Only include unsubmitted assignments
+            if not a.submitted:
+                candidates.append({
+                    "id": a.id,
+                    "course_id": a.course_id,
+                    "course_name": course.name,
+                    "name": a.name,
+                    "due_at": a.due_at.isoformat() if a.due_at else None,
+                    "points_possible": a.points_possible,
+                })
+    
+    return {"candidates": candidates}
+
 @app.get("/api/debug/cache")
 def debug_cache():
     with _cache_lock:
         keys = list(_cache.keys())
     return {
-        "mock_mode": MOCK_MODE,
         "ttl_seconds": CACHE_TTL_SECONDS,
         "keys": keys,
         "count": len(keys),
     }
 
 @app.get("/api/debug/terms")
-def debug_terms():
-    courses = get_courses(mode=CacheMode.fresh)
+def debug_terms(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    token = get_canvas_token(current_user.id, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No Canvas token found")
+    courses = get_courses(mode=CacheMode.fresh, token=token)
     counts: dict[int, int] = {}
     for c in courses:
         if c.term_id is None:

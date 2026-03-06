@@ -391,39 +391,21 @@ export function WorkloadEstimateControl({
     <div className="effortWidget">
       <div className="effortTopRow">
         <div className="effortNumbers">
-          <span className="effortPill">
-            <span className="muted">{L.total}</span>{" "}
-            <span className="mono">{fmt1(estimate)}h</span>
-          </span>
+          {estimate > 0 ? (
+            <>
+              <span className="effortPill">
+                <span className="muted">{L.total}</span>{" "}
+                <span className="mono">{fmt1(estimate)}h</span>
+              </span>
 
-          <span className="effortPill">
-            <span className="muted">{L.rem}</span>{" "}
-            <span className="mono">{fmtRemaining(remaining)}</span>
-          </span>
-
-          {!compactComplete && isComplete ? (
-            <span className="effortDone">Complete</span>
-          ) : null}
-        </div>
-
-        <button
-          type="button"
-          className="effortGearBtn"
-          onClick={openPopover}
-          title={L.inputBtn}
-          aria-label={L.inputBtn}
-        >
-          ✎
-        </button>
-      </div>
-
-      {/* ✅ Draggable progress bar (snaps by global step) */}
-      {estimate <= 0 ? (
-        <div className="effortBarWrap">
-          {showInlineEstimate ? (
+              <span className="effortPill">
+                <span className="muted">{L.rem}</span>{" "}
+                <span className="mono">{fmtRemaining(remaining)}</span>
+              </span>
+            </>
+          ) : showInlineEstimate ? (
             <div
               style={{
-                gridColumn: "1 / -1",
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
@@ -483,22 +465,42 @@ export function WorkloadEstimateControl({
                 </div>
               ) : null}
             </div>
-          ) : (
+          ) : estimate <= 0 && !showInlineEstimate ? (
             <button
               type="button"
               className="effortCta"
               onClick={() => {
-                setOpen(false); // just to be safe; don't open popover here
+                setOpen(false);
                 setAnchorEl(null);
                 setErr("");
                 setInlineEstimateDraft("");
                 setShowInlineEstimate(true);
               }}
-              style={{ gridColumn: "1 / -1", width: "fit-content" }}
+              style={{ margin: "0 auto" }}
             >
               {compactLabels ? "Set estimated hours" : "Set estimated hours"}
             </button>
-          )}
+          ) : null}
+
+          {!compactComplete && isComplete ? (
+            <span className="effortDone">Complete</span>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          className="effortGearBtn"
+          onClick={openPopover}
+          title={L.inputBtn}
+          aria-label={L.inputBtn}
+        >
+          ✎
+        </button>
+      </div>
+
+      {/* ✅ Draggable progress bar (snaps by global step) */}
+      {estimate <= 0 ? (
+        <div className="effortBarWrap">
         </div>
       ) : compactLabels && isComplete ? (
         <div className="effortBarWrap">

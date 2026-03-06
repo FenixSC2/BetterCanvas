@@ -1,8 +1,14 @@
 import { createContext, useState, useEffect, useCallback, useContext } from "react";
+import { clearCachedAsync } from "./useCachedAsync";
 
 const AuthContext = createContext(null);
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+function getSessionHeaders() {
+  const sessionId = localStorage.getItem("session_id");
+  return sessionId ? { "X-Session-ID": sessionId } : {};
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -32,6 +38,7 @@ export function AuthProvider({ children }) {
     try {
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         credentials: "include",
+        headers: getSessionHeaders(),
       });
 
       if (res.ok) {
@@ -42,6 +49,7 @@ export function AuthProvider({ children }) {
         // Check if they have a token
         const tokenRes = await fetch(`${API_BASE}/api/auth/token/status`, {
           credentials: "include",
+          headers: getSessionHeaders(),
         });
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
@@ -78,8 +86,15 @@ export function AuthProvider({ children }) {
       }
 
       const data = await res.json();
+      
+      // Clear any demo mode state before setting user
+      localStorage.removeItem("demoMode");
+      
       setUser(data.user);
       setHasToken(false);
+      
+      // Clear cached data on login to force fresh data from Canvas
+      clearCachedAsync();
       
       // Store session ID in localStorage if provided
       if (data.session_id) {
@@ -90,6 +105,7 @@ export function AuthProvider({ children }) {
       try {
         const meRes = await fetch(`${API_BASE}/api/auth/me`, {
           credentials: "include",
+          headers: getSessionHeaders(),
         });
         if (meRes.ok) {
           const userData = await meRes.json();
@@ -103,10 +119,16 @@ export function AuthProvider({ children }) {
       try {
         const tokenRes = await fetch(`${API_BASE}/api/auth/token/status`, {
           credentials: "include",
+          headers: getSessionHeaders(),
         });
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
           setHasToken(tokenData.has_token);
+          
+          // If they already have a token, trigger data fetches
+          if (tokenData.has_token) {
+            window.dispatchEvent(new CustomEvent("auth:changed"));
+          }
         } else {
           setHasToken(false);
         }
@@ -161,6 +183,10 @@ export function AuthProvider({ children }) {
       setUser(null);
       setHasToken(false);
       localStorage.removeItem("session_id");
+      // Clear cached data on logout
+      clearCachedAsync();
+      // Emit auth change event so all data fetches re-run
+      window.dispatchEvent(new CustomEvent("auth:changed"));
       setLoading(false);
     }
   }, []);

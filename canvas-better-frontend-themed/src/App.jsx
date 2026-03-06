@@ -19,6 +19,30 @@ function DashboardApp() {
   const { user, loading, hasToken } = useAuth();
   const [authPage, setAuthPage] = useState("login"); // "login" or "register"
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem("demoMode") === "true");
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+  async function enterDemoMode() {
+    try {
+      const res = await fetch(`${API_BASE}/api/demo/enable`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session_id) {
+          localStorage.setItem("session_id", data.session_id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create demo session:", err);
+    }
+    setDemoMode(true);
+    localStorage.setItem("demoMode", "true");
+  }
+
+  function exitDemoMode() {
+    setDemoMode(false);
+    localStorage.removeItem("demoMode");
+    localStorage.removeItem("session_id");
+    window.location.hash = "#";
+  }
   
   // Handle hash-based routing for auth pages
   useEffect(() => {
@@ -60,11 +84,7 @@ function DashboardApp() {
 
   // Demo mode - show dashboard with mock data without authentication
   if (demoMode && !user) {
-    return <DashboardContent demoMode={true} onExitDemo={() => {
-      setDemoMode(false);
-      localStorage.removeItem("demoMode");
-      window.location.hash = "#";
-    }} />;
+    return <DashboardContent demoMode={true} onExitDemo={exitDemoMode} />;
   }
 
   if (!user) {
@@ -73,10 +93,7 @@ function DashboardApp() {
       <ThemeProvider>
         <div className="app">
           <TopLoadingBar />
-          {authPage === "register" ? <Register /> : <Login onViewDemo={() => {
-            setDemoMode(true);
-            localStorage.setItem("demoMode", "true");
-          }} />}
+          {authPage === "register" ? <Register /> : <Login onViewDemo={enterDemoMode} />}
         </div>
       </ThemeProvider>
     );

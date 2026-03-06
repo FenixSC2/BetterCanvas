@@ -138,6 +138,11 @@ html[data-theme="contrast"] .toggleTrack.on,
 html[data-theme="forest"] .toggleTrack.on {
   background: rgba(80, 255, 160, 0.22);
 }
+html[data-theme="midnight"] .toggleTrack.mixed,
+html[data-theme="contrast"] .toggleTrack.mixed,
+html[data-theme="forest"] .toggleTrack.mixed {
+  background: rgba(255, 200, 80, 0.25);
+}
 
 /* Dark themes: default danger badge uses strong scheme everywhere */
 [data-theme="midnight"],
@@ -505,6 +510,10 @@ details > summary::marker {
   max-width: 100%;
 }
 
+.expandableRight {
+  flex-shrink: 0;
+}
+
 details.expandable > .cardBody {
   display: grid;
   gap: var(--blockGap);
@@ -753,6 +762,12 @@ details.expandable > .cardBody,
   padding: var(--cardPad);
 }
 
+/* Constrain nested expandable rows to prevent overflow */
+.listItem .expandableSummary .row {
+  max-width: 100%;
+  overflow: hidden;
+}
+
 /* Body padding only for the top-level expandable */
 .listItem > .expandable .expandableBody,
 .listItem > .expandable .expandableContent,
@@ -809,6 +824,9 @@ details.expandable > .cardBody,
 .toggleTrack.on {
   background: rgba(20, 160, 70, 0.35);
 }
+.toggleTrack.mixed {
+  background: rgba(160, 120, 40, 0.45);
+}
 
 .toggleThumb {
   position: absolute;
@@ -824,6 +842,12 @@ details.expandable > .cardBody,
 
 .toggleThumb.on {
   transform: translateX(14px);
+}
+.toggleThumb.off {
+  transform: translateX(0);
+}
+.toggleThumb.mixed {
+  transform: translateX(7px);
 }
 
 /* ===== Danger / badges ===== */

@@ -4,7 +4,7 @@ import { canvasApi } from "../api/canvasApi";
 import { getNotificationPermission, notifyOnce, notificationsSupported } from "../lib/notifications";
 import { dueWithinHours, isMissing } from "../lib/urgency";
 
-export function useDesktopNotifications() {
+export function useDesktopNotifications(hasToken = false) {
   const supported = notificationsSupported();
   const [permission, setPermission] = useState(getNotificationPermission());
   const [enabled, setEnabled] = useState(() => {
@@ -28,7 +28,8 @@ export function useDesktopNotifications() {
   const canNotify = useMemo(() => supported && permission === "granted", [supported, permission]);
 
   useEffect(() => {
-    if (!enabled) return;
+    // Don't run if not enabled, OR if user doesn't have a Canvas token yet
+    if (!enabled || !hasToken) return;
 
     async function check() {
       try {
@@ -92,7 +93,7 @@ export function useDesktopNotifications() {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [enabled]);
+  }, [enabled, hasToken]);
 
   return {
     supported,

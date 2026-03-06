@@ -5,7 +5,8 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 
-import { useCachedAsync } from "../hooks/useCachedAsync";
+import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
+import { useAuth } from "../hooks/useAuth";
 
 // desktop notifications
 import { useDesktopNotifications } from "../hooks/useDesktopNotifications";
@@ -51,8 +52,16 @@ function safeJsonParse(raw, fallback) {
   }
 }
 
+function trimCourseName(courseName) {
+  if (!courseName) return courseName;
+  const lastSecIndex = courseName.lastIndexOf("SEC");
+  if (lastSecIndex === -1) return courseName;
+  return courseName.slice(0, lastSecIndex).trim();
+}
+
 export function MyInformation() {
-  const notif = useDesktopNotifications();
+  const { hasToken } = useAuth();
+  const notif = useDesktopNotifications(hasToken);
 
   // ✅ Cached API data (prevents "No info" flash on tab switch)
   const profileQ = useCachedAsync(
@@ -83,11 +92,28 @@ export function MyInformation() {
     { ttlMs: 3 * 60 * 1000 }
   );
 
+  const annRefreshRef = useRef(null);
+  annRefreshRef.current = announcementsQ.refresh;
+
+  // Clear announcements cache once on mount, then kick off the first fetch
+  useEffect(() => {
+    clearCachedAsync("myinfo:announcements");
+    annRefreshRef.current?.();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const announcements = announcementsQ.data || [];
   const annErr = announcementsQ.error;
 
-  // Show the announcements loading state only if we have no cached data yet
-  const annLoading = announcementsQ.loading && announcements.length === 0;
+  // Show the announcements loading state if we're actively loading OR have never
+  // received a response yet (data === null). This prevents a "None found" flash
+  // when the fetch is aborted/restarted before the first response arrives.
+  const annLoading =
+    (announcementsQ.loading || announcementsQ.data == null) && !annErr;
+
+  // Apply same loading logic to overview-dependent sections
+  const overviewErr = overviewQ.error;
+  const overviewLoading =
+    (overviewQ.loading || overviewQ.data == null) && !overviewErr;
 
   // Seen tracking
   const [seenIds, setSeenIds] = useState(() => new Set());
@@ -209,24 +235,20 @@ export function MyInformation() {
     }
   }, []);
 
-  // ✅ Announcements polling (now calls announcementsQ.refresh)
-  // We must preserve your old behavior: don't notify on first load, only on interval ticks.
+  // Poll for new announcements every 3 minutes; notifications only fire on poll ticks,
+  // not on the initial mount fetch (shouldNotifyRef starts false).
   const shouldNotifyRef = useRef(false);
 
   useEffect(() => {
     const POLL_MS = 3 * 60 * 1000;
 
-    // initial fetch: refresh, but do NOT notify
-    announcementsQ.refresh?.();
-
     const t = setInterval(() => {
       shouldNotifyRef.current = true;
-      announcementsQ.refresh?.();
+      annRefreshRef.current?.();
     }, POLL_MS);
 
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notif.enabled, notif.permission]);
+  }, []);
 
   // When announcements change after a poll tick, evaluate new announcements + notify
   useEffect(() => {
@@ -327,7 +349,7 @@ export function MyInformation() {
   }
 
   // If profile never arrives, show message (but this shouldn’t flash anymore)
-  if (!profile) return <div className="muted">No profile found.</div>;
+  if (!profile) return <div className="muted">Loading...</div>;
 
   return (
     <div className="stack">
@@ -423,7 +445,7 @@ export function MyInformation() {
               const subtitle = (
                 <span className="muted">
                   {a.course_name ? (
-                    <span className="mono">{a.course_name}</span>
+                    <span className="mono">{trimCourseName(a.course_name)}</span>
                   ) : null}
                   {a.course_name ? " • " : ""}
                   Posted: <span className="mono">{fmtPosted(a.posted_at)}</span>
@@ -498,15 +520,19 @@ export function MyInformation() {
       <Expandable
         title="Next 24 hours"
         subtitle={
-          due24Count > 0 ? (
+          overviewLoading ? (
+            <span className="muted">Loading…</span>
+          ) : due24Count > 0 ? (
             <span className="dangerText">Due soon: {due24Count}</span>
           ) : (
             <span className="muted">Nothing due (or all complete)</span>
           )
         }
       >
-        {!overview ? (
-          <div className="muted">No overview data yet.</div>
+        {overviewErr ? (
+          <ErrorBox error={overviewErr} />
+        ) : overviewLoading ? (
+          <Loading label="Loading assignments due soon…" />
         ) : due24Count === 0 ? (
           <div className="muted">
             No assignments due in the next 24 hours that are incomplete.
@@ -519,7 +545,7 @@ export function MyInformation() {
               const subtitle = (
                 <span className="muted">
                   {a.course_name ? (
-                    <span className="mono">{a.course_name}</span>
+                    <span className="mono">{trimCourseName(a.course_name)}</span>
                   ) : null}
                   {a.course_name ? " • " : ""}
                   Due: <span className="mono">{fmtDue(a.due_at)}</span>
@@ -569,15 +595,19 @@ export function MyInformation() {
       <Expandable
         title="Missing work (all courses)"
         subtitle={
-          missingCount > 0 ? (
+          overviewLoading ? (
+            <span className="muted">Loading…</span>
+          ) : missingCount > 0 ? (
             <span className="dangerText">Missing: {missingCount}</span>
           ) : (
             <span className="muted">None detected</span>
           )
         }
       >
-        {!overview ? (
-          <div className="muted">No overview data yet.</div>
+        {overviewErr ? (
+          <ErrorBox error={overviewErr} />
+        ) : overviewLoading ? (
+          <Loading label="Loading missing work…" />
         ) : missingCount === 0 ? (
           <div className="muted">
             No missing work detected across your active courses.
@@ -590,7 +620,7 @@ export function MyInformation() {
               const subtitle = (
                 <span className="muted dangerMuted">
                   <span className="mono">
-                    {m.course_name ?? `Course ${m.course_id}`}
+                    {trimCourseName(m.course_name) ?? `Course ${m.course_id}`}
                   </span>
                   {" • "}
                   <span className="badge badgeDanger">Missing</span>
@@ -677,7 +707,7 @@ export function MyInformation() {
               const shownGrade = g.display_grade ?? g.current_grade ?? "—";
               const isEstimated = !!g.grade_is_estimated;
 
-              const titleText = g.course_name || "Untitled course";
+              const titleText = trimCourseName(g.course_name) || "Untitled course";
 
               const subtitle = (
                 <span className="muted">

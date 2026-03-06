@@ -93,8 +93,19 @@ export function useCachedAsync(key, fetcher, opts = {}) {
       const next = await fetcherRef.current({ signal: ac.signal });
       _cache.set(keyStr, { data: next, ts: Date.now() });
       setData(next);
+      setError(null); // Clear any previous errors on success
     } catch (e) {
-      if (e?.name !== "AbortError") setError(e);
+      if (e?.name !== "AbortError") {
+        // If error is 403 (needs token), silently set empty data instead of showing error
+        // This prevents error messages when user hasn't added their Canvas token yet
+        if (e?.status === 403 || e?.needsToken) {
+          setData(null);
+          setError(null); // Don't show error for missing token
+          // Don't cache null data - let it re-fetch when token is available
+        } else {
+          setError(e);
+        }
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -106,6 +117,16 @@ export function useCachedAsync(key, fetcher, opts = {}) {
     return () => abortRef.current?.abort?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyStr]);
+
+  // Re-fetch when auth state changes (login/logout)
+  useEffect(() => {
+    function handleAuthChange() {
+      run();
+    }
+    window.addEventListener("auth:changed", handleAuthChange);
+    return () => window.removeEventListener("auth:changed", handleAuthChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { data, error, loading, refreshing, refresh: run };
 }
