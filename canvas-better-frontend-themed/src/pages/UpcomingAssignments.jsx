@@ -299,7 +299,7 @@ export function UpcomingAssignments() {
       list = [...missing, ...filtered];
     } else if (filterMode === "undated") {
       filtered = nonMissing.filter(isUndated);
-      list = [...missing, ...filtered];
+      list = filtered; // Don't include missing - undated means no due date at all
     } else {
       // "all"
       filtered = nonMissing;
@@ -328,6 +328,56 @@ export function UpcomingAssignments() {
 
     return list;
   }, [items, filterMode, blend]);
+
+  // Separate list for undated assignments (for the undated section)
+  const undatedSorted = useMemo(() => {
+    const now = Date.now();
+
+    const normalizePoints = (p) => {
+      const n = typeof p === "number" ? p : Number(p);
+      if (!Number.isFinite(n)) return 0;
+      return Math.max(0, Math.min(300, n));
+    };
+
+    const timeScore = (a) => {
+      if (!a?.due_at) return 0;
+      const t = new Date(a.due_at).getTime();
+      if (!Number.isFinite(t)) return 0;
+      const hours = (t - now) / (1000 * 60 * 60);
+      if (hours < 0) return 10_000;
+      return 1200 / Math.max(1, hours);
+    };
+
+    const weightScore = (a) => normalizePoints(a?.points_possible);
+
+    const isUndated = (a) => !a?.due_at;
+
+    // Filter out completed assignments that are past their due date
+    const shouldShow = (a) => {
+      if (a.submitted && a.due_at) {
+        const h = hoursUntil(a.due_at);
+        if (h != null && h < 0) return false;
+      }
+      return true;
+    };
+
+    let list = [...items].filter(shouldShow).filter(isUndated);
+
+    // Sort: completed last
+    list.sort((a, b) => {
+      const aCompleted = !!a.submitted;
+      const bCompleted = !!b.submitted;
+      if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
+
+      const aScore = (1 - blend) * timeScore(a) + blend * weightScore(a);
+      const bScore = (1 - blend) * timeScore(b) + blend * weightScore(b);
+      if (bScore !== aScore) return bScore - aScore;
+
+      return 0;
+    });
+
+    return list;
+  }, [items, blend]);
 
   // === Auto-focus target assignment ===
   useEffect(() => {
@@ -581,35 +631,35 @@ export function UpcomingAssignments() {
       </Popover>
 
       {/* === Upcoming assignments wrapper === */}
-      <div className="upcomingPanel">
-        <div className="upcomingPanelHeader">
-          <div className="upcomingPanelHeaderLeft">
-            <div className="upcomingPanelTitle">
-              Upcoming assignments
-              <span className="upcomingPanelCount mono">
-                {filteredSorted.length}
-              </span>
-            </div>
+      {filterMode !== "undated" ? (
+        <div className="upcomingPanel">
+          <div className="upcomingPanelHeader">
+            <div className="upcomingPanelHeaderLeft">
+              <div className="upcomingPanelTitle">
+                Upcoming assignments
+                <span className="upcomingPanelCount mono">
+                  {filteredSorted.length}
+                </span>
+              </div>
 
-            <div className="muted">
-              Filter: <span className="mono">{filterLabel}</span>
-              {upcomingQ.refreshing ? (
-                <span className="muted"> • Updating…</span>
-              ) : null}
+              <div className="muted">
+                Filter: <span className="mono">{filterLabel}</span>
+                {upcomingQ.refreshing ? (
+                  <span className="muted"> • Updating…</span>
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="upcomingPanelBody">
-          {upcomingLoading ? (
-            <Loading label="Loading upcoming assignments…" />
-          ) : filteredSorted.length === 0 ? (
-            <div className="muted" style={{ padding: 10 }}>
-              No assignments found for the selected filter.
-            </div>
-          ) : (
-            <ul className="list listSpaced">
-              {filteredSorted.map((a) => {
+          <div className="upcomingPanelBody">
+            {upcomingLoading ? (
+              <Loading label="Loading upcoming assignments…" />
+            ) : filteredSorted.length === 0 ? (
+              <div className="muted" style={{ padding: 10 }}>
+                No assignments found for the selected filter.
+              </div>
+            ) : (
+              <ul className="list listSpaced">{filteredSorted.map((a) => {
                 const badge = getUrgencyBadge(a);
 
                 const isMissing =
@@ -794,6 +844,171 @@ export function UpcomingAssignments() {
           assignment).
         </div>
       </div>
+      ) : null}
+
+      {/* === Undated assignments section (show when filtering by undated OR when mode is "all") === */}
+      {filterMode === "undated" || filterMode === "all" ? (
+        <div className="upcomingPanel">
+          <div className="upcomingPanelHeader">
+            <div className="upcomingPanelHeaderLeft">
+              <div className="upcomingPanelTitle">
+                Undated assignments
+                <span className="upcomingPanelCount mono">
+                  {filterMode === "undated" ? filteredSorted.length : undatedSorted.length}
+                </span>
+              </div>
+
+              <div className="muted">
+                {filterMode === "undated" ? `Filter: ${filterLabel}` : "No due date set"}
+                {upcomingQ.refreshing ? (
+                  <span className="muted"> • Updating…</span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="upcomingPanelBody">
+            {upcomingLoading ? (
+              <Loading label="Loading assignments…" />
+            ) : (filterMode === "undated" ? filteredSorted : undatedSorted).length === 0 ? (
+              <div className="muted" style={{ padding: 10 }}>
+                No undated assignments.
+              </div>
+            ) : (
+              <ul className="list listSpaced">
+                {(filterMode === "undated" ? filteredSorted : undatedSorted).map((a) => {
+                  const badge = getUrgencyBadge(a);
+
+                  const courseLabel = a.course_name ?? "Unknown Course";
+                  const dueLabel = fmtDue(a.due_at);
+
+                  const desc = stripHtml(a.description);
+                  const hasDesc = !!desc;
+
+                  const focusId = `${a.course_id}-${a.id}`;
+                  const isFocused = focusKey === focusId;
+
+                  const badgeClass =
+                    badge.variant === "success"
+                      ? "badgeSuccess"
+                      : badge.variant === "danger"
+                      ? "badgeDanger"
+                      : badge.variant === "warning"
+                      ? "badgeWarn"
+                      : "badgeNeutral";
+
+                  return (
+                    <li
+                      id={`asg-${focusId}`}
+                      key={`${a.course_id}-${a.id}`}
+                      className={`listItem ${isFocused ? "isFocused" : ""}`}
+                    >
+                      <div className="assignmentRow">
+                        <div className="assignmentMain">
+                          <div className="assignmentTop">
+                            <div className="assignmentTitleRow">
+                              <div className="assignmentTitleRowLeft">
+                                <span className="assignmentName">{a.name}</span>
+
+                                <span
+                                  className={`badge badge${
+                                    badge.variant === "success"
+                                      ? "Success"
+                                      : badge.variant === "danger"
+                                      ? "Danger"
+                                      : badge.variant === "warning"
+                                      ? "Warn"
+                                      : "Neutral"
+                                  }`}
+                                >
+                                  {badge.label}
+                                </span>
+
+                                {typeof a.points_possible === "number" ? (
+                                  <span className="muted assignmentPts">
+                                    <span className="mono">
+                                      {a.points_possible}
+                                    </span>{" "}
+                                    pts
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="muted">
+                              <span className="mono">{courseLabel}</span>
+                            </div>
+                          </div>
+
+                          <div className="assignmentControls">
+                            <WorkloadEstimateControl
+                              courseId={a.course_id}
+                              assignmentId={a.id}
+                            />
+                          </div>
+
+                          <div className="assignmentDetails">
+                            <Expandable
+                              title="Details"
+                              defaultOpen={openDetailsKeys.has(focusId)}
+                              subtitle={
+                                hasDesc && !openDetailsKeys.has(focusId) ? (
+                                  <span className="muted">{firstLine(desc)}</span>
+                                ) : hasDesc ? (
+                                  <span className="muted"> </span>
+                                ) : (
+                                  <span className="muted">No description</span>
+                                )
+                              }
+                              onToggle={(isOpen) => {
+                                setOpenDetailsKeys((prev) => {
+                                  const next = new Set(prev);
+                                  if (isOpen) next.add(focusId);
+                                  else next.delete(focusId);
+                                  return next;
+                                });
+                              }}
+                            >
+                              <div className="stack">
+                                {hasDesc ? (
+                                  <div className="preserveWhitespace">{desc}</div>
+                                ) : (
+                                  <div className="muted">
+                                    No description provided.
+                                  </div>
+                                )}
+                              </div>
+                            </Expandable>
+                          </div>
+                        </div>
+
+                        <div className="assignmentActions">
+                          {a.html_url ? (
+                            <a
+                              className="btn"
+                              href={a.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open assignment in Canvas"
+                            >
+                              Open in Canvas
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className="upcomingPanelFooter muted">
+            Tip: effort estimates are stored locally in your browser (per
+            assignment).
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
