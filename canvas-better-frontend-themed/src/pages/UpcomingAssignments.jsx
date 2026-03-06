@@ -194,15 +194,26 @@ export function UpcomingAssignments() {
     { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
   );
 
+  const undatedQ = useCachedAsync(
+    "undated:list",
+    ({ signal }) => canvasApi.getUndatedAssignments({ signal }),
+    { ttlMs: 60 * 1000 } // undated can be refreshed fairly often
+  );
+
   // Keep a stable ref to the latest refresh so intervals/mount effects
   // don't capture a stale closure (useCachedAsync recreates refresh each render)
   const refreshRef = useRef(null);
   refreshRef.current = upcomingQ.refresh;
 
+  const undatedRefreshRef = useRef(null);
+  undatedRefreshRef.current = undatedQ.refresh;
+
   // Clear upcoming cache once on mount, then kick off the first fetch
   useEffect(() => {
     clearCachedAsync("upcoming:");
+    clearCachedAsync("undated:");
     refreshRef.current?.();
+    undatedRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh every 2.5 minutes while the page is open
@@ -210,6 +221,7 @@ export function UpcomingAssignments() {
     const POLL_MS = 2.5 * 60 * 1000;
     const t = setInterval(() => {
       refreshRef.current?.();
+      undatedRefreshRef.current?.();
     }, POLL_MS);
     return () => clearInterval(t);
   }, []);
@@ -350,7 +362,8 @@ export function UpcomingAssignments() {
 
     const weightScore = (a) => normalizePoints(a?.points_possible);
 
-    const isUndated = (a) => !a?.due_at;
+    // Use undated data from API
+    const undatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
     // Filter out completed assignments that are past their due date
     const shouldShow = (a) => {
@@ -361,7 +374,7 @@ export function UpcomingAssignments() {
       return true;
     };
 
-    let list = [...items].filter(shouldShow).filter(isUndated);
+    let list = [...undatedItems].filter(shouldShow);
 
     // Sort: completed last
     list.sort((a, b) => {
@@ -377,7 +390,7 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [items, blend]);
+  }, [undatedQ.data, blend]);
 
   // === Auto-focus target assignment ===
   useEffect(() => {
@@ -860,7 +873,7 @@ export function UpcomingAssignments() {
 
               <div className="muted">
                 {filterMode === "undated" ? `Filter: ${filterLabel}` : "No due date set"}
-                {upcomingQ.refreshing ? (
+                {undatedQ.refreshing ? (
                   <span className="muted"> • Updating…</span>
                 ) : null}
               </div>
@@ -868,7 +881,7 @@ export function UpcomingAssignments() {
           </div>
 
           <div className="upcomingPanelBody">
-            {upcomingLoading ? (
+            {(undatedQ.loading || undatedQ.data == null) && !undatedQ.error ? (
               <Loading label="Loading assignments…" />
             ) : (filterMode === "undated" ? filteredSorted : undatedSorted).length === 0 ? (
               <div className="muted" style={{ padding: 10 }}>
@@ -902,9 +915,10 @@ export function UpcomingAssignments() {
                       id={`asg-${focusId}`}
                       key={`${a.course_id}-${a.id}`}
                       className={`listItem ${isFocused ? "isFocused" : ""}`}
+                      style={{ overflow: 'hidden' }}
                     >
-                      <div className="assignmentRow">
-                        <div className="assignmentMain">
+                      <div className="assignmentRow" style={{ minWidth: 0 }}>
+                        <div className="assignmentMain" style={{ minWidth: 0 }}>
                           <div className="assignmentTop">
                             <div className="assignmentTitleRow">
                               <div className="assignmentTitleRowLeft">
@@ -982,8 +996,8 @@ export function UpcomingAssignments() {
                           </div>
                         </div>
 
-                        <div className="assignmentActions">
-                          {a.html_url ? (
+                        {a.html_url ? (
+                          <div className="assignmentActions" style={{ minWidth: 0 }}>
                             <a
                               className="btn"
                               href={a.html_url}
@@ -993,8 +1007,8 @@ export function UpcomingAssignments() {
                             >
                               Open in Canvas
                             </a>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
                     </li>
                   );

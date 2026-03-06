@@ -72,6 +72,7 @@ export const canvasApi = {
 
     return request(`/api/upcoming?limit=${encodeURIComponent(limit)}`, opts);
   },
+  getUndatedAssignments: (opts) => request("/api/undated-assignments", opts),
   getDashboard: (upcomingLimit = 20, opts) =>
     request(`/api/dashboard?upcoming_limit=${upcomingLimit}`, opts),
 

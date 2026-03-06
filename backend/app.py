@@ -1169,6 +1169,61 @@ def api_upcoming(
     cache_set(key, out)
     return out
 
+@app.get("/api/undated-assignments", response_model=List[Assignment])
+def api_undated_assignments(
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Get all assignments without a due date. Uses user token if authenticated, otherwise returns empty list if in demo mode."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return []  # Demo mode doesn't have undated assignments
+    
+    token = None
+    user_id = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+    
+    key = "undated_assignments:v1"
+
+    if _use_cache(cache):
+        v = cache_get(key)
+        if v:
+            return v
+
+    # Get all courses
+    courses = get_courses(mode=cache, token=token)
+    course_map = {c.id: c for c in courses}
+    
+    # Get hidden assignments if user is authenticated
+    hidden_set = set(get_hidden_assignments(user_id, db)) if user_id and db else set()
+    
+    # Collect all undated assignments across all courses
+    undated: List[Assignment] = []
+    
+    for course in courses:
+        cid = course.id
+        asgs = get_course_assignments_for(cid, mode=cache, token=token, user_id=user_id, db=db)
+        
+        for a in asgs:
+            # Only include if no due_at and not hidden
+            if not a.due_at and (cid, a.id) not in hidden_set:
+                # Add course_name to the assignment
+                a_with_course = a.copy(update={"course_name": course.name})
+                undated.append(a_with_course)
+    
+    # Sort by name for consistency
+    undated.sort(key=lambda a: a.name.lower() if a.name else "")
+    
+    cache_set(key, undated)
+    return undated
+
 @app.get("/api/demo/enable")
 def api_demo_enable():
     """Enable demo mode - returns a demo session ID."""
