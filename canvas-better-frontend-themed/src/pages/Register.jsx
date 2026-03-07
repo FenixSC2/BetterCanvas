@@ -22,8 +22,18 @@ export function Register() {
       return;
     }
 
-    if (password.length < 6) {
-      setLocalError("Password must be at least 6 characters");
+    if (password.length < 8) {
+      setLocalError("Password must be at least 8 characters");
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      setLocalError("Password must contain at least one number");
+      return;
+    }
+
+    if (!/[a-zA-Z]/.test(password)) {
+      setLocalError("Password must contain at least one letter");
       return;
     }
 
@@ -69,7 +79,7 @@ export function Register() {
               placeholder="••••••••"
               className="authInput"
             />
-            <div className="authHint">Must be at least 6 characters</div>
+            <div className="authHint">At least 8 characters, including a letter and a number</div>
           </div>
 
           <div className="authField">

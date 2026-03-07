@@ -190,30 +190,31 @@ export function WorkloadEstimateControl({
       if (lk.includes("effort") || lk.includes("workload"))
         setTick((t) => t + 1);
     }
+
+    function onWorkloadChanged() {
+      setTick((t) => t + 1);
+    }
+
+    function onWorkloadSettingsChanged() {
+      setTick((t) => t + 1);
+    }
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  // Patch localStorage.setItem so same-tab updates re-render
-  useEffect(() => {
-    const original = localStorage.setItem;
-
-    localStorage.setItem = function patchedSetItem(key, value) {
-      original.call(this, key, value);
-      try {
-        if (typeof key === "string") {
-          const lk = key.toLowerCase();
-          if (lk.includes("effort") || lk.includes("workload")) {
-            setTick((t) => t + 1);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    };
-
+    window.addEventListener("bettercanvas:workload:changed", onWorkloadChanged);
+    window.addEventListener(
+      "bettercanvas:workload:settingsChanged",
+      onWorkloadSettingsChanged,
+    );
     return () => {
-      localStorage.setItem = original;
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(
+        "bettercanvas:workload:changed",
+        onWorkloadChanged,
+      );
+      window.removeEventListener(
+        "bettercanvas:workload:settingsChanged",
+        onWorkloadSettingsChanged,
+      );
     };
   }, []);
 

@@ -25,10 +25,7 @@ function DashboardApp() {
     try {
       const res = await fetch(`${API_BASE}/api/demo/enable`, { credentials: "include" });
       if (res.ok) {
-        const data = await res.json();
-        if (data.session_id) {
-          localStorage.setItem("session_id", data.session_id);
-        }
+        // Session is set via httponly cookie by the server
       }
     } catch (err) {
       console.error("Failed to create demo session:", err);
@@ -40,7 +37,6 @@ function DashboardApp() {
   function exitDemoMode() {
     setDemoMode(false);
     localStorage.removeItem("demoMode");
-    localStorage.removeItem("session_id");
     window.location.hash = "#";
   }
   

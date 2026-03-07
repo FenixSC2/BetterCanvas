@@ -3,21 +3,12 @@ import { loadingBus } from "../lib/loadingBus";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function request(path, { signal, method = "GET" } = {}) {
-  loadingBus.start(); 
+  loadingBus.start();
   try {
-    const headers = { "credentials": "include" };
-    
-    // Add session ID from localStorage as a header (fallback for cross-origin requests)
-    const sessionId = localStorage.getItem("session_id");
-    if (sessionId) {
-      headers["X-Session-ID"] = sessionId;
-    }
-    
-    const res = await fetch(`${API_BASE}${path}`, { 
+    const res = await fetch(`${API_BASE}${path}`, {
       signal,
       method,
       credentials: "include",
-      headers
     });
 
     if (!res.ok) {
@@ -46,7 +37,7 @@ async function request(path, { signal, method = "GET" } = {}) {
 
     return res.json();
   } finally {
-    loadingBus.end(); 
+    loadingBus.end();
   }
 }
 
@@ -97,18 +88,18 @@ export const canvasApi = {
 
     // Hidden assignments management
     getHiddenAssignments: (opts) => request("/api/hidden-assignments", opts),
-    
+
     addHiddenAssignment: (courseId, assignmentId, opts) =>
       request(
         `/api/hidden-assignments?course_id=${courseId}&assignment_id=${assignmentId}`,
         { ...opts, method: "POST" }
       ),
-    
+
     removeHiddenAssignment: (courseId, assignmentId, opts) =>
       request(
         `/api/hidden-assignments/${courseId}/${assignmentId}`,
         { ...opts, method: "DELETE" }
       ),
-    
+
     getCandidatesForHiding: (opts) => request("/api/candidates-for-hiding", opts),
 };

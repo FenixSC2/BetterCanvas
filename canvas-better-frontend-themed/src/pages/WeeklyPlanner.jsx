@@ -607,33 +607,30 @@ export function WeeklyPlanner() {
         setEffortKeyMap(loadEffortKeyMap());
     }
 
+    function onWorkloadChanged() {
+      setStorageTick((t) => t + 1);
+    }
+
+    function onWorkloadSettingsChanged() {
+      setStorageTick((t) => t + 1);
+    }
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  // Patch localStorage.setItem so same-tab changes tick the planner
-  useEffect(() => {
-    const original = localStorage.setItem;
-
-    localStorage.setItem = function patchedSetItem(key, value) {
-      original.call(this, key, value);
-
-      try {
-        if (typeof key === "string") {
-          const lk = key.toLowerCase();
-          if (lk.includes("effort") || lk.includes("workload")) {
-            setStorageTick((t) => t + 1);
-          }
-          if (key === "weeklyPlanner:settings")
-            setSettings(loadPlannerSettings());
-        }
-      } catch {
-        // ignore
-      }
-    };
-
+    window.addEventListener("bettercanvas:workload:changed", onWorkloadChanged);
+    window.addEventListener(
+      "bettercanvas:workload:settingsChanged",
+      onWorkloadSettingsChanged,
+    );
     return () => {
-      localStorage.setItem = original;
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(
+        "bettercanvas:workload:changed",
+        onWorkloadChanged,
+      );
+      window.removeEventListener(
+        "bettercanvas:workload:settingsChanged",
+        onWorkloadSettingsChanged,
+      );
     };
   }, []);
 
@@ -1452,6 +1449,20 @@ export function WeeklyPlanner() {
                 onChange={(e) => setCourseFilter(e.target.value)}
                 className="select"
                 aria-label="Filter by course"
+                title={
+                  courseFilter === "all"
+                    ? "All"
+                    : courseOptions.find((c) => c.id === courseFilter)?.name ||
+                      "All"
+                }
+                style={{
+                  width: 240,
+                  minWidth: 240,
+                  maxWidth: 240,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
                 <option value="all">All</option>
                 {courseOptions.map((c) => (

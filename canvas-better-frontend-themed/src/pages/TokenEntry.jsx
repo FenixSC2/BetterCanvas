@@ -16,17 +16,8 @@ export function TokenEntry() {
   useEffect(() => {
     async function checkToken() {
       try {
-        const headers = {};
-        
-        // Add session ID from localStorage as a header (fallback for cross-origin requests)
-        const sessionId = localStorage.getItem("session_id");
-        if (sessionId) {
-          headers["X-Session-ID"] = sessionId;
-        }
-        
         const res = await fetch(`${API_BASE}/api/auth/token/status`, {
           credentials: "include",
-          headers,
         });
         if (res.ok) {
           const data = await res.json();
@@ -54,17 +45,9 @@ export function TokenEntry() {
 
     setLoading(true);
     try {
-      const headers = { "Content-Type": "application/json" };
-      
-      // Add session ID from localStorage as a header (fallback for cross-origin requests)
-      const sessionId = localStorage.getItem("session_id");
-      if (sessionId) {
-        headers["X-Session-ID"] = sessionId;
-      }
-      
       const res = await fetch(`${API_BASE}/api/auth/token`, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ token: token.trim() }),
       });

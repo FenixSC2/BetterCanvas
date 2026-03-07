@@ -5,9 +5,12 @@ const AuthContext = createContext(null);
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-function getSessionHeaders() {
-  const sessionId = localStorage.getItem("session_id");
-  return sessionId ? { "X-Session-ID": sessionId } : {};
+function parseErrorDetail(data, fallback) {
+  const d = data?.detail;
+  if (!d) return fallback;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((e) => e.msg).join(", ");
+  return fallback;
 }
 
 export function AuthProvider({ children }) {
@@ -38,7 +41,6 @@ export function AuthProvider({ children }) {
     try {
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         credentials: "include",
-        headers: getSessionHeaders(),
       });
 
       if (res.ok) {
@@ -49,7 +51,6 @@ export function AuthProvider({ children }) {
         // Check if they have a token
         const tokenRes = await fetch(`${API_BASE}/api/auth/token/status`, {
           credentials: "include",
-          headers: getSessionHeaders(),
         });
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
@@ -82,30 +83,24 @@ export function AuthProvider({ children }) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || "Login failed");
+        throw new Error(parseErrorDetail(data, "Login failed"));
       }
 
       const data = await res.json();
-      
+
       // Clear any demo mode state before setting user
       localStorage.removeItem("demoMode");
-      
+
       setUser(data.user);
       setHasToken(false);
-      
+
       // Clear cached data on login to force fresh data from Canvas
       clearCachedAsync();
-      
-      // Store session ID in localStorage if provided
-      if (data.session_id) {
-        localStorage.setItem("session_id", data.session_id);
-      }
-      
+
       // Verify session is working and check token status
       try {
         const meRes = await fetch(`${API_BASE}/api/auth/me`, {
           credentials: "include",
-          headers: getSessionHeaders(),
         });
         if (meRes.ok) {
           const userData = await meRes.json();
@@ -119,12 +114,11 @@ export function AuthProvider({ children }) {
       try {
         const tokenRes = await fetch(`${API_BASE}/api/auth/token/status`, {
           credentials: "include",
-          headers: getSessionHeaders(),
         });
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
           setHasToken(tokenData.has_token);
-          
+
           // If they already have a token, trigger data fetches
           if (tokenData.has_token) {
             window.dispatchEvent(new CustomEvent("auth:changed"));
@@ -157,7 +151,7 @@ export function AuthProvider({ children }) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || "Registration failed");
+        throw new Error(parseErrorDetail(data, "Registration failed"));
       }
 
       // Registration successful, now try to log in
@@ -182,7 +176,6 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null);
       setHasToken(false);
-      localStorage.removeItem("session_id");
       // Clear cached data on logout
       clearCachedAsync();
       // Emit auth change event so all data fetches re-run
