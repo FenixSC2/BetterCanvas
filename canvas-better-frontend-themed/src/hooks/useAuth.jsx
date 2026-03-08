@@ -188,6 +188,10 @@ export function AuthProvider({ children }) {
     setHasToken(status);
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   const value = {
     user,
     loading,
@@ -198,6 +202,7 @@ export function AuthProvider({ children }) {
     logout,
     checkAuth,
     setTokenStatus,
+    clearError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

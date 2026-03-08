@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 export function Login({ onViewDemo }) {
-  const { login, error, loading } = useAuth();
+  const { login, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
@@ -88,6 +88,7 @@ export function Login({ onViewDemo }) {
           <span>Don't have an account? </span>
           <a href="#" onClick={(e) => {
             e.preventDefault();
+            clearError();
             window.location.hash = '#register';
           }} className="authLink">
             Sign up

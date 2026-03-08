@@ -53,6 +53,10 @@ function getAssignmentBadge(assignment) {
   return { label: "Scheduled", variant: "neutral" };
 }
 
+function getAssignmentId(assignment) {
+  return assignment?.id ?? assignment?.assignment_id;
+}
+
 export function SettingsModal({
   open,
   onClose,
@@ -108,7 +112,12 @@ export function SettingsModal({
       canvasApi.getCandidatesForHiding(),
     ])
       .then(([hiddenRes, candidatesRes]) => {
-        setHiddenAssignments(hiddenRes.hidden_assignments || []);
+        setHiddenAssignments(
+          (hiddenRes.hidden_assignments || []).map((a) => ({
+            ...a,
+            id: getAssignmentId(a),
+          })),
+        );
         setCandidatesForHiding(candidatesRes.candidates || []);
       })
       .catch((err) => {
@@ -145,11 +154,33 @@ export function SettingsModal({
     setHideLoading(`${courseId}:${assignmentId}`);
     try {
       await canvasApi.addHiddenAssignment(courseId, assignmentId);
-      // Update hidden assignments list
-      setHiddenAssignments((prev) => [
-        ...prev,
-        { course_id: courseId, assignment_id: assignmentId },
-      ]);
+      // Update hidden assignments list without introducing duplicates.
+      setHiddenAssignments((prev) => {
+        if (
+          prev.some(
+            (a) =>
+              a.course_id === courseId && getAssignmentId(a) === assignmentId,
+          )
+        ) {
+          return prev;
+        }
+
+        const source = candidatesForHiding.find(
+          (a) => a.course_id === courseId && a.id === assignmentId,
+        );
+
+        return [
+          ...prev,
+          {
+            id: assignmentId,
+            course_id: courseId,
+            course_name: source?.course_name,
+            name: source?.name,
+            due_at: source?.due_at,
+            points_possible: source?.points_possible,
+          },
+        ];
+      });
     } catch (err) {
       console.error("Failed to hide assignment:", err);
       alert("Failed to hide assignment. Please try again.");
@@ -165,8 +196,8 @@ export function SettingsModal({
       // Update hidden assignments list
       setHiddenAssignments((prev) =>
         prev.filter(
-          (a) => !(a.course_id === courseId && a.assignment_id === assignmentId)
-        )
+          (a) => !(a.course_id === courseId && getAssignmentId(a) === assignmentId),
+        ),
       );
     } catch (err) {
       console.error("Failed to unhide assignment:", err);
@@ -452,7 +483,9 @@ export function SettingsModal({
                                   )
                                   .map((a) => {
                                     const isHidden = hiddenAssignments.some(
-                                      (h) => h.course_id === a.course_id && h.assignment_id === a.id
+                                      (h) =>
+                                        h.course_id === a.course_id &&
+                                        getAssignmentId(h) === a.id,
                                     );
                                     const isLoading = hideLoading === `${a.course_id}:${a.id}`;
                                     const badge = getAssignmentBadge(a);
@@ -512,7 +545,8 @@ export function SettingsModal({
                             <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
                               <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                                 {hiddenAssignments.map((h) => {
-                                  const isLoading = hideLoading === `${h.course_id}:${h.id}`;
+                                  const assignmentId = getAssignmentId(h);
+                                  const isLoading = hideLoading === `${h.course_id}:${assignmentId}`;
                                   const badge = getAssignmentBadge(h);
                                   const badgeClass =
                                     badge.variant === "danger"
@@ -523,7 +557,7 @@ export function SettingsModal({
                                   
                                   return (
                                     <li
-                                      key={`${h.course_id}:${h.id}`}
+                                      key={`${h.course_id}:${assignmentId}`}
                                       style={{
                                         padding: "12px",
                                         borderBottom: "1px solid var(--border)",
@@ -547,7 +581,9 @@ export function SettingsModal({
                                       <button
                                         type="button"
                                         className="btn"
-                                        onClick={() => handleUnhideAssignment(h.course_id, h.id)}
+                                        onClick={() =>
+                                          handleUnhideAssignment(h.course_id, assignmentId)
+                                        }
                                         disabled={isLoading}
                                         style={{
                                           marginTop: "4px",

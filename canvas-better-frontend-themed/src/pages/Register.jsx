@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 export function Register() {
-  const { register, error, loading } = useAuth();
+  const { register, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -103,6 +103,7 @@ export function Register() {
           <span>Already have an account? </span>
           <a href="#" onClick={(e) => {
             e.preventDefault();
+            clearError();
             window.location.hash = '#login';
           }} className="authLink">
             Sign in
