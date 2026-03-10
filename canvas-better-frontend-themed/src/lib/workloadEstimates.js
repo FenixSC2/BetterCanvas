@@ -1,6 +1,24 @@
 // src/lib/workloadEstimates.js
 
-const NS = "bettercanvas:workload:v1";
+const NS = "canvassist:workload:v1";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+// In-memory store used exclusively in demo/mock mode — nothing is persisted
+const _mockStore = new Map();
+
+// Pending debounce timers for backend sync (one per assignment)
+const _pendingSync = new Map();
+
+// -----------------------------
+// Mode detection
+// -----------------------------
+function isDemoMode() {
+  try {
+    return localStorage.getItem("demoMode") === "true";
+  } catch {
+    return false;
+  }
+}
 
 // -----------------------------
 // Keys / helpers
@@ -24,10 +42,10 @@ function clampHours(h) {
 }
 
 function emitChanged({ courseId, assignmentId }) {
-  // Same-tab update (storage doesn't fire in same tab)
+  // Same-tab update (storage event doesn't fire in the same tab)
   try {
     window.dispatchEvent(
-      new CustomEvent("bettercanvas:workload:changed", {
+      new CustomEvent("canvassist:workload:changed", {
         detail: { courseId, assignmentId },
       })
     );
@@ -37,10 +55,13 @@ function emitChanged({ courseId, assignmentId }) {
 }
 
 // -----------------------------
-// Read state (with migration)
+// Unified read/write (handles demo vs real mode)
 // -----------------------------
-export function getEffortState({ courseId, assignmentId }) {
+function _readState({ courseId, assignmentId }) {
   const key = makeKey({ courseId, assignmentId });
+  if (isDemoMode()) {
+    return _mockStore.get(key) ?? null;
+  }
   const raw = (() => {
     try {
       return localStorage.getItem(key);
@@ -48,12 +69,124 @@ export function getEffortState({ courseId, assignmentId }) {
       return null;
     }
   })();
+  return safeParse(raw);
+}
 
-  if (!raw) {
+function _writeState({ courseId, assignmentId }, state) {
+  const key = makeKey({ courseId, assignmentId });
+  if (isDemoMode()) {
+    // Demo mode: keep only in memory, never persist or sync
+    _mockStore.set(key, state);
+    return;
+  }
+  try {
+    localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+  // Schedule a debounced background sync to the backend
+  _scheduleSyncToBackend(courseId, assignmentId);
+}
+
+// -----------------------------
+// Backend sync — async, non-blocking, debounced
+// -----------------------------
+function _scheduleSyncToBackend(courseId, assignmentId) {
+  const syncKey = `${courseId}:${assignmentId}`;
+  clearTimeout(_pendingSync.get(syncKey));
+  _pendingSync.set(
+    syncKey,
+    setTimeout(() => {
+      _pendingSync.delete(syncKey);
+      // Re-read from localStorage at fire time to get the most current value
+      const lsKey = makeKey({ courseId, assignmentId });
+      const raw = (() => {
+        try {
+          return localStorage.getItem(lsKey);
+        } catch {
+          return null;
+        }
+      })();
+      const state = safeParse(raw);
+      if (state) _doSyncToBackend(courseId, assignmentId, state);
+    }, 800)
+  );
+}
+
+async function _doSyncToBackend(courseId, assignmentId, state) {
+  try {
+    await fetch(
+      `${API_BASE}/api/workload-estimates/${encodeURIComponent(courseId)}/${encodeURIComponent(assignmentId)}`,
+      {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          estimate_hours: state.estimateHours ?? 0,
+          completed_hours: state.completedHours ?? 0,
+          completed: !!state.completed,
+        }),
+      }
+    );
+  } catch {
+    // Non-blocking — local state is valid regardless of network availability
+  }
+}
+
+// -----------------------------
+// Backend hydration — overwrites localStorage with authoritative server data
+// -----------------------------
+export async function hydrateWorkloadFromBackend() {
+  if (isDemoMode()) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/workload-estimates`, {
+      credentials: "include",
+    });
+    if (!res.ok) return; // Not authenticated or other transient error
+    const data = await res.json();
+    const estimates = Array.isArray(data?.estimates) ? data.estimates : [];
+    for (const est of estimates) {
+      const key = makeKey({
+        courseId: est.course_id,
+        assignmentId: est.assignment_id,
+      });
+      try {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            estimateHours: est.estimate_hours,
+            completedHours: est.completed_hours,
+            completed: !!est.completed,
+            updatedAt: est.updated_at,
+          })
+        );
+      } catch {
+        // ignore
+      }
+    }
+    // Notify all WorkloadEstimateControl components to re-render
+    window.dispatchEvent(new CustomEvent("canvassist:workload:changed"));
+  } catch {
+    // Non-blocking
+  }
+}
+
+// Hydrate from backend whenever the user authenticates (login or page refresh)
+if (typeof window !== "undefined") {
+  window.addEventListener("auth:changed", () => {
+    hydrateWorkloadFromBackend();
+  });
+}
+
+// -----------------------------
+// Read state (with legacy migration)
+// -----------------------------
+export function getEffortState({ courseId, assignmentId }) {
+  const parsed = _readState({ courseId, assignmentId });
+
+  if (!parsed) {
     return { estimateHours: 0, completedHours: 0, completed: false };
   }
-
-  const parsed = safeParse(raw);
 
   // Backward compat: old format was { hours: <estimate> }
   // New format uses { estimateHours, completedHours, completed }
@@ -87,8 +220,6 @@ export function getEstimateHours({ courseId, assignmentId }) {
 export function setEstimateHours({ courseId, assignmentId }, hours) {
   const h = clampHours(hours);
 
-  const key = makeKey({ courseId, assignmentId });
-
   // If invalid => treat as clear estimate (but keep completedHours)
   if (!Number.isFinite(h)) {
     clearEstimateHours({ courseId, assignmentId });
@@ -109,17 +240,11 @@ export function setEstimateHours({ courseId, assignmentId }, hours) {
     next.completedHours = Math.max(next.completedHours, h);
   }
 
-  try {
-    localStorage.setItem(key, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  _writeState({ courseId, assignmentId }, next);
   emitChanged({ courseId, assignmentId });
 }
 
 export function clearEstimateHours({ courseId, assignmentId }) {
-  const key = makeKey({ courseId, assignmentId });
   const prev = getEffortState({ courseId, assignmentId });
 
   // Keep completedHours/completed, but remove estimate
@@ -130,12 +255,7 @@ export function clearEstimateHours({ courseId, assignmentId }) {
     updatedAt: Date.now(),
   };
 
-  try {
-    localStorage.setItem(key, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  _writeState({ courseId, assignmentId }, next);
   emitChanged({ courseId, assignmentId });
 }
 
@@ -146,7 +266,6 @@ export function setCompletedHours({ courseId, assignmentId }, hours) {
   const h = clampHours(hours);
   if (!Number.isFinite(h)) return;
 
-  const key = makeKey({ courseId, assignmentId });
   const prev = getEffortState({ courseId, assignmentId });
 
   // If we have an estimate, keep completedHours within [0, estimate]
@@ -162,12 +281,7 @@ export function setCompletedHours({ courseId, assignmentId }, hours) {
     updatedAt: Date.now(),
   };
 
-  try {
-    localStorage.setItem(key, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  _writeState({ courseId, assignmentId }, next);
   emitChanged({ courseId, assignmentId });
 }
 
@@ -185,7 +299,6 @@ export function addCompletedHours({ courseId, assignmentId }, deltaHours) {
 // Complete toggle + reset
 // -----------------------------
 export function setCompleted({ courseId, assignmentId }, completed) {
-  const key = makeKey({ courseId, assignmentId });
   const prev = getEffortState({ courseId, assignmentId });
 
   const next = {
@@ -200,17 +313,11 @@ export function setCompleted({ courseId, assignmentId }, completed) {
     next.completedHours = Math.max(next.completedHours, next.estimateHours);
   }
 
-  try {
-    localStorage.setItem(key, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  _writeState({ courseId, assignmentId }, next);
   emitChanged({ courseId, assignmentId });
 }
 
 export function resetProgress({ courseId, assignmentId }) {
-  const key = makeKey({ courseId, assignmentId });
   const prev = getEffortState({ courseId, assignmentId });
 
   const next = {
@@ -220,12 +327,7 @@ export function resetProgress({ courseId, assignmentId }) {
     updatedAt: Date.now(),
   };
 
-  try {
-    localStorage.setItem(key, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  _writeState({ courseId, assignmentId }, next);
   emitChanged({ courseId, assignmentId });
 }
 
@@ -265,6 +367,7 @@ export function formatHours(h) {
 
 // ================================
 // Global effort UI settings
+// (snap minutes stays localStorage-only — it's a device UI preference)
 // ================================
 
 const SETTINGS_KEY = `${NS}:settings`;
@@ -300,10 +403,10 @@ export function setEffortSnapMinutes(minutes) {
     // ignore
   }
 
-  // Same-tab notification (storage doesn't fire in the same tab)
+  // Same-tab notification (storage event doesn't fire in the same tab)
   try {
     window.dispatchEvent(
-      new CustomEvent("bettercanvas:workload:settingsChanged")
+      new CustomEvent("canvassist:workload:settingsChanged")
     );
   } catch {
     // ignore

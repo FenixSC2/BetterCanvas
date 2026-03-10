@@ -131,7 +131,7 @@ export function TokenEntry() {
 
         <div className="authInstructions" style={{ marginBottom: "24px" }}>
           <p style={{ marginTop: 0 }}>
-            To use Canvas Better, you need to provide your Canvas personal access token.
+            To use CanvAssist, you need to provide your Canvas personal access token.
           </p>
           <p style={{ fontWeight: 600, marginBottom: "8px" }}>How to get your token:</p>
           <ol>
@@ -139,7 +139,7 @@ export function TokenEntry() {
             <li>Click your profile icon → <strong>Settings</strong></li>
             <li>Scroll to <strong>Approved Integrations</strong></li>
             <li>Click <strong>New Access Token</strong></li>
-            <li>Give it a name like "Canvas Better"</li>
+            <li>Give it a name like "CanvAssist"</li>
             <li>Click <strong>Generate Token</strong> and copy it</li>
             <li>Paste it below</li>
           </ol>

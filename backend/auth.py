@@ -8,7 +8,7 @@ import bcrypt
 from datetime import datetime, timezone
 from typing import Optional
 from pathlib import Path
-from sqlalchemy import Column, Integer, String, DateTime, create_engine, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
@@ -77,6 +77,25 @@ class HiddenAssignment(Base):
     # Composite unique constraint: each user can hide each assignment once
     __table_args__ = (
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_hidden_assignment'),
+    )
+
+class WorkloadEstimate(Base):
+    __tablename__ = "workload_estimates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    assignment_id = Column(Integer)
+    estimate_hours = Column(Float, default=0.0)
+    completed_hours = Column(Float, default=0.0)
+    completed = Column(Boolean, default=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
 # Create tables
@@ -202,6 +221,76 @@ def get_hidden_assignments(user_id: int, db: Session) -> list:
     """Get all hidden assignments for a user as a list of (course_id, assignment_id) tuples."""
     hidden = db.query(HiddenAssignment).filter(HiddenAssignment.user_id == user_id).all()
     return [(h.course_id, h.assignment_id) for h in hidden]
+
+# === Workload estimate CRUD ===
+
+def get_workload_estimates(user_id: int, db: Session) -> list:
+    """Get all workload estimates for a user."""
+    rows = db.query(WorkloadEstimate).filter(WorkloadEstimate.user_id == user_id).all()
+    return [
+        {
+            "course_id": r.course_id,
+            "assignment_id": r.assignment_id,
+            "estimate_hours": r.estimate_hours,
+            "completed_hours": r.completed_hours,
+            "completed": bool(r.completed),
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+def upsert_workload_estimate(
+    user_id: int,
+    course_id: int,
+    assignment_id: int,
+    estimate_hours: float,
+    completed_hours: float,
+    completed: bool,
+    db: Session,
+) -> WorkloadEstimate:
+    """Create or update a workload estimate for a specific assignment."""
+    existing = db.query(WorkloadEstimate).filter(
+        WorkloadEstimate.user_id == user_id,
+        WorkloadEstimate.course_id == course_id,
+        WorkloadEstimate.assignment_id == assignment_id,
+    ).first()
+
+    if existing:
+        existing.estimate_hours = estimate_hours
+        existing.completed_hours = completed_hours
+        existing.completed = completed
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        row = WorkloadEstimate(
+            user_id=user_id,
+            course_id=course_id,
+            assignment_id=assignment_id,
+            estimate_hours=estimate_hours,
+            completed_hours=completed_hours,
+            completed=completed,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+
+def delete_workload_estimate(
+    user_id: int, course_id: int, assignment_id: int, db: Session
+) -> bool:
+    """Delete a workload estimate for a specific assignment."""
+    row = db.query(WorkloadEstimate).filter(
+        WorkloadEstimate.user_id == user_id,
+        WorkloadEstimate.course_id == course_id,
+        WorkloadEstimate.assignment_id == assignment_id,
+    ).first()
+    if row:
+        db.delete(row)
+        db.commit()
+        return True
+    return False
 
 # === Pydantic schemas ===
 class UserLogin(BaseModel):

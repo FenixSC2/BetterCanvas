@@ -83,6 +83,10 @@ function fmtShortDate(dt) {
   if (!Number.isFinite(d.getTime())) return "";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+function dayNumberUTC(d) {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+}
 function hoursUntil(dt) {
   if (!dt) return null;
   const t = new Date(dt).getTime();
@@ -374,7 +378,7 @@ function makeId() {
 function loadPlannerSettings() {
   try {
     const raw = localStorage.getItem("weeklyPlanner:settings");
-    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false };
+    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7" };
 
     const obj = JSON.parse(raw);
     return {
@@ -382,9 +386,10 @@ function loadPlannerSettings() {
         ? Number(obj.dailyCapacityHours)
         : 3.0,
       showCompleted: !!obj?.showCompleted,
+      dayViewMode: (obj?.dayViewMode === "next7" || obj?.dayViewMode === "week") ? obj.dayViewMode : "next7",
     };
   } catch {
-    return { dailyCapacityHours: 3.0, showCompleted: false };
+    return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7" };
   }
 }
 function savePlannerSettings(settings) {
@@ -479,28 +484,77 @@ function AnchoredPopover({
   width = 420,
 }) {
   const panelRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0, panelWidth: width });
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setEntered(false);
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
 
-    function recompute() {
-      if (!anchorEl) return;
+    function recompute({ preservePosition = false } = {}) {
+      const anchorAvailable =
+        !!anchorEl &&
+        anchorEl.isConnected &&
+        typeof anchorEl.getBoundingClientRect === "function";
 
-      const rect = anchorEl.getBoundingClientRect();
+      const panel = panelRef.current;
+      const rect = anchorAvailable ? anchorEl.getBoundingClientRect() : null;
       const margin = 10;
+      const topSafeInset = 64;
+      const maxViewportWidth = Math.max(260, window.innerWidth - margin * 2);
+      const panelWidth = Math.min(width, maxViewportWidth);
+      const panelHeight = panel?.getBoundingClientRect()?.height || 0;
+      const minTop = Math.max(margin, topSafeInset);
+      const maxTop =
+        panelHeight > 0
+          ? Math.max(minTop, window.innerHeight - panelHeight - margin)
+          : window.innerHeight - margin;
 
-      let left = side === "right" ? rect.right + gap : rect.left - gap - width;
-      left = Math.max(
-        margin,
-        Math.min(left, window.innerWidth - width - margin),
-      );
+      setPos((prev) => {
+        let left = prev.left;
+        let top = prev.top;
 
-      let top = rect.top;
-      const maxTop = window.innerHeight - margin;
-      top = Math.max(margin, Math.min(top, maxTop));
+        if (!preservePosition && rect) {
+          left =
+            side === "right" ? rect.right + gap : rect.left - gap - panelWidth;
 
-      setPos({ top, left });
+          top = rect.top;
+        } else if (preservePosition && rect) {
+          // Prefer keeping the popover visually anchored to its opener while available.
+          left =
+            side === "right" ? rect.right + gap : rect.left - gap - panelWidth;
+          top = rect.top;
+        }
+
+        left = Math.max(
+          margin,
+          Math.min(left, window.innerWidth - panelWidth - margin),
+        );
+
+        // Minimal movement rule:
+        // - push down only if top would be off-screen
+        // - push up only if bottom would be off-screen
+        if (top < minTop) {
+          top = minTop;
+        } else if (top > maxTop) {
+          top = maxTop;
+        }
+
+        if (
+          Math.abs(prev.top - top) < 0.5 &&
+          Math.abs(prev.left - left) < 0.5 &&
+          Math.abs(prev.panelWidth - panelWidth) < 0.5
+        ) {
+          return prev;
+        }
+        return { top, left, panelWidth };
+      });
     }
 
     function onKey(e) {
@@ -518,15 +572,30 @@ function AnchoredPopover({
       onClose?.();
     }
 
-    recompute();
-    window.addEventListener("resize", recompute);
-    window.addEventListener("scroll", recompute, true);
+    recompute({ preservePosition: false });
+    const rafPosition = requestAnimationFrame(() =>
+      recompute({ preservePosition: false }),
+    );
+
+    const ro = new ResizeObserver(() => recompute({ preservePosition: true }));
+    if (panelRef.current) ro.observe(panelRef.current);
+    if (anchorEl) ro.observe(anchorEl);
+
+    const onResize = () => recompute({ preservePosition: false });
+    const onScroll = () => {
+      recompute({ preservePosition: true });
+    };
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onClick);
 
     return () => {
-      window.removeEventListener("resize", recompute);
-      window.removeEventListener("scroll", recompute, true);
+      cancelAnimationFrame(rafPosition);
+      ro.disconnect();
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
     };
@@ -542,12 +611,27 @@ function AnchoredPopover({
         position: "fixed",
         top: pos.top,
         left: pos.left,
-        width,
+        width: pos.panelWidth,
+        height: "auto",
+        maxHeight: "calc(100vh - 20px)",
         zIndex: 9999,
         boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+        opacity: entered ? 1 : 0,
+        transform: entered ? "translateY(0px)" : "translateY(6px)",
+        transition: "opacity 140ms ease, transform 180ms ease",
+        willChange: "transform, opacity",
       }}
     >
-      <div className="cardBody">{children}</div>
+      <div
+        className="cardBody"
+        style={{
+          height: "auto",
+          maxHeight: "calc(100vh - 20px)",
+          overflowY: "auto",
+        }}
+      >
+        {children}
+      </div>
     </div>,
     document.body,
   );
@@ -566,6 +650,7 @@ export function WeeklyPlanner() {
   const [weekStart, setWeekStart] = useState(() =>
     startOfWeekMonday(new Date()),
   );
+  const [next7Start, setNext7Start] = useState(() => startOfDay(new Date()));
   const [settings, setSettings] = useState(() => loadPlannerSettings());
 
   const [splits, setSplits] = useState(() => loadSplits());
@@ -590,6 +675,12 @@ export function WeeklyPlanner() {
   useEffect(() => saveEffortKeyMap(effortKeyMap), [effortKeyMap]);
 
   useEffect(() => {
+    if (settings.dayViewMode === "next7") {
+      setNext7Start(startOfDay(new Date()));
+    }
+  }, [settings.dayViewMode]);
+
+  useEffect(() => {
     function onStorage(e) {
       if (!e?.key) return;
 
@@ -607,6 +698,10 @@ export function WeeklyPlanner() {
         setEffortKeyMap(loadEffortKeyMap());
     }
 
+    function onPlannerSettingsChanged() {
+      setSettings(loadPlannerSettings());
+    }
+
     function onWorkloadChanged() {
       setStorageTick((t) => t + 1);
     }
@@ -616,19 +711,21 @@ export function WeeklyPlanner() {
     }
 
     window.addEventListener("storage", onStorage);
-    window.addEventListener("bettercanvas:workload:changed", onWorkloadChanged);
+    window.addEventListener("canvassist:planner-settings-changed", onPlannerSettingsChanged);
+    window.addEventListener("canvassist:workload:changed", onWorkloadChanged);
     window.addEventListener(
-      "bettercanvas:workload:settingsChanged",
+      "canvassist:workload:settingsChanged",
       onWorkloadSettingsChanged,
     );
     return () => {
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("canvassist:planner-settings-changed", onPlannerSettingsChanged);
       window.removeEventListener(
-        "bettercanvas:workload:changed",
+        "canvassist:workload:changed",
         onWorkloadChanged,
       );
       window.removeEventListener(
-        "bettercanvas:workload:settingsChanged",
+        "canvassist:workload:settingsChanged",
         onWorkloadSettingsChanged,
       );
     };
@@ -658,6 +755,9 @@ export function WeeklyPlanner() {
     const est = workloadEstimateHours(courseId, assignmentId);
     const done = workloadCompletedHours(courseId, assignmentId);
     return Math.max(0, est - done);
+  }
+  function hasWorkloadEstimate(courseId, assignmentId) {
+    return workloadEstimateHours(courseId, assignmentId) > 0;
   }
   function isWorkloadComplete(courseId, assignmentId) {
     const st = getWorkloadState(courseId, assignmentId);
@@ -780,7 +880,7 @@ export function WeeklyPlanner() {
 
   // Remaining you can split for an assignment:
   // - If estimate exists: cap = (remaining effort) - already planned splits
-  // - If estimate does NOT exist: return null (no cap, still allow splitting)
+  // - If estimate does NOT exist: return null (splitting should be disabled)
   const maxRemainingFor = (assignment) => {
     const courseId = assignment.course_id;
     const assignmentId = assignment.id;
@@ -815,6 +915,12 @@ export function WeeklyPlanner() {
       return setErrMsg(courseId, assignmentId, "Pick a split date.");
     if (!Number.isFinite(hours) || hours <= 0)
       return setErrMsg(courseId, assignmentId, "Enter split hours > 0.");
+    if (!hasWorkloadEstimate(courseId, assignmentId))
+      return setErrMsg(
+        courseId,
+        assignmentId,
+        "Set an estimated workload before splitting.",
+      );
 
     // Only enforce cap if we have an estimate
     if (cap != null && hours > cap + 1e-9)
@@ -952,6 +1058,8 @@ export function WeeklyPlanner() {
     const h = Number(splitPopHours);
     const targetISO = String(splitPopDateISO || "");
 
+    if (!hasWorkloadEstimate(courseId, assignmentId))
+      return setSplitPopErr("Set an estimated workload before splitting.");
     if (!targetISO) return setSplitPopErr("Pick a split date.");
     if (!Number.isFinite(h) || h <= 0)
       return setSplitPopErr("Enter split hours > 0.");
@@ -984,7 +1092,15 @@ export function WeeklyPlanner() {
   }
 
   const view = useMemo(() => {
-    const start = startOfDay(weekStart);
+    // Determine the start date based on the view mode
+    let start;
+    if (settings.dayViewMode === "next7") {
+      // Next 7 days view: default to today on load, then allow paging by week.
+      start = startOfDay(next7Start);
+    } else {
+      // Week view: use the selected week start
+      start = startOfDay(weekStart);
+    }
     const end = addDays(start, 7);
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
 
@@ -1134,7 +1250,9 @@ export function WeeklyPlanner() {
     items,
     itemsRaw,
     weekStart,
+    next7Start,
     settings.showCompleted,
+    settings.dayViewMode,
     storageTick,
     filteredSplits,
     effortKeyMap,
@@ -1154,6 +1272,26 @@ export function WeeklyPlanner() {
     return upcoming;
   }, [items, view.end, settings.showCompleted]);
 
+  const viewOffsetLabel = useMemo(() => {
+    const today = startOfDay(new Date());
+    const baselineStart =
+      settings.dayViewMode === "next7" ? today : startOfWeekMonday(today);
+    const offsetDays =
+      dayNumberUTC(startOfDay(view.start)) - dayNumberUTC(baselineStart);
+    const offsetWeeks = Math.round(offsetDays / 7);
+
+    if (offsetWeeks === 0) return "";
+    if (offsetWeeks > 0)
+      return offsetWeeks === 1
+        ? "Viewing 1 week ahead"
+        : `Viewing ${offsetWeeks} weeks ahead`;
+
+    const absWeeks = Math.abs(offsetWeeks);
+    return absWeeks === 1
+      ? "Viewing 1 week earlier"
+      : `Viewing ${absWeeks} weeks earlier`;
+  }, [settings.dayViewMode, view.start]);
+
   if (plannerQ.error) return <ErrorBox error={plannerQ.error} />;
   if (plannerQ.loading && itemsRaw.length === 0)
     return <Loading label="Loading planner…" />;
@@ -1162,7 +1300,9 @@ export function WeeklyPlanner() {
 
   const weekLabel =
     view.days.length >= 7
-      ? `${view.days[0].toLocaleDateString()} – ${view.days[6].toLocaleDateString()}`
+      ? (settings.dayViewMode === "next7"
+          ? `${view.days[0].toLocaleDateString()} – ${view.days[6].toLocaleDateString()} (Next 7 days)`
+          : `${view.days[0].toLocaleDateString()} – ${view.days[6].toLocaleDateString()}`)
       : "";
 
   const setCapacityFromInput = (val) => {
@@ -1177,6 +1317,17 @@ export function WeeklyPlanner() {
   };
 
   const isTodayISO = isoDay(new Date());
+  const splitPopCap = splitPopAssignment
+    ? maxRemainingFor(splitPopAssignment)
+    : null;
+  const splitPopCanApply =
+    !!splitPopAssignment &&
+    hasWorkloadEstimate(
+      splitPopAssignment.course_id,
+      splitPopAssignment.id,
+    ) &&
+    splitPopCap != null &&
+    splitPopCap > 1e-9;
 
   return (
     <div className="stack" style={{ width: "100%" }}>
@@ -1357,6 +1508,11 @@ export function WeeklyPlanner() {
                 Week of <span className="mono">{weekLabel}</span> • Total
                 planned:{" "}
                 <span className="mono">{view.weekTotal.toFixed(1)}h</span>
+                {viewOffsetLabel ? (
+                  <span className="pill" style={{ marginLeft: 8 }}>
+                    {viewOffsetLabel}
+                  </span>
+                ) : null}
                 {plannerQ.refreshing ? (
                   <span className="muted"> • Updating…</span>
                 ) : null}
@@ -1366,19 +1522,37 @@ export function WeeklyPlanner() {
             <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
               <button
                 className="btn"
-                onClick={() => setWeekStart((d) => addDays(d, -7))}
+                onClick={() => {
+                  if (settings.dayViewMode === "next7") {
+                    setNext7Start((d) => addDays(d, -7));
+                    return;
+                  }
+                  setWeekStart((d) => addDays(d, -7));
+                }}
               >
                 ← Prev
               </button>
               <button
                 className="btn"
-                onClick={() => setWeekStart(startOfWeekMonday(new Date()))}
+                onClick={() => {
+                  if (settings.dayViewMode === "next7") {
+                    setNext7Start(startOfDay(new Date()));
+                    return;
+                  }
+                  setWeekStart(startOfWeekMonday(new Date()));
+                }}
               >
                 Today
               </button>
               <button
                 className="btn"
-                onClick={() => setWeekStart((d) => addDays(d, 7))}
+                onClick={() => {
+                  if (settings.dayViewMode === "next7") {
+                    setNext7Start((d) => addDays(d, 7));
+                    return;
+                  }
+                  setWeekStart((d) => addDays(d, 7));
+                }}
               >
                 Next →
               </button>
@@ -1758,12 +1932,15 @@ export function WeeklyPlanner() {
                         ? isoDay(new Date(a.due_at))
                         : null;
 
+                      const hasEstimate = hasWorkloadEstimate(a.course_id, a.id);
                       const cap = maxRemainingFor(a);
                       const canSplit =
                         !!a?.due_at &&
                         !submitted &&
                         (!dueISO || dueISO >= todayISO) &&
-                        (cap == null ? true : cap > 1e-9);
+                        hasEstimate &&
+                        cap != null &&
+                        cap > 1e-9;
 
                       return (
                         <div key={`${a.course_id}-${a.id}`} className="card">
@@ -1869,7 +2046,7 @@ export function WeeklyPlanner() {
                                       title={
                                         canSplit
                                           ? "Plan part of this assignment earlier"
-                                          : "Splits unavailable (submitted, past due, or no remaining estimate)"
+                                          : "Splits unavailable (submitted, past due, no estimate, or no remaining estimate)"
                                       }
                                       style={{
                                         flex: 1,
@@ -1903,7 +2080,14 @@ export function WeeklyPlanner() {
                                     </button>
                                   </div>
 
-                                  {splitErrors[keyFor(a.course_id, a.id)] ? (
+                                  {!hasEstimate ? (
+                                    <div
+                                      className="muted"
+                                      style={{ marginTop: 6, fontSize: 12 }}
+                                    >
+                                      Set an estimated workload to enable splitting.
+                                    </div>
+                                  ) : splitErrors[keyFor(a.course_id, a.id)] ? (
                                     <div
                                       className="dangerText"
                                       style={{ marginTop: 6, fontSize: 12 }}
@@ -2093,16 +2277,16 @@ export function WeeklyPlanner() {
                 </span>
               </div>
 
-              {maxRemainingFor(splitPopAssignment) == null ? (
+              {splitPopCap == null ? (
                 <div style={{ marginTop: 4 }}>
                   Max you can plan: <span className="mono">—</span>{" "}
-                  <span className="muted">(set an estimate to cap splits)</span>
+                  <span className="muted">(set an estimate to enable splits)</span>
                 </div>
               ) : (
                 <div style={{ marginTop: 4 }}>
                   Max you can plan:{" "}
                   <span className="mono">
-                    {maxRemainingFor(splitPopAssignment).toFixed(1)}h
+                    {splitPopCap.toFixed(1)}h
                   </span>
                 </div>
               )}
@@ -2159,6 +2343,7 @@ export function WeeklyPlanner() {
                   type="button"
                   className="btn"
                   onClick={applySplitFromPopover}
+                  disabled={!splitPopCanApply}
                 >
                   Apply
                 </button>

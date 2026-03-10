@@ -65,11 +65,23 @@ export function SettingsModal({
 }) {
   const { theme, density, setTheme, setDensity } = useTheme();
   const { user, logout, setTokenStatus } = useAuth();
-  const [activeSection, setActiveSection] = useState("themes");
+  const [activeSection, setActiveSection] = useState("general");
   const [tokenLoading, setTokenLoading] = useState(false);
 
   // Effort settings draft
   const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
+
+  // Weekly planner settings
+  const [plannerSettings, setPlannerSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem("weeklyPlanner:settings");
+      if (!raw) return { dayViewMode: "next7" };
+      const obj = JSON.parse(raw);
+      return { dayViewMode: obj?.dayViewMode || "next7" };
+    } catch {
+      return { dayViewMode: "next7" };
+    }
+  });
 
   // Hidden assignments state
   const [hiddenAssignments, setHiddenAssignments] = useState([]);
@@ -130,8 +142,7 @@ export function SettingsModal({
 
   const sections = useMemo(
     () => [
-      { key: "themes", label: "Themes" },
-      { key: "effort", label: "Effort" },
+      { key: "general", label: "General" },
       { key: "hidden", label: "Hidden assignments" },
       { key: "account", label: "Account" },
       { key: "notifications", label: "Notifications", disabled: true },
@@ -288,7 +299,7 @@ export function SettingsModal({
           <div>
             <div className="h2">Settings</div>
             <div className="muted">
-              Customize how Canvas Better looks and feels.
+              Customize how CanvAssist looks and feels.
             </div>
           </div>
 
@@ -339,13 +350,13 @@ export function SettingsModal({
           </aside>
 
           <section className="settingsContent">
-            {activeSection === "themes" ? (
+            {activeSection === "general" ? (
               <div className="stack">
                 <div className="card">
                   <div className="cardBody">
-                    <div className="h3">Color palette</div>
-                    <div className="muted" style={{ marginBottom: 10 }}>
-                      Applies across every tab.
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Color palette</div>
+                      <div className="muted">Applies across every tab.</div>
                     </div>
 
                     <div className="settingsGrid">
@@ -372,10 +383,12 @@ export function SettingsModal({
 
                 <div className="card">
                   <div className="cardBody">
-                    <div className="h3">Visual density</div>
-                    <div className="muted" style={{ marginBottom: 10 }}>
-                      Adjusts text size and spacing globally. (Expandable “how
-                      much to show” can be tuned later per-tab.)
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Visual density</div>
+                      <div className="muted">
+                        Adjusts text size and spacing globally. (Expandable "how
+                        much to show" can be tuned later per-tab.)
+                      </div>
                     </div>
 
                     <div className="segmented">
@@ -393,14 +406,63 @@ export function SettingsModal({
                     </div>
                   </div>
                 </div>
-              </div>
-            ) : activeSection === "effort" ? (
-              <div className="stack">
+
                 <div className="card">
                   <div className="cardBody">
-                    <div className="h3">Effort</div>
-                    <div className="muted" style={{ marginBottom: 10 }}>
-                      Controls how the progress bar snaps when you drag it.
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Weekly Planner</div>
+                      <div className="muted">
+                        Choose how the calendar displays days in the weekly planner.
+                      </div>
+                    </div>
+
+                    <div className="segmented">
+                      <button
+                        type="button"
+                        className={`segmentedBtn ${plannerSettings.dayViewMode === "next7" ? "active" : ""}`}
+                        onClick={() => {
+                          const newSettings = { ...plannerSettings, dayViewMode: "next7" };
+                          setPlannerSettings(newSettings);
+                          const fullSettings = JSON.parse(localStorage.getItem("weeklyPlanner:settings") || "{}");
+                          const updated = { ...fullSettings, dayViewMode: "next7" };
+                          localStorage.setItem("weeklyPlanner:settings", JSON.stringify(updated));
+                          window.dispatchEvent(
+                            new CustomEvent("canvassist:planner-settings-changed")
+                          );
+                        }}
+                      >
+                        <div className="segmentedTitle">Next 7 days</div>
+                        <div className="segmentedDesc">Today + the next 6 days</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`segmentedBtn ${plannerSettings.dayViewMode === "week" ? "active" : ""}`}
+                        onClick={() => {
+                          const newSettings = { ...plannerSettings, dayViewMode: "week" };
+                          setPlannerSettings(newSettings);
+                          const fullSettings = JSON.parse(localStorage.getItem("weeklyPlanner:settings") || "{}");
+                          const updated = { ...fullSettings, dayViewMode: "week" };
+                          localStorage.setItem("weeklyPlanner:settings", JSON.stringify(updated));
+                          window.dispatchEvent(
+                            new CustomEvent("canvassist:planner-settings-changed")
+                          );
+                        }}
+                      >
+                        <div className="segmentedTitle">Week view</div>
+                        <div className="segmentedDesc">Monday–Sunday of the selected week</div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="cardBody">
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Effort</div>
+                      <div className="muted">
+                        Controls how the progress bar snaps when you drag it.
+                      </div>
                     </div>
 
                     <div className="rowWrap" style={{ alignItems: "center" }}>
@@ -439,9 +501,11 @@ export function SettingsModal({
               <div className="stack">
                 <div className="card">
                   <div className="cardBody">
-                    <div className="h3">Hidden assignments</div>
-                    <div className="muted" style={{ marginBottom: 12 }}>
-                      Assignments you've hidden won't appear in missing counts or be flagged as missing across all tabs.
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Hidden assignments</div>
+                      <div className="muted">
+                        Assignments you've hidden won't appear in missing counts or be flagged as missing across all tabs.
+                      </div>
                     </div>
 
                     {!user || demoMode ? (

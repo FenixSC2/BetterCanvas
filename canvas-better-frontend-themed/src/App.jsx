@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Tabs } from "./components/Tabs";
 import { MyInformation } from "./pages/MyInformation";
 import { MyCourses } from "./pages/MyCourses";
@@ -67,7 +67,7 @@ function DashboardApp() {
           <TopLoadingBar />
           <header className="header">
             <div className="brand">
-              <div className="brandTitle">Canvas Better (Local)</div>
+              <div className="brandTitle">CanvAssist</div>
               <div className="brandSub">A student-friendly dashboard</div>
             </div>
           </header>
@@ -124,15 +124,104 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
 
   const [active, setActive] = useState("info");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [headerCompact, setHeaderCompact] = useState(false);
+  const headerCompactRef = useRef(false);
+  const transitionTimeoutRef = useRef(null);
 
   useEffect(() => {
     function onNav(e) {
       const tab = e?.detail?.tab;
-      if (tab) setActive(tab);
+      if (tab) {
+        setActive(tab);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     }
     window.addEventListener("canvasbetter:navigate", onNav);
     return () => window.removeEventListener("canvasbetter:navigate", onNav);
   }, []);
+
+  useEffect(() => {
+    function checkScroll() {
+      const y = window.scrollY;
+      const pageHeight = document.documentElement.scrollHeight;
+      const viewportHeight = window.innerHeight;
+      const scrollableHeight = pageHeight - viewportHeight;
+      
+      // Don't change state if we're already transitioning
+      if (transitionTimeoutRef.current) return;
+      
+      // Only enable compact mode on pages with substantial scrollable content (150px+)
+      // This prevents jitter on borderline-scrollable pages
+      if (scrollableHeight < 150) {
+        // Force expanded state on short pages
+        if (headerCompactRef.current) {
+          headerCompactRef.current = false;
+          setHeaderCompact(false);
+        }
+        return;
+      }
+      
+      // Always expand when at the very top
+      let nextCompact;
+      if (y <= 2) {
+        nextCompact = false;
+      } else {
+        // More responsive thresholds: compact at 40px, expand back at 10px
+        nextCompact = headerCompactRef.current ? y > 10 : y > 40;
+      }
+      
+      if (nextCompact !== headerCompactRef.current) {
+        headerCompactRef.current = nextCompact;
+        setHeaderCompact(nextCompact);
+        
+        // Lock state changes for the duration of the transition
+        transitionTimeoutRef.current = setTimeout(() => {
+          transitionTimeoutRef.current = null;
+        }, 180); // Slightly longer than CSS transition (160ms)
+      }
+    }
+
+    checkScroll();
+    window.addEventListener("scroll", checkScroll, { passive: true });
+    
+    // Also check on resize in case window size changes
+    window.addEventListener("resize", checkScroll, { passive: true });
+    
+    return () => {
+      window.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+      if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+    };
+  }, []);
+
+  // Check scroll position when tab changes
+  useEffect(() => {
+    // Small delay to let content render
+    const timer = setTimeout(() => {
+      const pageHeight = document.documentElement.scrollHeight;
+      const viewportHeight = window.innerHeight;
+      const scrollableHeight = pageHeight - viewportHeight;
+      
+      // Force expand on short pages (< 150px scrollable content)
+      if (scrollableHeight < 150 && headerCompactRef.current) {
+        headerCompactRef.current = false;
+        setHeaderCompact(false);
+      } else if (scrollableHeight >= 150) {
+        // On longer pages, check if we're at the top
+        const y = window.scrollY;
+        if (y <= 2 && headerCompactRef.current) {
+          headerCompactRef.current = false;
+          setHeaderCompact(false);
+        }
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  function handleTabChange(tab) {
+    setActive(tab);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <ThemeProvider>
@@ -142,9 +231,9 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
         {/* Fixed top-right settings button (always visible) */}
         <SettingsButton className="settingsFloating" onClick={() => setSettingsOpen(true)} />
 
-        <header className="header">
+        <header className={`header stickyHeader ${headerCompact ? "headerCompact" : ""}`}>
           <div className="brand">
-            <div className="brandTitle">Canvas Better (Local)</div>
+            <div className="brandTitle">CanvAssist</div>
             <div className="brandSub">A student-friendly dashboard</div>
             {demoMode && (
               <div style={{ fontSize: "var(--fontSm)", color: "var(--warning)", marginTop: "4px", fontWeight: 600 }}>
@@ -153,18 +242,21 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
             )}
           </div>
 
-          <Tabs tabs={tabs} activeKey={active} onChange={setActive} />
+          <Tabs tabs={tabs} activeKey={active} onChange={handleTabChange} />
         </header>
 
         {/* widen only for planner */}
-        <main className={`main ${active === "planner" ? "mainWide" : ""}`}>
+        <main 
+          className={`main ${active === "planner" ? "mainWide" : ""}`} 
+          style={demoMode ? { paddingBottom: "60px" } : {}}
+        >
           {active === "info" ? <MyInformation /> : null}
           {active === "courses" ? <MyCourses /> : null}
           {active === "upcoming" ? <UpcomingAssignments /> : null}
           {active === "planner" ? <WeeklyPlanner /> : null}
         </main>
 
-        <footer className="footer muted">
+        <footer className="footer muted" style={demoMode ? { position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100 } : {}}>
           {demoMode ? (
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <span>Viewing demo data</span>

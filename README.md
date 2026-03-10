@@ -1,2 +1,2 @@
-# BetterCanvas
+# CanvAssist
 

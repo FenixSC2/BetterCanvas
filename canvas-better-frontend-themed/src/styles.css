@@ -47,6 +47,12 @@
   --badge-danger-bg-strong: rgba(216, 19, 19, 0.92);
   --badge-danger-border-strong: rgba(255, 120, 120, 0.85);
   --badge-danger-text-strong: #ffffff;
+
+  /* Shared interaction tokens (non-auth UI controls) */
+  --interactive-hover-opacity: 0.85;
+  --interactive-active-scale: 0.98;
+  --interactive-focus-ring: 0 0 0 3px
+    color-mix(in srgb, var(--text), transparent 78%);
 }
 
 /* ===== Theme variants ===== */
@@ -59,6 +65,7 @@ html[data-theme="midnight"] {
   --border: rgba(238, 240, 247, 0.12);
   --border2: rgba(238, 240, 247, 0.18);
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --datePickerIconFilter: invert(1);
 }
 
 html[data-theme="ocean"] {
@@ -81,6 +88,7 @@ html[data-theme="forest"] {
   --border: #2d3a28;
   --border2: #4e6145;
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --datePickerIconFilter: invert(1);
 }
 
 html[data-theme="cyber"] {
@@ -92,6 +100,7 @@ html[data-theme="cyber"] {
   --border: #9ecb9e;
   --border2: #a9ffa9;
   --shadow: 0 1px 2px rgba(11, 42, 26, 0.06);
+  --datePickerIconFilter: invert(1);
 }
 
 html[data-theme="rose"] {
@@ -114,6 +123,7 @@ html[data-theme="contrast"] {
   --border: rgba(255, 255, 255, 0.22);
   --border2: rgba(255, 255, 255, 0.32);
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --datePickerIconFilter: invert(1);
 }
 
 html[data-theme="frog"] {
@@ -233,6 +243,44 @@ ol {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   color: var(--text);
+  transition: padding 160ms ease, box-shadow 160ms ease;
+}
+
+.stickyHeader {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+}
+
+.brand {
+  max-height: 72px;
+  opacity: 1;
+  transform: translateY(0);
+  overflow: hidden;
+  transition: max-height 160ms ease, opacity 140ms ease, transform 160ms ease,
+    margin 160ms ease;
+}
+
+.headerCompact {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+
+.headerCompact .brand {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  margin: 0;
+  pointer-events: none;
+}
+
+.tabs {
+  transition: margin-top 160ms ease;
+}
+
+.headerCompact .tabs {
+  margin-top: 0;
 }
 
 .brandTitle {
@@ -260,10 +308,36 @@ ol {
   cursor: pointer;
   font-weight: 600;
   color: inherit;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.tab:hover {
+  opacity: 0.85;
+  background: var(--surface2);
 }
 
 .tab.active {
   border-color: var(--text);
+}
+
+.tab.active:hover {
+  opacity: 1;
+  background: var(--surface);
+}
+
+.tab:focus-visible,
+.btn:focus-visible,
+.iconBtn:focus-visible,
+.settingsNavItem:focus-visible,
+.themeChoice:focus-visible,
+.segmentedBtn:focus-visible,
+.toggle:focus-visible,
+.effortGearBtn:focus-visible,
+.effortCloseBtn:focus-visible,
+.effortStepBtn:focus-visible,
+.expandableSummary:focus-visible {
+  outline: none;
+  box-shadow: var(--interactive-focus-ring);
 }
 
 .main {
@@ -342,10 +416,12 @@ ol {
   text-decoration: none;
   color: var(--text);
   font-weight: 700;
+  cursor: pointer;
+  transition: opacity 120ms ease;
 }
 
 .btn:hover {
-  filter: brightness(0.98);
+  opacity: var(--interactive-hover-opacity);
 }
 
 .btn:disabled {
@@ -353,10 +429,15 @@ ol {
   cursor: not-allowed;
 }
 
+.btn:disabled:hover {
+  opacity: 0.55;
+}
+
 /* Form controls matching theme surfaces (used in WeeklyPlanner settings) */
 .select,
 input[type="number"],
 input[type="text"],
+input[type="date"],
 textarea {
   padding: 8px 10px;
   border-radius: var(--radiusSm);
@@ -364,6 +445,16 @@ textarea {
   background: var(--surface2);
   color: var(--text);
   font: inherit;
+}
+
+/* Ensure date input internal controls respect theme colors */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: var(--datePickerIconFilter, none);
+  cursor: pointer;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  color: var(--text);
 }
 
 /* Stabilize capacity numeric width to avoid layout shifts when digits change */
@@ -433,6 +524,16 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
 .select {
   appearance: none;
   -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.select:hover {
+  cursor: pointer;
+}
+
+.select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .iconBtn {
@@ -446,10 +547,15 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
   background: var(--surface2);
   color: var(--text);
   cursor: pointer;
+  transition: opacity 120ms ease;
 }
 
 .iconBtn:hover {
-  filter: brightness(0.98);
+  opacity: var(--interactive-hover-opacity);
+}
+
+.iconBtn:active {
+  transform: scale(var(--interactive-active-scale));
 }
 
 .btnDanger {
@@ -460,7 +566,7 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
 /* ===== Settings floating button ===== */
 .settingsFloating {
   position: fixed;
-  top: 14px;
+  top: 10px;
   right: 14px;
   z-index: 100000;
   background: var(--surface);
@@ -486,6 +592,11 @@ details > summary::marker {
 
 .expandableSummary {
   cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.expandableSummary:hover {
+  opacity: 0.92;
 }
 .expandableSummary .row {
   align-items: center !important;
@@ -549,6 +660,11 @@ details.expandable > .cardBody,
   border-radius: var(--radiusLg);
   box-shadow: var(--shadow);
   overflow: hidden;
+  min-height: 60vh;
+  height: 68vh;
+  max-height: calc(100vh - 36px);
+  display: flex;
+  flex-direction: column;
 }
 
 .modalHeader {
@@ -564,7 +680,9 @@ details.expandable > .cardBody,
 .modalBody {
   display: grid;
   grid-template-columns: 220px 1fr;
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .settingsNav {
@@ -574,6 +692,8 @@ details.expandable > .cardBody,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .settingsNavItem {
@@ -613,7 +733,39 @@ details.expandable > .cardBody,
 }
 
 .settingsContent {
-  padding: 14px;
+  padding: 0 14px 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Sticky headers need visible overflow on ancestors to function. */
+.settingsContent .card {
+  overflow: visible;
+}
+
+.settingsContent .cardBody {
+  height: auto;
+}
+
+/* Keep section title+subtitle visible while scrolling long settings content. */
+.settingsSectionHeader {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0 8px;
+  margin: 0 0 12px;
+}
+
+.settingsSectionHeader .h3 {
+  margin-bottom: 4px;
+}
+
+.settingsSectionHeader .muted {
+  margin: 0;
 }
 
 .settingsGrid {
@@ -632,10 +784,19 @@ details.expandable > .cardBody,
   background: var(--surface);
   cursor: pointer;
   text-align: left;
+  transition: opacity 120ms ease, border-color 120ms ease;
+}
+
+.themeChoice:hover {
+  opacity: var(--interactive-hover-opacity);
 }
 
 .themeChoice.active {
   border-color: var(--text);
+}
+
+.themeChoice.active:hover {
+  opacity: 1;
 }
 
 .themeSwatch {
@@ -692,10 +853,19 @@ details.expandable > .cardBody,
   background: var(--surface2);
   cursor: pointer;
   text-align: left;
+  transition: opacity 120ms ease, border-color 120ms ease;
+}
+
+.segmentedBtn:hover {
+  opacity: var(--interactive-hover-opacity);
 }
 
 .segmentedBtn.active {
   border-color: var(--text);
+}
+
+.segmentedBtn.active:hover {
+  opacity: 1;
 }
 .segmentedTitle {
   font-weight: 900;
@@ -804,10 +974,15 @@ details.expandable > .cardBody,
   border-radius: 999px;
   cursor: pointer;
   padding: 0;
+  transition: opacity 120ms ease;
 }
 
 .toggle:hover {
-  filter: brightness(0.98);
+  opacity: var(--interactive-hover-opacity);
+}
+
+.toggle:active {
+  transform: scale(var(--interactive-active-scale));
 }
 
 .toggleTrack {
@@ -1174,19 +1349,25 @@ details.expandable > .cardBody,
 .effortGearBtn {
   height: 34px;
   width: 34px;
-  border-radius: 10px;
+  border-radius: var(--radiusSm);
   border: 1px solid var(--border2);
-  background: var(--surface);
+  background: var(--surface2);
+  color: var(--text);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 20px;
   font-weight: 600;
+  transition: opacity 120ms ease;
 }
 
 .effortGearBtn:hover {
-  filter: brightness(0.98);
+  opacity: var(--interactive-hover-opacity);
+}
+
+.effortGearBtn:active {
+  transform: scale(var(--interactive-active-scale));
 }
 
 .effortBarWrap {
@@ -1251,11 +1432,25 @@ details.expandable > .cardBody,
 .effortCloseBtn {
   height: 30px;
   width: 30px;
-  border-radius: 10px;
+  border-radius: var(--radiusSm);
   border: 1px solid var(--border2);
-  background: var(--surface);
+  background: var(--surface2);
+  color: var(--text);
   cursor: pointer;
   font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: opacity 120ms ease;
+}
+
+.effortCloseBtn:hover {
+  opacity: var(--interactive-hover-opacity);
+}
+
+.effortCloseBtn:active {
+  transform: scale(var(--interactive-active-scale));
 }
 
 .effortPopoverBody {
@@ -1312,10 +1507,11 @@ details.expandable > .cardBody,
   color: var(--text);
   font-weight: 900;
   cursor: pointer;
+  transition: opacity 120ms ease;
 }
 
 .effortCta:hover {
-  filter: brightness(0.98);
+  opacity: 0.85;
 }
 
 .effortStepper {
@@ -1327,18 +1523,24 @@ details.expandable > .cardBody,
 .effortStepBtn {
   height: 34px;
   width: 34px;
-  border-radius: 10px;
+  border-radius: var(--radiusSm);
   border: 1px solid var(--border2);
-  background: var(--surface);
+  background: var(--surface2);
+  color: var(--text);
   cursor: pointer;
   font-weight: 900;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 120ms ease;
 }
 
 .effortStepBtn:hover {
-  filter: brightness(0.98);
+  opacity: var(--interactive-hover-opacity);
+}
+
+.effortStepBtn:active {
+  transform: scale(var(--interactive-active-scale));
 }
 
 /* anchored popover (legacy) */
@@ -1627,6 +1829,52 @@ details.expandable > .cardBody,
   font-size: var(--fontBase);
   font-family: inherit;
   transition: border-color 0.2s;
+}
+
+.authInputRow {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  background: var(--surface2);
+  transition: border-color 0.2s;
+}
+
+.authInputRow:focus-within {
+  border-color: rgba(80, 160, 255, 0.6);
+  background: var(--surface);
+}
+
+.authInput.authInputWithButton {
+  border: none;
+  background: transparent;
+  flex: 1;
+}
+
+.authInput.authInputWithButton:focus {
+  border: none;
+  background: transparent;
+}
+
+.authInputButton {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: var(--fontSm);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.authInputButton:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.authInputButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .authInput:focus,

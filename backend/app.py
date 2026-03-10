@@ -32,6 +32,7 @@ from auth import (
     User,
     CanvasToken,
     HiddenAssignment,
+    WorkloadEstimate,
     get_db,
     create_user,
     get_user_by_email,
@@ -43,6 +44,9 @@ from auth import (
     hide_assignment,
     unhide_assignment,
     get_hidden_assignments,
+    get_workload_estimates,
+    upsert_workload_estimate,
+    delete_workload_estimate,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -204,6 +208,11 @@ class OverviewResponse(BaseModel):
     grades: List[GradeItem] = Field(default_factory=list)
 
     any_estimated_grades: bool = False
+
+class WorkloadEstimateRequest(BaseModel):
+    estimate_hours: float = Field(default=0.0, ge=0.0, le=500.0)
+    completed_hours: float = Field(default=0.0, ge=0.0, le=500.0)
+    completed: bool = False
 
 # Annoucnement model
 class Announcement(BaseModel):
@@ -1787,6 +1796,47 @@ def get_candidates_for_hiding(
                 })
     
     return {"candidates": candidates}
+
+# === Workload Estimates ===
+
+@app.get("/api/workload-estimates")
+def get_workload_estimates_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all workload estimates for the authenticated user."""
+    return {"estimates": get_workload_estimates(current_user.id, db)}
+
+@app.put("/api/workload-estimates/{course_id}/{assignment_id}")
+def upsert_workload_estimate_endpoint(
+    course_id: int,
+    assignment_id: int,
+    body: WorkloadEstimateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a workload estimate for a specific assignment."""
+    upsert_workload_estimate(
+        current_user.id,
+        course_id,
+        assignment_id,
+        body.estimate_hours,
+        body.completed_hours,
+        body.completed,
+        db,
+    )
+    return {"success": True}
+
+@app.delete("/api/workload-estimates/{course_id}/{assignment_id}")
+def delete_workload_estimate_endpoint(
+    course_id: int,
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete the workload estimate for a specific assignment."""
+    delete_workload_estimate(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
 
 @app.get("/api/debug/cache")
 def debug_cache():

@@ -200,19 +200,19 @@ export function WorkloadEstimateControl({
     }
 
     window.addEventListener("storage", onStorage);
-    window.addEventListener("bettercanvas:workload:changed", onWorkloadChanged);
+    window.addEventListener("canvassist:workload:changed", onWorkloadChanged);
     window.addEventListener(
-      "bettercanvas:workload:settingsChanged",
+      "canvassist:workload:settingsChanged",
       onWorkloadSettingsChanged,
     );
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(
-        "bettercanvas:workload:changed",
+        "canvassist:workload:changed",
         onWorkloadChanged,
       );
       window.removeEventListener(
-        "bettercanvas:workload:settingsChanged",
+        "canvassist:workload:settingsChanged",
         onWorkloadSettingsChanged,
       );
     };

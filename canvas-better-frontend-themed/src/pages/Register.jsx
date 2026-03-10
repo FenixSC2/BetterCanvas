@@ -6,6 +6,8 @@ export function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localError, setLocalError] = useState("");
 
   async function handleRegister(e) {
@@ -47,7 +49,7 @@ export function Register() {
   return (
     <div className="authContainer">
       <div className="authPanel">
-        <h1 className="authTitle">Canvas Better</h1>
+        <h1 className="authTitle">CanvAssist</h1>
         <p className="authSubtitle">Create your account</p>
 
         {(error || localError) && (
@@ -71,27 +73,51 @@ export function Register() {
 
           <div className="authField">
             <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              placeholder="••••••••"
-              className="authInput"
-            />
+            <div className="authInputRow">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                placeholder="••••••••"
+                className="authInput authInputWithButton"
+              />
+              <button
+                type="button"
+                className="authInputButton"
+                onClick={() => setShowPassword((prev) => !prev)}
+                disabled={loading}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
             <div className="authHint">At least 8 characters, including a letter and a number</div>
           </div>
 
           <div className="authField">
             <label>Confirm password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={loading}
-              placeholder="••••••••"
-              className="authInput"
-            />
+            <div className="authInputRow">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={loading}
+                placeholder="••••••••"
+                className="authInput authInputWithButton"
+              />
+              <button
+                type="button"
+                className="authInputButton"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                disabled={loading}
+                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                aria-pressed={showConfirmPassword}
+              >
+                {showConfirmPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
 
           <button type="submit" disabled={loading} className="authButton">

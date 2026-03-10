@@ -5,6 +5,7 @@ export function Login({ onViewDemo }) {
   const { login, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState("");
 
   const handleMockMode = () => {
@@ -32,7 +33,7 @@ export function Login({ onViewDemo }) {
   return (
     <div className="authContainer">
       <div className="authPanel">
-        <h1 className="authTitle">Canvas Better</h1>
+        <h1 className="authTitle">CanvAssist</h1>
         <p className="authSubtitle">Sign in to your account</p>
 
         {(error || localError) && (
@@ -56,14 +57,26 @@ export function Login({ onViewDemo }) {
 
           <div className="authField">
             <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              placeholder="••••••••"
-              className="authInput"
-            />
+            <div className="authInputRow">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                placeholder="••••••••"
+                className="authInput authInputWithButton"
+              />
+              <button
+                type="button"
+                className="authInputButton"
+                onClick={() => setShowPassword((prev) => !prev)}
+                disabled={loading}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
 
           <button type="submit" disabled={loading} className="authButton">
