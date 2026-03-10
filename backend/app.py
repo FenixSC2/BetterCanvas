@@ -1256,7 +1256,7 @@ def api_demo_enable():
         path="/",
         secure=SECURE_COOKIES,
         httponly=True,
-        samesite="lax"
+        samesite="none" if SECURE_COOKIES else "lax"
     )
     return response
 
@@ -1632,7 +1632,7 @@ def auth_login(request: Request, payload: UserLogin, db: Session = Depends(get_d
         path="/",
         secure=SECURE_COOKIES,
         httponly=True,
-        samesite="lax"
+        samesite="none" if SECURE_COOKIES else "lax"
     )
     return response
 
