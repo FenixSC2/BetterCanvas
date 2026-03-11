@@ -98,15 +98,6 @@ class WorkloadEstimate(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
-class UserSession(Base):
-    __tablename__ = "user_sessions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, unique=True, index=True)
-    user_id = Column(Integer, index=True)
-    expires_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -190,29 +181,6 @@ def revoke_canvas_token(user_id: int, db: Session) -> bool:
         db.commit()
         return True
     return False
-
-def create_db_session(user_id: int, session_id: str, expires_at: datetime, db: Session) -> "UserSession":
-    """Persist a new session to the database."""
-    db_session = UserSession(session_id=session_id, user_id=user_id, expires_at=expires_at)
-    db.add(db_session)
-    db.commit()
-    return db_session
-
-def get_db_session_user_id(session_id: str, db: Session) -> Optional[int]:
-    """Return user_id for a valid, non-expired session, or None."""
-    now = datetime.now(timezone.utc)
-    db_session = db.query(UserSession).filter(
-        UserSession.session_id == session_id,
-        UserSession.expires_at > now
-    ).first()
-    if not db_session:
-        return None
-    return db_session.user_id
-
-def invalidate_db_session(session_id: str, db: Session) -> None:
-    """Delete a session from the database."""
-    db.query(UserSession).filter(UserSession.session_id == session_id).delete()
-    db.commit()
 
 def hide_assignment(user_id: int, course_id: int, assignment_id: int, db: Session) -> HiddenAssignment:
     """Add an assignment to the user's hidden list."""

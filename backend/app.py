@@ -33,7 +33,6 @@ from auth import (
     CanvasToken,
     HiddenAssignment,
     WorkloadEstimate,
-    UserSession,
     get_db,
     create_user,
     get_user_by_email,
@@ -48,9 +47,6 @@ from auth import (
     get_workload_estimates,
     upsert_workload_estimate,
     delete_workload_estimate,
-    create_db_session,
-    get_db_session_user_id,
-    invalidate_db_session,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -267,12 +263,19 @@ app.add_middleware(
 
 # === Session management ===
 
-def create_session(user_id: int, db: Session) -> str:
-    """Create a new session for a user, persisted to the database."""
+# In-memory session store (dict: session_id -> {"user_id": int, "expires": float})
+_sessions: Dict[str, Dict[str, Any]] = {}
+_sessions_lock = Lock()
+
+def create_session(user_id: int) -> str:
+    """Create a new session for a user."""
     import secrets
     session_id = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
-    create_db_session(user_id, session_id, expires_at, db)
+    expires_at = time.time() + (30 * 24 * 60 * 60)  # 30 days
+    
+    with _sessions_lock:
+        _sessions[session_id] = {"user_id": user_id, "expires": expires_at}
+    
     return session_id
 
 def create_demo_session() -> str:
@@ -297,13 +300,21 @@ def is_demo_session(session_id: str) -> bool:
             return False
         return True
 
-def get_session_user_id(session_id: str, db: Session) -> Optional[int]:
-    """Retrieve user_id from a valid session stored in the database."""
-    return get_db_session_user_id(session_id, db)
+def get_session_user_id(session_id: str) -> Optional[int]:
+    """Retrieve user_id from a valid session."""
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+        if not session:
+            return None
+        if time.time() > session["expires"]:
+            _sessions.pop(session_id, None)
+            return None
+        return session["user_id"]
 
-def invalidate_session(session_id: str, db: Session) -> None:
+def invalidate_session(session_id: str) -> None:
     """Invalidate a session."""
-    invalidate_db_session(session_id, db)
+    with _sessions_lock:
+        _sessions.pop(session_id, None)
 
 def get_session_id(session_id: Optional[str] = Cookie(None)) -> Optional[str]:
     """Helper dependency to get session ID from the httponly session cookie."""
@@ -314,7 +325,7 @@ def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Se
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    user_id = get_session_user_id(session_id, db)
+    user_id = get_session_user_id(session_id)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Session invalid or expired")
     
@@ -1081,7 +1092,7 @@ def api_profile(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1105,7 +1116,7 @@ def api_courses(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1132,7 +1143,7 @@ def api_course_assignments(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1159,7 +1170,7 @@ def api_upcoming(
     user_id = None
     if session_id:
         try:
-            user_id = get_session_user_id(session_id, db)
+            user_id = get_session_user_id(session_id)
             if user_id:
                 token = get_canvas_token(user_id, db)
         except Exception:
@@ -1193,7 +1204,7 @@ def api_undated_assignments(
     user_id = None
     if session_id:
         try:
-            user_id = get_session_user_id(session_id, db)
+            user_id = get_session_user_id(session_id)
             if user_id:
                 token = get_canvas_token(user_id, db)
         except Exception:
@@ -1276,7 +1287,7 @@ def api_dashboard(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1370,7 +1381,7 @@ def api_courses_summary(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1524,7 +1535,7 @@ def api_overview(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1560,7 +1571,7 @@ def api_announcements(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id, db)
+            uid = get_session_user_id(session_id)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1618,7 +1629,7 @@ def auth_login(request: Request, payload: UserLogin, db: Session = Depends(get_d
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    session_id = create_session(user.id, db)
+    session_id = create_session(user.id)
     response = JSONResponse({"success": True, "user": UserResponse.model_validate(user).model_dump(mode='json')})
     response.set_cookie(
         "session_id",
@@ -1632,10 +1643,10 @@ def auth_login(request: Request, payload: UserLogin, db: Session = Depends(get_d
     return response
 
 @app.post("/api/auth/logout")
-def auth_logout(session_id: Optional[str] = Depends(get_session_id), db: Session = Depends(get_db)):
+def auth_logout(session_id: Optional[str] = Depends(get_session_id)):
     """Logout the current user."""
     if session_id:
-        invalidate_session(session_id, db)
+        invalidate_session(session_id)
     
     response = JSONResponse({"success": True})
     response.delete_cookie("session_id")
