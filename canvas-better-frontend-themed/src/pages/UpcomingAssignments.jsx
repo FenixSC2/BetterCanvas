@@ -6,6 +6,14 @@ import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
+import {
+  Popover as ShadcnPopover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -38,107 +46,6 @@ function getUrgencyBadge(a) {
   }
 
   return { label: "Undated", variant: "neutral" };
-}
-
-/**
- * Simple popover (overlay) that does NOT push layout.
- * - anchors to the trigger
- * - closes on outside click + Escape
- * - uses position: fixed + getBoundingClientRect for reliable alignment
- */
-function Popover({
-  open,
-  onClose,
-  anchorRef,
-  children,
-  align = "right",
-  width = 320,
-}) {
-  const panelRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!open) return;
-
-    function recompute() {
-      const anchor = anchorRef?.current;
-      if (!anchor) return;
-
-      const rect = anchor.getBoundingClientRect(); // viewport coords
-      const margin = 8;
-
-      let left;
-      if (align === "left") {
-        left = rect.left;
-      } else {
-        left = rect.right - width; // align right edges
-      }
-
-      // clamp into viewport
-      left = Math.max(
-        margin,
-        Math.min(left, window.innerWidth - width - margin)
-      );
-
-      // prefer below anchor; clamp if near bottom
-      let top = rect.bottom + margin;
-      const maxTop = window.innerHeight - margin;
-      top = Math.max(margin, Math.min(top, maxTop));
-
-      setPos({ top, left });
-    }
-
-    recompute();
-    window.addEventListener("resize", recompute);
-    window.addEventListener("scroll", recompute, true);
-
-    function onKey(e) {
-      if (e.key === "Escape") onClose?.();
-    }
-    function onClick(e) {
-      const panel = panelRef.current;
-      const anchor = anchorRef?.current;
-      if (!panel || !anchor) return;
-
-      const t = e.target;
-      if (panel.contains(t)) return;
-      if (anchor.contains(t)) return;
-
-      onClose?.();
-    }
-
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onClick);
-
-    return () => {
-      window.removeEventListener("resize", recompute);
-      window.removeEventListener("scroll", recompute, true);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onClick);
-    };
-  }, [open, onClose, anchorRef, align, width]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: pos.top,
-        left: pos.left,
-        zIndex: 9999,
-        width,
-      }}
-    >
-      <div
-        ref={panelRef}
-        className="card"
-        style={{ boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }}
-      >
-        <div className="cardBody">{children}</div>
-      </div>
-    </div>
-  );
 }
 
 function parseUpcomingTarget(raw) {
@@ -244,8 +151,6 @@ export function UpcomingAssignments() {
   // Popover state
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
-  const filterBtnRef = useRef(null);
-  const sortBtnRef = useRef(null);
 
   // Focus/highlight state (for WeeklyPlanner -> UpcomingAssignments navigation)
   const [focusKey, setFocusKey] = useState(null); // `${courseId}-${assignmentId}`
@@ -420,7 +325,7 @@ export function UpcomingAssignments() {
     setFilterOpen(false);
     setSortOpen(false);
 
-    // Mark pending focus; we’ll execute scroll when DOM is present
+    // Mark pending focus; we'll execute scroll when DOM is present
     pendingFocusRef.current = key;
   }, [items, filterMode]);
 
@@ -489,170 +394,106 @@ export function UpcomingAssignments() {
           className="rowWrap"
           style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}
         >
-          <button
-            ref={filterBtnRef}
-            className="btn"
-            onClick={() => {
-              setFilterOpen((v) => !v);
-              setSortOpen(false);
-            }}
-            title="Filter assignments"
-            style={{ whiteSpace: "nowrap" }}
-          >
-            Filter: <span className="mono">{filterLabel}</span>
-          </button>
+          <ShadcnPopover open={filterOpen} onOpenChange={(o) => { setFilterOpen(o); if (o) setSortOpen(false); }}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" title="Filter assignments">
+                Filter: <span className="mono">{filterLabel}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-3">
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-semibold">Filter</p>
+                <p className="text-sm text-muted-foreground">Show only assignments matching:</p>
+                <div className="flex flex-col gap-1 mt-1">
+                  {[
+                    ["all", "All"],
+                    ["missing", "Missing"],
+                    ["upcoming", "Upcoming"],
+                    ["undated", "Undated"],
+                  ].map(([key, label]) => (
+                    <Button
+                      key={key}
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start"
+                      onClick={() => {
+                        setFilterMode(key);
+                        setFilterOpen(false);
+                      }}
+                      title={`Show ${label.toLowerCase()} assignments`}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Missing items stay at the top regardless of sorting.
+                </p>
+              </div>
+            </PopoverContent>
+          </ShadcnPopover>
 
-          <button
-            ref={sortBtnRef}
-            className="btn"
-            onClick={() => {
-              setSortOpen((v) => !v);
-              setFilterOpen(false);
-            }}
-            title="Sort by time and/or points"
-            style={{ whiteSpace: "nowrap" }}
-          >
-            Sorting
-          </button>
+          <ShadcnPopover open={sortOpen} onOpenChange={(o) => { setSortOpen(o); if (o) setFilterOpen(false); }}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" title="Sort by time and/or points">
+                Sorting
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-3">
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-semibold">Sorting blend</p>
+                <p className="text-sm text-muted-foreground">
+                  Left = prioritize due date • Right = prioritize points
+                </p>
+                <div className="flex items-center gap-2 flex-nowrap">
+                  <span className="mono text-sm min-w-[44px]">Time</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={blend}
+                    onChange={(e) => setBlend(Number(e.target.value))}
+                    className="flex-1 min-w-[160px]"
+                  />
+                  <span className="mono text-sm min-w-[52px] text-right">Points</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <span className="text-sm text-muted-foreground">Blend</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={blend}
+                    onChange={(e) => setBlend(Number(e.target.value))}
+                    className="w-20 h-8 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+                  />
+                  <span className="text-sm text-muted-foreground">(0–1)</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Tip: keep this around <span className="mono">0.25–0.45</span> to stay time-heavy.
+                </p>
+              </div>
+            </PopoverContent>
+          </ShadcnPopover>
 
-          <button
-            className="btn"
-            onClick={() => upcomingQ.refresh()}
-            title="Fetch fresh upcoming assignments"
-            style={{ whiteSpace: "nowrap" }}
-          >
+          <Button variant="outline" size="sm" onClick={() => upcomingQ.refresh()} title="Fetch fresh upcoming assignments">
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Filter popover — stack options vertically */}
-      <Popover
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        anchorRef={filterBtnRef}
-        align="right"
-        width={260}
-      >
-        <div className="stack">
-          <div className="h3" style={{ marginBottom: 2 }}>
-            Filter
-          </div>
-          <div className="muted">Show only assignments matching:</div>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginTop: 6,
-            }}
-          >
-            {[
-              ["all", "All"],
-              ["missing", "Missing"],
-              ["upcoming", "Upcoming"],
-              ["undated", "Undated"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                className="btn"
-                onClick={() => {
-                  setFilterMode(key);
-                  setFilterOpen(false);
-                }}
-                title={`Show ${label.toLowerCase()} assignments`}
-                style={{ textAlign: "left", width: "100%" }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="muted" style={{ marginTop: 8 }}>
-            Missing items stay at the top regardless of sorting.
-          </div>
-        </div>
-      </Popover>
-
-      {/* Sorting popover */}
-      <Popover
-        open={sortOpen}
-        onClose={() => setSortOpen(false)}
-        anchorRef={sortBtnRef}
-        align="right"
-        width={360}
-      >
-        <div className="stack">
-          <div className="h3" style={{ marginBottom: 2 }}>
-            Sorting blend
-          </div>
-          <div className="muted">
-            Left = prioritize due date • Right = prioritize points
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "nowrap",
-              marginTop: 6,
-            }}
-          >
-            <span className="mono" style={{ minWidth: 44 }}>
-              Time
-            </span>
-
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={blend}
-              onChange={(e) => setBlend(Number(e.target.value))}
-              style={{ flex: 1, minWidth: 160 }}
-            />
-
-            <span className="mono" style={{ minWidth: 52, textAlign: "right" }}>
-              Points
-            </span>
-          </div>
-
-          <div
-            className="rowWrap"
-            style={{ gap: 10, alignItems: "center", marginTop: 4 }}
-          >
-            <span className="muted">Blend</span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.05"
-              value={blend}
-              onChange={(e) => setBlend(Number(e.target.value))}
-              style={{ width: 90 }}
-            />
-            <span className="muted">(0–1)</span>
-          </div>
-
-          <div className="muted">
-            Tip: keep this around <span className="mono">0.25–0.45</span> to
-            stay time-heavy.
-          </div>
-        </div>
-      </Popover>
-
       {/* === Upcoming assignments wrapper === */}
       {filterMode !== "undated" ? (
-        <div className="upcomingPanel">
-          <div className="upcomingPanelHeader">
-            <div className="upcomingPanelHeaderLeft">
-              <div className="upcomingPanelTitle">
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-3 border-b">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
                 Upcoming assignments
-                <span className="upcomingPanelCount mono">
+                <Badge variant="secondary" className="font-mono">
                   {filteredSorted.length}
-                </span>
+                </Badge>
               </div>
 
               <div className="muted">
@@ -662,9 +503,9 @@ export function UpcomingAssignments() {
                 ) : null}
               </div>
             </div>
-          </div>
+          </CardHeader>
 
-          <div className="upcomingPanelBody">
+          <CardContent className="p-0">
             {upcomingLoading ? (
               <Loading label="Loading upcoming assignments…" />
             ) : filteredSorted.length === 0 ? (
@@ -714,22 +555,27 @@ export function UpcomingAssignments() {
                       </>
                     ) : null}
                     {" • "}
-                    <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                    <Badge
+                      variant={badge.variant === "danger" ? "destructive" : badge.variant === "success" ? "outline" : "secondary"}
+                      className={badge.variant === "success" ? "border-green-500 text-green-600 dark:text-green-400" : badge.variant === "warning" ? "border-amber-500 text-amber-600 dark:text-amber-400" : undefined}
+                    >
+                      {badge.label}
+                    </Badge>
                   </span>
                 );
 
                 const right = a.html_url ? (
-                  <a
-                    className="btn"
-                    href={a.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open assignment in Canvas"
-                    style={{ whiteSpace: "nowrap" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Open in Canvas
-                  </a>
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={a.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open assignment in Canvas"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open in Canvas
+                    </a>
+                  </Button>
                 ) : null;
 
                 return (
@@ -747,19 +593,12 @@ export function UpcomingAssignments() {
                             <div className="assignmentTitleRowLeft">
                               <span className="assignmentName">{a.name}</span>
 
-                              <span
-                                className={`badge badge${
-                                  badge.variant === "success"
-                                    ? "Success"
-                                    : badge.variant === "danger"
-                                    ? "Danger"
-                                    : badge.variant === "warning"
-                                    ? "Warn"
-                                    : "Neutral"
-                                }`}
+                              <Badge
+                                variant={badge.variant === "danger" ? "destructive" : badge.variant === "success" ? "outline" : "secondary"}
+                                className={badge.variant === "success" ? "border-green-500 text-green-600 dark:text-green-400" : badge.variant === "warning" ? "border-amber-500 text-amber-600 dark:text-amber-400" : undefined}
                               >
                                 {badge.label}
-                              </span>
+                              </Badge>
 
                               {typeof a.points_possible === "number" ? (
                                 <span className="muted assignmentPts">
@@ -833,15 +672,16 @@ export function UpcomingAssignments() {
                         </div>
 
                         {a.html_url ? (
-                          <a
-                            className="btn"
-                            href={a.html_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Open assignment in Canvas"
-                          >
-                            Open in Canvas
-                          </a>
+                          <Button variant="outline" size="sm" asChild>
+                            <a
+                              href={a.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open assignment in Canvas"
+                            >
+                              Open in Canvas
+                            </a>
+                          </Button>
                         ) : null}
                       </div>
                     </div>
@@ -850,25 +690,25 @@ export function UpcomingAssignments() {
               })}
             </ul>
           )}
-        </div>
+          </CardContent>
 
-        <div className="upcomingPanelFooter muted">
-          Tip: effort estimates are stored locally in your browser (per
-          assignment).
-        </div>
-      </div>
+          <CardFooter className="text-xs text-muted-foreground border-t py-2">
+            Tip: effort estimates are stored locally in your browser (per
+            assignment).
+          </CardFooter>
+        </Card>
       ) : null}
 
       {/* === Undated assignments section (show when filtering by undated OR when mode is "all") === */}
       {filterMode === "undated" || filterMode === "all" ? (
-        <div className="upcomingPanel">
-          <div className="upcomingPanelHeader">
-            <div className="upcomingPanelHeaderLeft">
-              <div className="upcomingPanelTitle">
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-3 border-b">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
                 Undated assignments
-                <span className="upcomingPanelCount mono">
+                <Badge variant="secondary" className="font-mono">
                   {filterMode === "undated" ? filteredSorted.length : undatedSorted.length}
-                </span>
+                </Badge>
               </div>
 
               <div className="muted">
@@ -878,9 +718,9 @@ export function UpcomingAssignments() {
                 ) : null}
               </div>
             </div>
-          </div>
+          </CardHeader>
 
-          <div className="upcomingPanelBody">
+          <CardContent className="p-0">
             {(undatedQ.loading || undatedQ.data == null) && !undatedQ.error ? (
               <Loading label="Loading assignments…" />
             ) : (filterMode === "undated" ? filteredSorted : undatedSorted).length === 0 ? (
@@ -924,19 +764,12 @@ export function UpcomingAssignments() {
                               <div className="assignmentTitleRowLeft">
                                 <span className="assignmentName">{a.name}</span>
 
-                                <span
-                                  className={`badge badge${
-                                    badge.variant === "success"
-                                      ? "Success"
-                                      : badge.variant === "danger"
-                                      ? "Danger"
-                                      : badge.variant === "warning"
-                                      ? "Warn"
-                                      : "Neutral"
-                                  }`}
+                                <Badge
+                                  variant={badge.variant === "danger" ? "destructive" : badge.variant === "success" ? "outline" : "secondary"}
+                                  className={badge.variant === "success" ? "border-green-500 text-green-600 dark:text-green-400" : badge.variant === "warning" ? "border-amber-500 text-amber-600 dark:text-amber-400" : undefined}
                                 >
                                   {badge.label}
-                                </span>
+                                </Badge>
 
                                 {typeof a.points_possible === "number" ? (
                                   <span className="muted assignmentPts">
@@ -998,15 +831,16 @@ export function UpcomingAssignments() {
 
                         {a.html_url ? (
                           <div className="assignmentActions" style={{ minWidth: 0 }}>
-                            <a
-                              className="btn"
-                              href={a.html_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Open assignment in Canvas"
-                            >
-                              Open in Canvas
-                            </a>
+                            <Button variant="outline" size="sm" asChild>
+                              <a
+                                href={a.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Open assignment in Canvas"
+                              >
+                                Open in Canvas
+                              </a>
+                            </Button>
                           </div>
                         ) : null}
                       </div>
@@ -1015,13 +849,13 @@ export function UpcomingAssignments() {
                 })}
               </ul>
             )}
-          </div>
+          </CardContent>
 
-          <div className="upcomingPanelFooter muted">
+          <CardFooter className="text-xs text-muted-foreground border-t py-2">
             Tip: effort estimates are stored locally in your browser (per
             assignment).
-          </div>
-        </div>
+          </CardFooter>
+        </Card>
       ) : null}
     </div>
   );

@@ -8,6 +8,10 @@ import {
   setEstimateHours,
   getEffortSnapMinutes,
 } from "../lib/workloadEstimates";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 
 // remaining hours helper (formats to minutes when less than 1 hour, otherwise hours with 1 decimal)
 function fmtRemaining(hrs) {
@@ -413,9 +417,8 @@ export function WorkloadEstimateControl({
                 flexWrap: "wrap",
               }}
             >
-              <input
+              <Input
                 ref={inlineEstimateRef}
-                className="effortInput"
                 type="number"
                 min="0"
                 step="0.25"
@@ -438,24 +441,26 @@ export function WorkloadEstimateControl({
                 style={{ width: 160 }}
               />
 
-              <button
+              <Button
                 type="button"
-                className="btn"
+                variant="outline"
+                size="sm"
                 onClick={applyInlineEstimate}
               >
                 Apply
-              </button>
+              </Button>
 
-              <button
+              <Button
                 type="button"
-                className="btn"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setShowInlineEstimate(false);
                   setErr("");
                 }}
               >
                 Cancel
-              </button>
+              </Button>
 
               {err ? (
                 <div
@@ -467,8 +472,10 @@ export function WorkloadEstimateControl({
               ) : null}
             </div>
           ) : estimate <= 0 && !showInlineEstimate ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               className="effortCta"
               onClick={() => {
                 setOpen(false);
@@ -480,11 +487,11 @@ export function WorkloadEstimateControl({
               style={{ margin: "0 auto" }}
             >
               {compactLabels ? "Set estimated hours" : "Set estimated hours"}
-            </button>
+            </Button>
           ) : null}
 
           {!compactComplete && isComplete ? (
-            <span className="effortDone">Complete</span>
+            <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400">Complete</Badge>
           ) : null}
         </div>
 
@@ -519,7 +526,7 @@ export function WorkloadEstimateControl({
               checked={true}
               onChange={(e) => setCompletedChecked(e.target.checked)}
             />
-            <span className="effortDone">Completed</span>
+            <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400">Completed</Badge>
           </label>
         </div>
       ) : (
@@ -587,7 +594,7 @@ export function WorkloadEstimateControl({
         gap={10}
         width={420}
       >
-        <div className="effortPopover">
+        <Card className="effortPopover">
           <div className="effortPopoverHeader">
             <div style={{ fontWeight: 900 }}>
               {compactLabels ? "Effort" : "Estimated hours & tracking"}
@@ -602,13 +609,12 @@ export function WorkloadEstimateControl({
             </button>
           </div>
 
-          <div className="effortPopoverBody">
+          <CardContent className="effortPopoverBody pt-0">
             {/* ---- Estimate editor ---- */}
             <div className="effortField">
               <div className="effortFieldLabel">Estimated hours</div>
               <div className="effortFieldRow">
-                <input
-                  className="effortInput"
+                <Input
                   type="number"
                   min="0"
                   step="0.25"
@@ -627,13 +633,13 @@ export function WorkloadEstimateControl({
                 />
                 <span className="muted">hours</span>
 
-                <button
-                  type="button"
-                  className="btn effortApplyBtn"
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={applyEstimate}
                 >
                   Apply
-                </button>
+                </Button>
               </div>
 
               {err ? (
@@ -653,50 +659,53 @@ export function WorkloadEstimateControl({
                 className="effortFieldRow"
                 style={{ flexWrap: "wrap", gap: 8 }}
               >
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={() => doAddCompleted(snapStep)}
                   title={`+${snapStep}h`}
                   disabled={estimate <= 0}
                 >
                   +{fmtRemaining(snapStep)}
-                </button>
+                </Button>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={() => doAddCompleted(0.5)}
                   title="+0.5h"
                   disabled={estimate <= 0}
                 >
                   +30m
-                </button>
+                </Button>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={() => doAddCompleted(1)}
                   title="+1h"
                   disabled={estimate <= 0}
                 >
                   +1h
-                </button>
+                </Button>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={() => doAddCompleted(2)}
                   title="+2h"
                   disabled={estimate <= 0}
                 >
                   +2h
-                </button>
+                </Button>
               </div>
 
               <div className="effortFieldRow" style={{ marginTop: 10 }}>
-                <input
-                  className="effortInput"
+                <Input
                   type="number"
                   min="0"
                   step="0.25"
@@ -718,9 +727,10 @@ export function WorkloadEstimateControl({
                 />
                 <span className="muted">hours</span>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
                     const v = Number(addHoursDraft);
                     if (!Number.isFinite(v) || v === 0) return;
@@ -731,25 +741,26 @@ export function WorkloadEstimateControl({
                   title="Add to completed hours"
                 >
                   Add
-                </button>
+                </Button>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={resetProgress}
                   disabled={completed <= 0}
                   title="Reset completed hours to 0"
                 >
                   Reset progress
-                </button>
+                </Button>
               </div>
 
               <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
                 Drag the bar to set completed hours (snaps to {fmtRemaining(snapStep)}).
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </AnchoredPopover>
     </div>
   );

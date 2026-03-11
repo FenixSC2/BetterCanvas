@@ -1,5 +1,6 @@
 // SettingsModal.jsx
 import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { useTheme } from "../theme/useTheme";
 import {
   getEffortSnapMinutes,
@@ -7,6 +8,18 @@ import {
 } from "../lib/workloadEstimates";
 import { useAuth } from "../hooks/useAuth";
 import { canvasApi } from "../api/canvasApi";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 const THEME_OPTIONS = [
   { key: "classic", label: "Classic", desc: "Clean light theme" },
@@ -90,24 +103,6 @@ export function SettingsModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [hideLoading, setHideLoading] = useState(null); // track which assignment is being hidden
 
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
-
   // Refresh effort drafts when opening modal
   useEffect(() => {
     if (!open) return;
@@ -150,8 +145,6 @@ export function SettingsModal({
     ],
     [],
   );
-
-  if (!open) return null;
 
   function applySnap() {
     // sanitize: integer minutes, min 1
@@ -287,78 +280,60 @@ export function SettingsModal({
   }
 
   return (
-    <div className="modalOverlay" onMouseDown={onClose} role="presentation">
-      <div
-        className="modalPanel"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Settings"
-        onMouseDown={(e) => e.stopPropagation()}
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-3xl max-h-[90vh] p-0 overflow-hidden flex flex-col"
       >
-        <div className="modalHeader">
+        <DialogHeader className="flex-row items-start justify-between space-y-0 px-6 pt-6 pb-4 shrink-0">
           <div>
-            <div className="h2">Settings</div>
-            <div className="muted">
+            <DialogTitle className="text-lg font-semibold">Settings</DialogTitle>
+            <DialogDescription>
               Customize how CanvAssist looks and feels.
-            </div>
+            </DialogDescription>
           </div>
-
-          <button
+          <Button
             type="button"
-            className="iconBtn"
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="Close settings"
+            className="-mt-1 -mr-2"
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <path
-                d="M18 6 6 18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <path
-                d="M6 6l12 12"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </div>
+            <X className="h-4 w-4" />
+          </Button>
+        </DialogHeader>
 
-        <div className="modalBody">
-          <aside className="settingsNav">
+        <div className="flex flex-1 overflow-hidden px-6 pb-6 gap-6 min-h-0">
+          {/* Sidebar nav */}
+          <aside className="flex flex-col gap-1 w-48 shrink-0">
             {sections.map((s) => (
-              <button
+              <Button
                 key={s.key}
                 type="button"
-                className={`settingsNavItem ${activeSection === s.key ? "active" : ""}`}
+                variant="ghost"
+                className={`w-full justify-start font-normal ${activeSection === s.key ? "bg-accent font-medium" : ""}`}
                 onClick={() => setActiveSection(s.key)}
                 disabled={!!s.disabled}
               >
                 {s.label}
-                {s.disabled ? <span className="pill">Soon</span> : null}
-              </button>
+                {s.disabled ? (
+                  <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
+                ) : null}
+              </Button>
             ))}
           </aside>
 
-          <section className="settingsContent">
+          {/* Content area */}
+          <section className="flex-1 min-w-0 overflow-y-auto">
             {activeSection === "general" ? (
-              <div className="stack">
-                <div className="card">
-                  <div className="cardBody">
-                    <div className="settingsSectionHeader">
-                      <div className="h3">Color palette</div>
-                      <div className="muted">Applies across every tab.</div>
+              <div className="flex flex-col gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold">Color palette</p>
+                      <p className="text-sm text-muted-foreground">Applies across every tab.</p>
                     </div>
-
                     <div className="settingsGrid">
                       {THEME_OPTIONS.map((opt) => (
                         <button
@@ -378,19 +353,17 @@ export function SettingsModal({
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
 
-                <div className="card">
-                  <div className="cardBody">
-                    <div className="settingsSectionHeader">
-                      <div className="h3">Visual density</div>
-                      <div className="muted">
-                        Adjusts text size and spacing globally. (Expandable "how
-                        much to show" can be tuned later per-tab.)
-                      </div>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold">Visual density</p>
+                      <p className="text-sm text-muted-foreground">
+                        Adjusts text size and spacing globally.
+                      </p>
                     </div>
-
                     <div className="segmented">
                       {DENSITY_OPTIONS.map((opt) => (
                         <button
@@ -404,18 +377,17 @@ export function SettingsModal({
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
 
-                <div className="card">
-                  <div className="cardBody">
-                    <div className="settingsSectionHeader">
-                      <div className="h3">Weekly Planner</div>
-                      <div className="muted">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold">Weekly Planner</p>
+                      <p className="text-sm text-muted-foreground">
                         Choose how the calendar displays days in the weekly planner.
-                      </div>
+                      </p>
                     </div>
-
                     <div className="segmented">
                       <button
                         type="button"
@@ -453,25 +425,22 @@ export function SettingsModal({
                         <div className="segmentedDesc">Monday–Sunday of the selected week</div>
                       </button>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
 
-                <div className="card">
-                  <div className="cardBody">
-                    <div className="settingsSectionHeader">
-                      <div className="h3">Effort</div>
-                      <div className="muted">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold">Effort</p>
+                      <p className="text-sm text-muted-foreground">
                         Controls how the progress bar snaps when you drag it.
-                      </div>
+                      </p>
                     </div>
-
-                    <div className="rowWrap" style={{ alignItems: "center" }}>
-                      <div style={{ minWidth: 220, fontWeight: 800 }}>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="min-w-[220px] text-sm font-bold">
                         Drag snapping increment
-                      </div>
-
-                      <input
-                        className="effortInput"
+                      </span>
+                      <Input
                         type="text"
                         inputMode="numeric"
                         value={snapDraft}
@@ -482,65 +451,55 @@ export function SettingsModal({
                             applySnap();
                           }
                         }}
-                        style={{ width: 120 }}
+                        className="w-24"
                       />
-                      <span className="muted">minutes</span>
-
-                      <button type="button" className="btn" onClick={applySnap}>
+                      <span className="text-sm text-muted-foreground">minutes</span>
+                      <Button type="button" variant="outline" size="sm" onClick={applySnap}>
                         Apply
-                      </button>
+                      </Button>
                     </div>
-
-                    <div className="muted" style={{ marginTop: 8 }}>
+                    <p className="text-sm text-muted-foreground mt-2">
                       Default: 10 minutes. Minimum: 1 minute.
-                    </div>
-                  </div>
-                </div>
+                    </p>
+                  </CardContent>
+                </Card>
               </div>
             ) : activeSection === "hidden" ? (
-              <div className="stack">
-                <div className="card">
-                  <div className="cardBody">
-                    <div className="settingsSectionHeader">
-                      <div className="h3">Hidden assignments</div>
-                      <div className="muted">
+              <div className="flex flex-col gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold">Hidden assignments</p>
+                      <p className="text-sm text-muted-foreground">
                         Assignments you've hidden won't appear in missing counts or be flagged as missing across all tabs.
-                      </div>
+                      </p>
                     </div>
 
                     {!user || demoMode ? (
-                      <div className="muted">Sign in to manage hidden assignments.</div>
+                      <p className="text-sm text-muted-foreground">Sign in to manage hidden assignments.</p>
                     ) : hiddenLoading ? (
-                      <div className="muted">Loading...</div>
+                      <p className="text-sm text-muted-foreground">Loading...</p>
                     ) : (
                       <>
                         {/* Add/hide new assignments */}
-                        <div style={{ marginBottom: 20 }}>
-                          <div className="muted" style={{ marginBottom: 8, fontWeight: 600 }}>
+                        <div className="mb-5">
+                          <p className="text-sm font-semibold text-muted-foreground mb-2">
                             Search and hide assignments
-                          </div>
-                          <input
+                          </p>
+                          <Input
                             type="text"
                             placeholder="Search by assignment name..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "8px 12px",
-                              marginBottom: 8,
-                              border: "1px solid var(--border)",
-                              borderRadius: "4px",
-                              fontSize: "var(--fontBase)",
-                            }}
+                            className="mb-2"
                           />
-                          
-                          <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                          <div className="max-h-[250px] overflow-y-auto rounded-md border">
                             {candidatesForHiding.length === 0 ? (
-                              <div className="muted" style={{ padding: 12 }}>
+                              <p className="text-sm text-muted-foreground p-3">
                                 All assignments are already submitted or no candidates found.
-                              </div>
+                              </p>
                             ) : (
-                              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                              <ul className="divide-y">
                                 {candidatesForHiding
                                   .filter((a) =>
                                     a.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -553,44 +512,43 @@ export function SettingsModal({
                                     );
                                     const isLoading = hideLoading === `${a.course_id}:${a.id}`;
                                     const badge = getAssignmentBadge(a);
-                                    const badgeClass =
+                                    const badgeVariant =
                                       badge.variant === "danger"
-                                        ? "badgeDanger"
-                                        : badge.variant === "warning"
-                                        ? "badgeWarn"
-                                        : "badgeNeutral";
-                                    
+                                        ? "destructive"
+                                        : "secondary";
+                                    const badgeClassName =
+                                      badge.variant === "warning"
+                                        ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                                        : undefined;
+
                                     return (
                                       <li
                                         key={`${a.course_id}:${a.id}`}
-                                        style={{
-                                          padding: "12px",
-                                          borderBottom: "1px solid var(--border)",
-                                          display: "flex",
-                                          justifyContent: "space-between",
-                                          alignItems: "flex-start",
-                                          gap: "12px",
-                                        }}
+                                        className="flex items-start justify-between gap-3 p-3"
                                       >
-                                        <div style={{ flexGrow: 1 }}>
-                                          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                                            <div style={{ fontWeight: 500 }}>{a.name}</div>
-                                            <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-sm font-medium truncate">{a.name}</span>
+                                            <Badge
+                                              variant={badge.variant === "warning" ? "outline" : badgeVariant}
+                                              className={badgeClassName}
+                                            >
+                                              {badge.label}
+                                            </Badge>
                                           </div>
-                                          <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                                            {a.course_name}
-                                          </div>
+                                          <p className="text-xs text-muted-foreground">{a.course_name}</p>
                                         </div>
                                         {!isHidden && (
-                                          <button
+                                          <Button
                                             type="button"
-                                            className="btn"
+                                            variant="outline"
+                                            size="sm"
                                             onClick={() => handleHideAssignment(a.course_id, a.id)}
                                             disabled={isLoading}
-                                            style={{ marginTop: "4px", whiteSpace: "nowrap", flexShrink: 0 }}
+                                            className="shrink-0 mt-1"
                                           >
                                             {isLoading ? "Hiding..." : "Hide"}
-                                          </button>
+                                          </Button>
                                         )}
                                       </li>
                                     );
@@ -603,63 +561,51 @@ export function SettingsModal({
                         {/* Manage hidden assignments */}
                         {hiddenAssignments.length > 0 && (
                           <div>
-                            <div className="muted" style={{ marginBottom: 8, fontWeight: 600 }}>
+                            <p className="text-sm font-semibold text-muted-foreground mb-2">
                               Hidden assignments ({hiddenAssignments.length})
-                            </div>
-                            <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                            </p>
+                            <div className="max-h-[250px] overflow-y-auto rounded-md border">
+                              <ul className="divide-y">
                                 {hiddenAssignments.map((h) => {
                                   const assignmentId = getAssignmentId(h);
                                   const isLoading = hideLoading === `${h.course_id}:${assignmentId}`;
                                   const badge = getAssignmentBadge(h);
-                                  const badgeClass =
+                                  const badgeVariant =
                                     badge.variant === "danger"
-                                      ? "badgeDanger"
-                                      : badge.variant === "warning"
-                                      ? "badgeWarn"
-                                      : "badgeNeutral";
-                                  
+                                      ? "destructive"
+                                      : "secondary";
+                                  const badgeClassName =
+                                    badge.variant === "warning"
+                                      ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                                      : undefined;
+
                                   return (
                                     <li
                                       key={`${h.course_id}:${assignmentId}`}
-                                      style={{
-                                        padding: "12px",
-                                        borderBottom: "1px solid var(--border)",
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "flex-start",
-                                        gap: "12px",
-                                      }}
+                                      className="flex items-start justify-between gap-3 p-3"
                                     >
-                                      <div style={{ flexGrow: 1 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                                          <div style={{ fontWeight: 500 }}>
-                                            {h.name}
-                                          </div>
-                                          <span className={`badge ${badgeClass}`}>{badge.label}</span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-sm font-medium truncate">{h.name}</span>
+                                          <Badge
+                                            variant={badge.variant === "warning" ? "outline" : badgeVariant}
+                                            className={badgeClassName}
+                                          >
+                                            {badge.label}
+                                          </Badge>
                                         </div>
-                                        <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                                          {h.course_name}
-                                        </div>
+                                        <p className="text-xs text-muted-foreground">{h.course_name}</p>
                                       </div>
-                                      <button
+                                      <Button
                                         type="button"
-                                        className="btn"
-                                        onClick={() =>
-                                          handleUnhideAssignment(h.course_id, assignmentId)
-                                        }
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleUnhideAssignment(h.course_id, assignmentId)}
                                         disabled={isLoading}
-                                        style={{
-                                          marginTop: "4px",
-                                          whiteSpace: "nowrap",
-                                          flexShrink: 0,
-                                          background: "var(--badge-success-bg)",
-                                          color: "var(--badge-success-text)",
-                                          border: "1px solid var(--badge-success-border)",
-                                        }}
+                                        className="shrink-0 mt-1 border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
                                       >
                                         {isLoading ? "Unhiding..." : "Unhide"}
-                                      </button>
+                                      </Button>
                                     </li>
                                   );
                                 })}
@@ -669,95 +615,74 @@ export function SettingsModal({
                         )}
                       </>
                     )}
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               </div>
             ) : activeSection === "account" ? (
-              <div className="card">
-                <div className="cardBody">
-                  <div className="h3">Account</div>
-                  <div className="muted" style={{ marginBottom: 16 }}>
-                    {user ? `Signed in as ${user.email}` : "Not signed in"}
+              <Card>
+                <CardContent className="pt-6 flex flex-col gap-4">
+                  <div>
+                    <p className="text-sm font-semibold">Account</p>
+                    <p className="text-sm text-muted-foreground">
+                      {user ? `Signed in as ${user.email}` : "Not signed in"}
+                    </p>
                   </div>
 
-                  <div style={{ marginBottom: 20 }}>
-                    <div
-                      style={{
-                        fontSize: "var(--fontSm)",
-                        fontWeight: 600,
-                        marginBottom: 8,
-                        color: "var(--text)",
-                      }}
-                    >
-                      Canvas Token
-                    </div>
-                    <p
-                      style={{
-                        fontSize: "var(--fontSm)",
-                        color: "var(--muted)",
-                        marginBottom: 12,
-                      }}
-                    >
+                  <div>
+                    <p className="text-sm font-semibold mb-1">Canvas Token</p>
+                    <p className="text-sm text-muted-foreground mb-3">
                       Manage your Canvas API token for this application.
                     </p>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
+                    <div className="flex gap-2">
+                      <Button
                         type="button"
-                        className="btn"
+                        variant="outline"
+                        size="sm"
                         onClick={handleEditToken}
                         disabled={tokenLoading || (demoMode && !user)}
                       >
                         Edit Token
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
-                        className="btn"
+                        variant="destructive"
+                        size="sm"
                         onClick={handleRevokeToken}
                         disabled={tokenLoading || (demoMode && !user)}
-                        style={{
-                          background: "var(--badge-danger-bg)",
-                          color: "var(--badge-danger-text)",
-                          border: "1px solid var(--badge-danger-border)",
-                        }}
                       >
                         {tokenLoading ? "Revoking..." : "Revoke"}
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
-                  <hr
-                    style={{ margin: "16px 0", borderColor: "var(--border)" }}
-                  />
+                  <Separator />
 
-                  <button
+                  <Button
                     type="button"
-                    className="btn"
+                    variant="destructive"
+                    size="sm"
+                    className="self-start"
                     onClick={handleAuthAction}
-                    style={{
-                      background: "var(--badge-danger-bg)",
-                      color: "var(--badge-danger-text)",
-                      border: "1px solid var(--badge-danger-border)",
-                    }}
                   >
                     {demoMode && !user ? "Sign in" : "Sign out"}
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </CardContent>
+              </Card>
             ) : (
-              <div className="card">
-                <div className="cardBody">
-                  <div className="h3">Coming soon</div>
-                  <div className="muted">
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-sm font-semibold">Coming soon</p>
+                  <p className="text-sm text-muted-foreground mt-1">
                     This section is a placeholder so we have room to add
                     settings like notification rules, GPA visibility, and other
                     toggles later.
-                  </div>
-                </div>
-              </div>
+                  </p>
+                </CardContent>
+              </Card>
             )}
           </section>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

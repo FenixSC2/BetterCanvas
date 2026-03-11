@@ -1,5 +1,10 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function Login({ onViewDemo }) {
   const { login, error, loading, clearError } = useAuth();
@@ -31,83 +36,91 @@ export function Login({ onViewDemo }) {
   }
 
   return (
-    <div className="authContainer">
-      <div className="authPanel">
-        <h1 className="authTitle">CanvAssist</h1>
-        <p className="authSubtitle">Sign in to your account</p>
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl">CanvAssist</CardTitle>
+          <CardDescription>Sign in to your account</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {(error || localError) && (
+            <Alert variant="destructive">
+              <AlertDescription>{error || localError}</AlertDescription>
+            </Alert>
+          )}
 
-        {(error || localError) && (
-          <div className="authError" style={{ marginBottom: "16px" }}>
-            {error || localError}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="authForm">
-          <div className="authField">
-            <label>Email address</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              placeholder="your@email.com"
-              className="authInput"
-            />
-          </div>
-
-          <div className="authField">
-            <label>Password</label>
-            <div className="authInputRow">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
-                placeholder="••••••••"
-                className="authInput authInputWithButton"
+                placeholder="your@email.com"
               />
-              <button
-                type="button"
-                className="authInputButton"
-                onClick={() => setShowPassword((prev) => !prev)}
-                disabled={loading}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password">Password</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  placeholder="••••••••"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  disabled={loading}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </Button>
+              </div>
+            </div>
+
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
+
+          <div className="flex flex-col items-center gap-3 pt-2">
+            <p className="text-sm text-muted-foreground">Or try the demo first:</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleMockMode}
+              className="w-full"
+            >
+              View Mock Data
+            </Button>
           </div>
 
-          <button type="submit" disabled={loading} className="authButton">
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-
-        <div style={{ margin: "16px 0", textAlign: "center" }}>
-          <div style={{ fontSize: "var(--fontSm)", color: "var(--muted)", marginBottom: "12px" }}>
-            Or try the demo first:
-          </div>
-          <button
-            type="button"
-            onClick={handleMockMode}
-            className="authButton authButtonSecondary"
-          >
-            View Mock Data
-          </button>
-        </div>
-
-        <div className="authFooter">
-          <span>Don't have an account? </span>
-          <a href="#" onClick={(e) => {
-            e.preventDefault();
-            clearError();
-            window.location.hash = '#register';
-          }} className="authLink">
-            Sign up
-          </a>
-        </div>
-      </div>
+          <p className="text-center text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                clearError();
+                window.location.hash = "#register";
+              }}
+            >
+              Sign up
+            </Button>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

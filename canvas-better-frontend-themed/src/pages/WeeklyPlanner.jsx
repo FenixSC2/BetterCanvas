@@ -11,6 +11,9 @@ import {
   getEffortState,
   setCompletedHours,
 } from "../lib/workloadEstimates";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 /* ---------------- UI tuning knobs ---------------- */
 const UI = {
@@ -320,7 +323,9 @@ function ScrollableDayList({ children, style, className = "" }) {
 
       {/* buttons */}
       {canUp ? (
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           type="button"
           className="plannerScrollBtn up"
           onClick={scrollToTop}
@@ -329,11 +334,13 @@ function ScrollableDayList({ children, style, className = "" }) {
           style={btnStyle("top")}
         >
           <DoubleChevronIcon direction="up" />
-        </button>
+        </Button>
       ) : null}
 
       {canDown ? (
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           type="button"
           className="plannerScrollBtn down"
           onClick={scrollToBottom}
@@ -342,7 +349,7 @@ function ScrollableDayList({ children, style, className = "" }) {
           style={btnStyle("bottom")}
         >
           <DoubleChevronIcon direction="down" />
-        </button>
+        </Button>
       ) : null}
 
       {/* ONLY scrolling element */}
@@ -1085,9 +1092,9 @@ export function WeeklyPlanner() {
 
   // ---- One badge rule helper ----
   function renderSingleStatusBadge({ missing, submitted, complete }) {
-    if (missing) return <span className="badge badgeDanger">Missing</span>;
-    if (submitted) return <span className="badge badgeSuccess">Submitted</span>;
-    if (complete) return <span className="badge badgeNeutral">Complete</span>;
+    if (missing) return <Badge variant="destructive">Missing</Badge>;
+    if (submitted) return <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400">Submitted</Badge>;
+    if (complete) return <Badge variant="secondary">Complete</Badge>;
     return null;
   }
 
@@ -1520,8 +1527,9 @@ export function WeeklyPlanner() {
             </div>
 
             <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
-              <button
-                className="btn"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
                     setNext7Start((d) => addDays(d, -7));
@@ -1531,9 +1539,10 @@ export function WeeklyPlanner() {
                 }}
               >
                 ← Prev
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
                     setNext7Start(startOfDay(new Date()));
@@ -1543,9 +1552,10 @@ export function WeeklyPlanner() {
                 }}
               >
                 Today
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
                     setNext7Start((d) => addDays(d, 7));
@@ -1555,14 +1565,15 @@ export function WeeklyPlanner() {
                 }}
               >
                 Next →
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => plannerQ.refresh()}
                 title="Refresh from Canvas"
               >
                 Refresh
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -1880,15 +1891,17 @@ export function WeeklyPlanner() {
                                       <span className="mono">{s.dateISO}</span>
                                     </div>
 
-                                    <button
-                                      className="btn btnDanger"
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
                                       onClick={() => removeSplit(s.id)}
                                     >
                                       Remove
-                                    </button>
+                                    </Button>
 
-                                    <button
-                                      className="btn"
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
                                       onClick={() =>
                                         navigateToAssignment(
                                           s.courseId,
@@ -1897,7 +1910,7 @@ export function WeeklyPlanner() {
                                       }
                                     >
                                       View assignment
-                                    </button>
+                                    </Button>
                                   </div>
                                 </div>
                               </div>
@@ -2039,8 +2052,9 @@ export function WeeklyPlanner() {
                                       flexWrap: "nowrap",
                                     }}
                                   >
-                                    <button
-                                      className="btn"
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
                                       onClick={(e) => openSplitPopover(e, a)}
                                       disabled={!canSplit}
                                       title={
@@ -2059,10 +2073,11 @@ export function WeeklyPlanner() {
                                       }}
                                     >
                                       Split
-                                    </button>
+                                    </Button>
 
-                                    <button
-                                      className="btn"
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
                                       onClick={() =>
                                         navigateToAssignment(a.course_id, a.id)
                                       }
@@ -2077,7 +2092,7 @@ export function WeeklyPlanner() {
                                       }}
                                     >
                                       View
-                                    </button>
+                                    </Button>
                                   </div>
 
                                   {!hasEstimate ? (
@@ -2214,14 +2229,15 @@ export function WeeklyPlanner() {
                                 flexWrap: "wrap",
                               }}
                             >
-                              <button
-                                className="btn"
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() =>
                                   navigateToAssignment(a.course_id, a.id)
                                 }
                               >
                                 View assignment
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -2339,14 +2355,15 @@ export function WeeklyPlanner() {
                 />
                 <span className="muted">hours</span>
 
-                <button
+                <Button
                   type="button"
-                  className="btn"
+                  variant="outline"
+                  size="sm"
                   onClick={applySplitFromPopover}
                   disabled={!splitPopCanApply}
                 >
                   Apply
-                </button>
+                </Button>
               </div>
               <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
                 Completing a split will add those hours to “completed effort”.
@@ -2396,12 +2413,13 @@ export function WeeklyPlanner() {
                       </div>
                     </div>
 
-                    <button
-                      className="btn"
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => navigateToAssignment(a.course_id, a.id)}
                     >
                       View
-                    </button>
+                    </Button>
                   </li>
                 );
               })}
@@ -2423,8 +2441,9 @@ export function WeeklyPlanner() {
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <button
-              className="btn btnDanger"
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => {
                 const ok = window.confirm(
                   "Reset planner cache?\n\nThis will:\n- Delete all split cards\n- Clear planner settings\n- Clear ALL effort/workload estimates stored in this browser\n\nThis cannot be undone.",
@@ -2463,7 +2482,7 @@ export function WeeklyPlanner() {
               }}
             >
               Reset cache (deletes splits + effort)
-            </button>
+            </Button>
           </div>
         </div>
       </div>

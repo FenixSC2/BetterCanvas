@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     Helvetica, Arial;
@@ -6,7 +8,7 @@
   /* ===== Theme tokens (defaults = classic) ===== */
   --bg: #f6f7fb;
   --text: #111;
-  --muted: rgba(0, 0, 0, 0.65);
+  --muted-foreground: rgba(0, 0, 0, 0.65);
   --surface: #ffffff;
   --surface2: #fafafe;
   --border: #e6e7ef;
@@ -53,13 +55,36 @@
   --interactive-active-scale: 0.98;
   --interactive-focus-ring: 0 0 0 3px
     color-mix(in srgb, var(--text), transparent 78%);
+
+  /* ===== shadcn/ui token bridge =====
+     Maps shadcn's expected CSS variable names to our existing tokens.
+     Because these use var() references, they cascade automatically when
+     a data-theme block overrides --bg, --surface, --surface2, etc. */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: #5098f8;
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface2);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface2);
+  --accent: var(--surface2);
+  --accent-foreground: var(--text);
+  --destructive: rgba(200, 40, 40, 0.9);
+  --destructive-foreground: #ffffff;
+  --input: var(--surface);
+  --ring: rgba(80, 152, 248, 0.4);
+  --radius: var(--radiusMd);
 }
 
 /* ===== Theme variants ===== */
 html[data-theme="midnight"] {
   --bg: #0b1020;
   --text: #eef0f7;
-  --muted: rgba(238, 240, 247, 0.7);
+  --muted-foreground: rgba(238, 240, 247, 0.7);
   --surface: #121a33;
   --surface2: #0e1630;
   --border: rgba(238, 240, 247, 0.12);
@@ -71,7 +96,7 @@ html[data-theme="midnight"] {
 html[data-theme="ocean"] {
   --bg: #eef6ff;
   --text: #0a1b33;
-  --muted: rgba(10, 27, 51, 0.66);
+  --muted-foreground: rgba(10, 27, 51, 0.66);
   --surface: #ffffff;
   --surface2: #f4faff;
   --border: #d9e7ff;
@@ -82,7 +107,7 @@ html[data-theme="ocean"] {
 html[data-theme="forest"] {
   --bg: #0d110cf2;
   --text: #dbe2c9;
-  --muted: rgba(163, 179, 153, 0.7);
+  --muted-foreground: rgba(163, 179, 153, 0.7);
   --surface: #1b2418;
   --surface2: #242f20;
   --border: #2d3a28;
@@ -94,7 +119,7 @@ html[data-theme="forest"] {
 html[data-theme="cyber"] {
   --bg: #0c190c;
   --text: #11ff00;
-  --muted: rgba(38, 255, 0, 0.776);
+  --muted-foreground: rgba(38, 255, 0, 0.776);
   --surface: #060d06;
   --surface2: #19880023;
   --border: #9ecb9e;
@@ -106,7 +131,7 @@ html[data-theme="cyber"] {
 html[data-theme="rose"] {
   --bg: #fff1f4;
   --text: #2a0b12;
-  --muted: rgba(42, 11, 18, 0.62);
+  --muted-foreground: rgba(42, 11, 18, 0.62);
   --surface: #ffffff;
   --surface2: #fff7f9;
   --border: #ffd3dc;
@@ -117,7 +142,7 @@ html[data-theme="rose"] {
 html[data-theme="contrast"] {
   --bg: #000000;
   --text: #ffffff;
-  --muted: rgba(255, 255, 255, 0.78);
+  --muted-foreground: rgba(255, 255, 255, 0.78);
   --surface: #111111;
   --surface2: #0a0a0a;
   --border: rgba(255, 255, 255, 0.22);
@@ -129,7 +154,7 @@ html[data-theme="contrast"] {
 html[data-theme="frog"] {
   --bg: #5d8b50;
   --text: #0a3713;
-  --muted: #535d36;
+  --muted-foreground: #535d36;
   --surface: #ecffdc;
   --surface2: #e7fee2;
   --border: #0abe2e;
@@ -289,7 +314,7 @@ ol {
 }
 .brandSub {
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin-top: 2px;
 }
 
@@ -369,7 +394,7 @@ ol {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: var(--fontSm);
 }
 .mono {
@@ -613,7 +638,7 @@ details > summary::marker {
 .expandableSubtitle {
   margin-top: 2px;
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
@@ -872,7 +897,7 @@ details.expandable > .cardBody,
 }
 .segmentedDesc {
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin-top: 2px;
 }
 
@@ -1128,7 +1153,7 @@ details.expandable > .cardBody,
   border-radius: 999px;
   border: 1px dashed var(--border2);
   background: var(--surface2);
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
@@ -1797,7 +1822,7 @@ details.expandable > .cardBody,
 
 .authSubtitle {
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin-bottom: 24px;
 }
 
@@ -1860,7 +1885,7 @@ details.expandable > .cardBody,
   border: none;
   border-left: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
+  color: var(--muted-foreground);
   padding: 8px 12px;
   cursor: pointer;
   font-size: var(--fontSm);
@@ -1950,7 +1975,7 @@ details.expandable > .cardBody,
 
 .authHint {
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin: 4px 0 0 0;
 }
 
@@ -1969,7 +1994,7 @@ details.expandable > .cardBody,
 .authFooter {
   text-align: center;
   font-size: var(--fontSm);
-  color: var(--muted);
+  color: var(--muted-foreground);
   margin-top: 16px;
 }
 

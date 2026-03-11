@@ -5,6 +5,9 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { useCachedAsync } from "../hooks/useCachedAsync";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -258,14 +261,14 @@ export function MyCourses() {
       </div>
 
       {sorted.length > 0 ? (
-        <div className="card">
-          <div className="cardBody">
+        <Card>
+          <CardContent className="pt-6">
             <div className="row" style={{ alignItems: "center", gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div className="h3">Grade Visibility</div>
+                <p className="text-sm font-semibold">Grade Visibility</p>
                 <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                  {masterGradeState === "all-on" ? "All grades shown" : 
-                   masterGradeState === "all-off" ? "All grades hidden" : 
+                  {masterGradeState === "all-on" ? "All grades shown" :
+                   masterGradeState === "all-off" ? "All grades hidden" :
                    "Some grades shown, some hidden"}
                 </div>
               </div>
@@ -282,8 +285,8 @@ export function MyCourses() {
                 />
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {err ? <ErrorBox error={err} /> : null}
@@ -362,36 +365,15 @@ export function MyCourses() {
             <div className="stack">
               <div className="rowWrap">
                 {sylUrl ? (
-                  <a
-                    className="btn"
-                    href={sylUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Syllabus
-                  </a>
+                  <Button variant="outline" size="sm" asChild><a href={sylUrl} target="_blank" rel="noreferrer">Syllabus</a></Button>
                 ) : null}
 
                 {modUrl ? (
-                  <a
-                    className="btn"
-                    href={modUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Modules
-                  </a>
+                  <Button variant="outline" size="sm" asChild><a href={modUrl} target="_blank" rel="noreferrer">Modules</a></Button>
                 ) : null}
 
                 {courseUrl ? (
-                  <a
-                    className="btn"
-                    href={courseUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open Course in Canvas
-                  </a>
+                  <Button variant="outline" size="sm" asChild><a href={courseUrl} target="_blank" rel="noreferrer">Open Course in Canvas</a></Button>
                 ) : null}
               </div>
 
@@ -425,14 +407,7 @@ export function MyCourses() {
                       );
 
                       const right = a.html_url ? (
-                        <a
-                          className="btn"
-                          href={a.html_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open in Canvas
-                        </a>
+                        <Button variant="outline" size="sm" asChild><a href={a.html_url} target="_blank" rel="noreferrer">Open in Canvas</a></Button>
                       ) : null;
 
                       return (
@@ -501,7 +476,7 @@ export function MyCourses() {
                           }}
                         >
                           <span>{m.name || "Untitled assignment"}</span>
-                          <span className="badge badgeDanger">Missing</span>
+                          <Badge variant="destructive">Missing</Badge>
                         </span>
                       );
 
@@ -515,14 +490,7 @@ export function MyCourses() {
                       );
 
                       const right = m.html_url ? (
-                        <a
-                          className="btn"
-                          href={m.html_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open in Canvas
-                        </a>
+                        <Button variant="outline" size="sm" asChild><a href={m.html_url} target="_blank" rel="noreferrer">Open in Canvas</a></Button>
                       ) : null;
 
                       return (

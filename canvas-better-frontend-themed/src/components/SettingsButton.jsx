@@ -1,8 +1,12 @@
+import { Button } from "@/components/ui/button";
+
 export function SettingsButton({ onClick, className = "" }) {
   return (
-    <button
+    <Button
       type="button"
-      className={`iconBtn ${className}`.trim()}
+      variant="ghost"
+      size="icon"
+      className={className}
       onClick={onClick}
       aria-label="Open settings"
       title="Settings"
@@ -33,6 +37,6 @@ export function SettingsButton({ onClick, className = "" }) {
           />
         </g>
       </svg>
-    </button>
+    </Button>
   );
 }

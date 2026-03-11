@@ -1,5 +1,10 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function Register() {
   const { register, error, loading, clearError } = useAuth();
@@ -47,95 +52,108 @@ export function Register() {
   }
 
   return (
-    <div className="authContainer">
-      <div className="authPanel">
-        <h1 className="authTitle">CanvAssist</h1>
-        <p className="authSubtitle">Create your account</p>
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl">CanvAssist</CardTitle>
+          <CardDescription>Create your account</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {(error || localError) && (
+            <Alert variant="destructive">
+              <AlertDescription>{error || localError}</AlertDescription>
+            </Alert>
+          )}
 
-        {(error || localError) && (
-          <div className="authError" style={{ marginBottom: "16px" }}>
-            {error || localError}
-          </div>
-        )}
-
-        <form onSubmit={handleRegister} className="authForm">
-          <div className="authField">
-            <label>Email address</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              placeholder="your@email.com"
-              className="authInput"
-            />
-          </div>
-
-          <div className="authField">
-            <label>Password</label>
-            <div className="authInputRow">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+          <form onSubmit={handleRegister} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
-                placeholder="••••••••"
-                className="authInput authInputWithButton"
+                placeholder="your@email.com"
               />
-              <button
-                type="button"
-                className="authInputButton"
-                onClick={() => setShowPassword((prev) => !prev)}
-                disabled={loading}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
             </div>
-            <div className="authHint">At least 8 characters, including a letter and a number</div>
-          </div>
 
-          <div className="authField">
-            <label>Confirm password</label>
-            <div className="authInputRow">
-              <input
-                type={showConfirmPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={loading}
-                placeholder="••••••••"
-                className="authInput authInputWithButton"
-              />
-              <button
-                type="button"
-                className="authInputButton"
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
-                disabled={loading}
-                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-                aria-pressed={showConfirmPassword}
-              >
-                {showConfirmPassword ? "Hide" : "Show"}
-              </button>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password">Password</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  placeholder="••••••••"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  disabled={loading}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                At least 8 characters, including a letter and a number
+              </p>
             </div>
-          </div>
 
-          <button type="submit" disabled={loading} className="authButton">
-            {loading ? "Creating account..." : "Create account"}
-          </button>
-        </form>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="confirmPassword">Confirm password</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  placeholder="••••••••"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  disabled={loading}
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  aria-pressed={showConfirmPassword}
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </Button>
+              </div>
+            </div>
 
-        <div className="authFooter">
-          <span>Already have an account? </span>
-          <a href="#" onClick={(e) => {
-            e.preventDefault();
-            clearError();
-            window.location.hash = '#login';
-          }} className="authLink">
-            Sign in
-          </a>
-        </div>
-      </div>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Creating account..." : "Create account"}
+            </Button>
+          </form>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                clearError();
+                window.location.hash = "#login";
+              }}
+            >
+              Sign in
+            </Button>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

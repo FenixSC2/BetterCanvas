@@ -1,5 +1,6 @@
 // src/components/Expandable.jsx
 import { useEffect, useId, useState } from "react";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
 export function Expandable({
   title,
@@ -18,18 +19,24 @@ export function Expandable({
     setOpen(!!defaultOpen);
   }, [defaultOpen]);
 
-  function handleToggle(e) {
-    const isOpen = !!e.currentTarget.open;
+  function handleOpenChange(isOpen) {
     setOpen(isOpen);
-
     onToggle?.(isOpen);
     if (isOpen) onOpen?.();
     else onClose?.();
   }
 
   return (
-    <details className="card expandable" open={open} onToggle={handleToggle}>
-      <summary className="cardBody expandableSummary" aria-controls={id}>
+    <Collapsible
+      open={open}
+      onOpenChange={handleOpenChange}
+      className="card expandable"
+    >
+      <CollapsibleTrigger
+        type="button"
+        className="cardBody expandableSummary w-full text-left"
+        aria-controls={id}
+      >
         <div
           className="row"
           style={{
@@ -72,11 +79,13 @@ export function Expandable({
             </div>
           ) : null}
         </div>
-      </summary>
+      </CollapsibleTrigger>
 
-      <div className="cardBody expandableBody" id={id}>
-        {children}
-      </div>
-    </details>
+      <CollapsibleContent>
+        <div className="cardBody expandableBody" id={id}>
+          {children}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

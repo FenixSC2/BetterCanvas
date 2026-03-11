@@ -16,10 +16,13 @@ function readStored(key, fallback) {
   }
 }
 
+const DARK_THEMES = new Set(['midnight', 'contrast', 'cyber']);
+
 function applyToDocument({ theme, density }) {
   const root = document.documentElement;
   root.dataset.theme = theme;
   root.dataset.density = density;
+  root.classList.toggle('dark', DARK_THEMES.has(theme));
 }
 
 export function ThemeProvider({ children }) {

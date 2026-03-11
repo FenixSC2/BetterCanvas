@@ -16,6 +16,10 @@ import {
   notifyOnce,
 } from "../lib/notifications";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
 function fmtDue(dt) {
   if (!dt) return "No due date";
   const d = new Date(dt);
@@ -354,8 +358,8 @@ export function MyInformation() {
   return (
     <div className="stack">
       {/* Student card */}
-      <div className="card">
-        <div className="cardBody">
+      <Card>
+        <CardContent className="pt-6">
           <div className="row">
             {profile.avatar_url ? (
               <img className="avatar" src={profile.avatar_url} alt="avatar" />
@@ -395,8 +399,8 @@ export function MyInformation() {
               ) : null}
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Announcements */}
       <Expandable
@@ -408,20 +412,7 @@ export function MyInformation() {
             <span className="muted">
               {announcements.length} recent{" "}
               {newAnnouncementCount > 0 ? (
-                <span
-                  className="mono"
-                  style={{
-                    marginLeft: 10,
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    fontWeight: 700,
-                    background: "rgba(0, 200, 0, 0.15)",
-                    color: "rgb(0, 120, 0)",
-                  }}
-                  title="Unseen announcements"
-                >
-                  NEW: {newAnnouncementCount}
-                </span>
+                <Badge className="bg-green-100 text-green-700 dark:text-green-900 dark:text-green-300">NEW</Badge>
               ) : null}
             </span>
           ) : (
@@ -452,18 +443,7 @@ export function MyInformation() {
                   {isNew ? (
                     <>
                       {" • "}
-                      <span
-                        className="mono"
-                        style={{
-                          padding: "1px 6px",
-                          borderRadius: 999,
-                          fontWeight: 700,
-                          background: "rgba(0, 200, 0, 0.15)",
-                          color: "rgb(0, 120, 0)",
-                        }}
-                      >
-                        NEW
-                      </span>
+                      <Badge className="bg-green-100 text-green-700 dark:text-green-900 dark:text-green-300">NEW</Badge>
                     </>
                   ) : null}
                   {a.message ? (
@@ -477,16 +457,17 @@ export function MyInformation() {
               );
 
               const right = a.html_url ? (
-                <a
-                  className="btn"
-                  href={a.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => markAnnouncementSeen(a.id)}
-                  title="Open in Canvas"
-                >
-                  View in Canvas
-                </a>
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={a.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => markAnnouncementSeen(a.id)}
+                    title="Open in Canvas"
+                  >
+                    View in Canvas
+                  </a>
+                </Button>
               ) : null;
 
               return (
@@ -556,14 +537,15 @@ export function MyInformation() {
               );
 
               const right = a.html_url ? (
-                <a
-                  className="btn"
-                  href={a.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open in Canvas
-                </a>
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={a.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open in Canvas
+                  </a>
+                </Button>
               ) : null;
 
               return (
@@ -623,7 +605,7 @@ export function MyInformation() {
                     {trimCourseName(m.course_name) ?? `Course ${m.course_id}`}
                   </span>
                   {" • "}
-                  <span className="badge badgeDanger">Missing</span>
+                  <Badge variant="destructive">Missing</Badge>
                   {" • "}
                   Due: <span className="mono">{fmtDue(m.due_at)}</span>
                   {typeof m.points_possible === "number"
@@ -633,14 +615,15 @@ export function MyInformation() {
               );
 
               const right = m.html_url ? (
-                <a
-                  className="btn"
-                  href={m.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open in Canvas
-                </a>
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={m.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open in Canvas
+                  </a>
+                </Button>
               ) : null;
 
               return (
@@ -779,8 +762,8 @@ export function MyInformation() {
       </Expandable>
 
       {/* Notifications */}
-      <div className="card">
-        <div className="cardBody">
+      <Card>
+        <CardContent className="pt-6">
           <div className="h3">Desktop notifications</div>
 
           {!notif.supported ? (
@@ -798,12 +781,13 @@ export function MyInformation() {
 
               <div className="rowWrap" style={{ gap: 10 }}>
                 {notificationsOn ? (
-                  <button className="btn" onClick={handleDisableNotifications}>
+                  <Button variant="outline" size="sm" onClick={handleDisableNotifications}>
                     Disable notifications
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    className="btn"
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleEnableNotifications}
                     disabled={notif.permission === "denied"}
                     title={
@@ -813,19 +797,21 @@ export function MyInformation() {
                     }
                   >
                     Enable notifications
-                  </button>
+                  </Button>
                 )}
 
-                <button
-                  className="btn"
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => clearNotificationHistory()}
                   title="Allows alerts to fire again for the same assignments"
                 >
                   Reset alerts
-                </button>
+                </Button>
 
-                <button
-                  className="btn"
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={notif.permission !== "granted"}
                   onClick={() => {
                     notifyOnce({
@@ -843,7 +829,7 @@ export function MyInformation() {
                   }
                 >
                   Send test
-                </button>
+                </Button>
               </div>
 
               <div className="muted">
@@ -910,8 +896,8 @@ export function MyInformation() {
               </Expandable>
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="muted">
         Tip: this tab uses <span className="mono">GET /api/profile</span>,{" "}
