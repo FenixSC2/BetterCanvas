@@ -1,0 +1,33 @@
+# Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local development database (never deploy to EB)
+canvas_better.db
+canvas_better.db-shm
+canvas_better.db-wal
+
+# Local encryption key file (use EB env var TOKEN_ENCRYPTION_KEY instead)
+.token_encryption_key
+
+# Environment files (set these as EB environment properties instead)
+.env
+.env.*
+!.env.example
+
+# Development / editor artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
