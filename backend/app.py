@@ -1543,8 +1543,14 @@ def api_overview(
             pass
     return build_overview(mode=cache, token=token, user_id=user_id, db=db)
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for load balancers and uptime monitors."""
+    return {"status": "ok"}
+
 @app.post("/api/cache/clear")
-def api_cache_clear():
+def api_cache_clear(current_user: User = Depends(get_current_user)):
+    """Clear the server-side cache. Requires an authenticated session."""
     cache_clear(prefix=None)
     return {"ok": True}
 
