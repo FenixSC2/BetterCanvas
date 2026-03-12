@@ -1792,13 +1792,35 @@ details.expandable > .cardBody,
   font-size: var(--fontH2);
   font-weight: 600;
   color: var(--text);
+  margin: 0;
+}
+
+.authTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.authTitleRow .authTitle {
+  margin-bottom: 0;
 }
 
 .authSubtitle {
   font-size: var(--fontSm);
   color: var(--muted);
   margin-bottom: 24px;
+}
+
+.authProjectBlurb {
+  margin: -12px 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  background: color-mix(in srgb, var(--surface2), var(--surface) 45%);
+  color: var(--muted);
+  font-size: var(--fontSm);
+  line-height: 1.55;
 }
 
 .authForm {
@@ -1817,6 +1839,12 @@ details.expandable > .cardBody,
   font-size: var(--fontSm);
   font-weight: 500;
   color: var(--text);
+}
+
+.authLabelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .authInput,
@@ -1996,7 +2024,8 @@ details.expandable > .cardBody,
 
 .authInstructions ol {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 22px;
+  list-style: decimal;
 }
 
 .authInstructions li {
@@ -2009,4 +2038,97 @@ details.expandable > .cardBody,
   border-radius: 3px;
   font-family: monospace;
   font-size: 0.9em;
+}
+
+.authWarning {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radiusSm);
+  border: 1px solid rgba(228, 178, 44, 0.45);
+  background: rgba(228, 178, 44, 0.12);
+  color: color-mix(in srgb, var(--text), #6c4b00 25%);
+  font-size: var(--fontSm);
+}
+
+.authInfoBubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0;
+  cursor: help;
+}
+
+.authInfoBubble:focus-visible {
+  outline: none;
+  box-shadow: var(--interactive-focus-ring);
+}
+
+.authInfoBubbleAlert {
+  background: #f7d24f;
+  border-color: #d2ad31;
+  color: #3d2b00;
+}
+
+.authInfoBubbleNeutral {
+  background: color-mix(in srgb, var(--surface2), var(--surface) 30%);
+  border-color: var(--border2);
+  color: var(--muted);
+}
+
+.authInfoTooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  right: auto;
+  width: min(320px, 72vw);
+  padding: 10px 12px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fontSm);
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-4px, -50%);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.authInfoBubble:hover .authInfoTooltip,
+.authInfoBubble:focus-within .authInfoTooltip,
+.authInfoBubble:focus .authInfoTooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, -50%);
+}
+
+@media (max-width: 520px) {
+  .authTitleRow {
+    align-items: flex-start;
+  }
+
+  .authInfoTooltip {
+    top: calc(100% + 10px);
+    left: 0;
+    width: min(300px, 80vw);
+    transform: translateY(-4px);
+  }
+
+  .authInfoBubble:hover .authInfoTooltip,
+  .authInfoBubble:focus-within .authInfoTooltip,
+  .authInfoBubble:focus .authInfoTooltip {
+    transform: translateY(0);
+  }
 }

@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { clearCachedAsync } from "../hooks/useCachedAsync";
 
 export function TokenEntry() {
-  const { user, logout, error: authError, setTokenStatus, hasToken: contextHasToken } = useAuth();
+  const { user, logout, error: authError, setTokenStatus } = useAuth();
   const [token, setToken] = useState("");
   const [localError, setLocalError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,7 +114,20 @@ export function TokenEntry() {
   return (
     <div className="authContainer">
       <div className="authPanel" style={{ maxWidth: "600px" }}>
-        <h1 className="authTitle">Canvas Token</h1>
+        <div className="authTitleRow">
+          <h1 className="authTitle">Canvas Token</h1>
+          <button
+            type="button"
+            className="authInfoBubble authInfoBubbleNeutral"
+            aria-label="How we use your token"
+          >
+            ?
+            <span className="authInfoTooltip" role="tooltip">
+              We use your Canvas token only to read your course data and power features in your account.
+              Tokens are encrypted at rest, sent over secure requests, and are never sold or shared.
+            </span>
+          </button>
+        </div>
         <p className="authSubtitle">Logged in as {user.email}</p>
 
         {(authError || localError) && (
@@ -135,20 +148,45 @@ export function TokenEntry() {
           </p>
           <p style={{ fontWeight: 600, marginBottom: "8px" }}>How to get your token:</p>
           <ol>
-            <li>Go to Canvas (your institution's Canvas URL)</li>
-            <li>Click your profile icon → <strong>Settings</strong></li>
-            <li>Scroll to <strong>Approved Integrations</strong></li>
-            <li>Click <strong>New Access Token</strong></li>
-            <li>Give it a name like "CanvAssist"</li>
-            <li>Click <strong>Generate Token</strong> and copy it</li>
-            <li>Paste it below</li>
+            <li>Sign in to your university Canvas portal in a browser tab.</li>
+            <li>Open your account menu (profile icon) and select <strong>Settings</strong>.</li>
+            <li>Scroll to the <strong>Approved Integrations</strong> section near the bottom of the page.</li>
+            <li>Select <strong>New Access Token</strong>.</li>
+            <li>
+              For <strong>Purpose</strong>, enter something recognizable like <code>CanvAssist Beta</code>.
+            </li>
+            <li>
+              If your school supports expiration dates, choose one that fits your preference (you can always
+              generate a fresh token later).
+            </li>
+            <li>
+              Click <strong>Generate Token</strong>, then copy it immediately. Canvas may only fully show it once.
+            </li>
+            <li>Paste the token below and save it to connect your account.</li>
           </ol>
+          <p className="authWarning">
+            Keep this token private. Do not share it in messages, screenshots, code snippets, or with other
+            people. Anyone with your token can access your Canvas data as you.
+          </p>
         </div>
 
         {!hasToken ? (
           <form onSubmit={handleSubmitToken} className="authForm">
             <div className="authField">
-              <label>Canvas Access Token</label>
+              <div className="authLabelRow">
+                <label>Canvas Access Token</label>
+                <button
+                  type="button"
+                  className="authInfoBubble authInfoBubbleNeutral"
+                  aria-label="Why token is requested"
+                >
+                  ?
+                  <span className="authInfoTooltip" role="tooltip">
+                    This token lets CanvAssist fetch your courses and assignments from Canvas. It is
+                    encrypted before storage and never displayed back to other users.
+                  </span>
+                </button>
+              </div>
               <textarea
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -194,7 +232,20 @@ export function TokenEntry() {
 
             <form onSubmit={handleSubmitToken} className="authForm">
               <div className="authField">
-                <label>New Canvas Token (optional)</label>
+                <div className="authLabelRow">
+                  <label>New Canvas Token (optional)</label>
+                  <button
+                    type="button"
+                    className="authInfoBubble authInfoBubbleNeutral"
+                    aria-label="How replacement tokens are handled"
+                  >
+                    ?
+                    <span className="authInfoTooltip" role="tooltip">
+                      Updating replaces the token currently on file. We continue to encrypt stored tokens
+                      and never share or sell them.
+                    </span>
+                  </button>
+                </div>
                 <textarea
                   value={token}
                   onChange={(e) => setToken(e.target.value)}

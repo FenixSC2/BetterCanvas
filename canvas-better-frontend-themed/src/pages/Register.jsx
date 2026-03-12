@@ -49,8 +49,25 @@ export function Register() {
   return (
     <div className="authContainer">
       <div className="authPanel">
-        <h1 className="authTitle">CanvAssist</h1>
+        <div className="authTitleRow">
+          <h1 className="authTitle">CanvAssist</h1>
+          <button
+            type="button"
+            className="authInfoBubble authInfoBubbleAlert"
+            aria-label="Service availability notice"
+          >
+            !
+            <span className="authInfoTooltip" role="tooltip">
+              CanvAssist is currently available only for Northeastern students and is still in demo/beta.
+            </span>
+          </button>
+        </div>
         <p className="authSubtitle">Create your account</p>
+        <p className="authProjectBlurb">
+          CanvAssist helps you stay ahead of Canvas coursework with better assignment visibility,
+          timeline planning, and workload support tools. You are joining during beta, which means
+          features will continue improving as student feedback comes in.
+        </p>
 
         {(error || localError) && (
           <div className="authError" style={{ marginBottom: "16px" }}>

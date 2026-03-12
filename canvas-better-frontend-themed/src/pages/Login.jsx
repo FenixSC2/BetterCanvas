@@ -33,8 +33,25 @@ export function Login({ onViewDemo }) {
   return (
     <div className="authContainer">
       <div className="authPanel">
-        <h1 className="authTitle">CanvAssist</h1>
+        <div className="authTitleRow">
+          <h1 className="authTitle">CanvAssist</h1>
+          <button
+            type="button"
+            className="authInfoBubble authInfoBubbleAlert"
+            aria-label="Service availability notice"
+          >
+            !
+            <span className="authInfoTooltip" role="tooltip">
+              CanvAssist is currently available only for Northeastern students and is still in demo/beta.
+            </span>
+          </button>
+        </div>
         <p className="authSubtitle">Sign in to your account</p>
+        <p className="authProjectBlurb">
+          CanvAssist helps you organize Canvas coursework with clearer assignment views, planning tools,
+          and workload support built for busy student schedules. This release is an early beta, so your
+          feedback directly shapes what gets improved next.
+        </p>
 
         {(error || localError) && (
           <div className="authError" style={{ marginBottom: "16px" }}>
