@@ -4,7 +4,7 @@ build:
   commands:
     build:
       - python3 -m pip install --upgrade pip
-      - python3 -m pip install --no-cache-dir -r requirements.txt --target .
+      - python3 -m pip install --no-cache-dir -r requirements.txt
 run:
   command: python3 -m gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8080 app:app
   env:

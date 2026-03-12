@@ -1543,6 +1543,11 @@ def api_overview(
             pass
     return build_overview(mode=cache, token=token, user_id=user_id, db=db)
 
+@app.get("/")
+def root_health_check():
+    """Default health endpoint for platforms that probe the root path."""
+    return {"status": "ok", "service": "canvassist-backend"}
+
 @app.get("/health")
 def health_check():
     """Health check endpoint for load balancers and uptime monitors."""
