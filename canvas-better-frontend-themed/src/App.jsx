@@ -5,6 +5,7 @@ import { MyInformation } from "./pages/MyInformation";
 import { MyCourses } from "./pages/MyCourses";
 import { UpcomingAssignments } from "./pages/UpcomingAssignments";
 import { WeeklyPlanner } from "./pages/WeeklyPlanner";
+import { TodoPage } from "./pages/TodoPage";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { ForgotPassword } from "./pages/ForgotPassword";
@@ -135,6 +136,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
       { key: "courses", label: "My courses" },
       { key: "upcoming", label: "Upcoming assignments" },
       { key: "planner", label: "Weekly planner" },
+      { key: "todo", label: "TO-DO's" },
     ],
     []
   );
@@ -271,6 +273,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           {active === "courses" ? <MyCourses /> : null}
           {active === "upcoming" ? <UpcomingAssignments /> : null}
           {active === "planner" ? <WeeklyPlanner /> : null}
+          {active === "todo" ? <TodoPage /> : null}
         </main>
 
         <footer className="footer muted" style={demoMode ? { position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100 } : {}}>

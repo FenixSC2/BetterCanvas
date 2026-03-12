@@ -1607,6 +1607,125 @@ details.expandable > .cardBody,
 }
 
 /* ===== Weekly Planner ===== */
+
+/* plannerCard: flex row — colored bar on the left, content on the right */
+.plannerCard {
+  display: flex;
+  min-height: 0;
+  border-radius: var(--radiusLg);
+  overflow: hidden;
+}
+
+.plannerBar {
+  width: 5px;
+  flex-shrink: 0;
+}
+
+.plannerBar-original {
+  background: rgba(80, 160, 255, 0.7);
+}
+
+.plannerBar-split {
+  background: rgba(235, 170, 30, 0.85);
+}
+
+.plannerBar-missing {
+  background: rgba(220, 50, 50, 0.85);
+}
+
+.plannerBar-submitted {
+  background: rgba(30, 180, 90, 0.85);
+}
+
+/* Personal to-do items: indigo/purple accent */
+.plannerBar-todo {
+  background: rgba(120, 80, 220, 0.75);
+}
+
+.plannerContent {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.plannerUndatedItem {
+  list-style: none;
+}
+
+.plannerUndatedContent {
+  padding: 12px;
+}
+
+.plannerUndatedTopRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.plannerUndatedMain {
+  min-width: 0;
+}
+
+.plannerUndatedTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--fontBase);
+  font-weight: 800;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.plannerUndatedBadge {
+  font-size: 11px;
+}
+
+.plannerUndatedMeta {
+  margin-top: 6px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plannerUndatedNotes {
+  margin-top: 6px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plannerUndatedAction {
+  align-self: start;
+  min-width: 88px;
+  justify-content: center;
+}
+
+.plannerUndatedEffort {
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .plannerUndatedTopRow {
+    grid-template-columns: 1fr;
+  }
+
+  .plannerUndatedAction {
+    width: 100%;
+  }
+}
+
+.plannerTitle {
+  font-size: var(--fontSm);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* (1) Today emphasis */
 .plannerDayCardToday {
   border: 2px solid rgba(80, 160, 255, 0.55);

@@ -6,6 +6,7 @@ import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
+import { loadTodos } from "../lib/todoStore";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -25,13 +26,37 @@ function hoursUntil(dt) {
   return (t - Date.now()) / (1000 * 60 * 60);
 }
 
+function navigateToTodoItem(todoId) {
+  localStorage.setItem(
+    "nav:todo:target",
+    JSON.stringify({ todoId, ts: Date.now() })
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("canvasbetter:navigate", { detail: { tab: "todo" } })
+  );
+}
+
+function isTodoItem(item) {
+  return item?.__kind === "todo";
+}
+
+function isCompletedItem(item) {
+  return !!(item?.submitted || item?.completed);
+}
+
 // Basic urgency badge
 function getUrgencyBadge(a) {
-  if (a.submitted) return { label: "Completed", variant: "success" };
+  if (isCompletedItem(a)) return { label: "Completed", variant: "success" };
 
   if (a.due_at) {
     const h = hoursUntil(a.due_at);
-    if (h != null && h < 0) return { label: "Missing", variant: "danger" };
+    if (h != null && h < 0) {
+      return {
+        label: isTodoItem(a) ? "Overdue" : "Missing",
+        variant: "danger",
+      };
+    }
     if (h != null && h <= 12) return { label: "Due soon", variant: "warning" };
     if (h != null && h <= 48) return { label: "Upcoming", variant: "neutral" };
     return { label: "Scheduled", variant: "neutral" };
@@ -186,6 +211,26 @@ function firstLine(text, max = 120) {
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
+function normalizeTodo(todo) {
+  const title = String(todo?.title || "").trim();
+  const notes = String(todo?.notes || "").trim();
+  const fallbackTitle = firstLine(notes, 64) || "Untitled TO-DO";
+
+  return {
+    ...todo,
+    name: title || fallbackTitle,
+    title: title || fallbackTitle,
+    notes,
+    __kind: "todo",
+    course_id: "todo",
+    course_name: "TO-DO's",
+    description: notes,
+    html_url: null,
+    points_possible: null,
+    submitted: !!todo.completed,
+  };
+}
+
 export function UpcomingAssignments() {
   // ✅ Cached fetch (prevents tab-switch flash)
   const upcomingQ = useCachedAsync(
@@ -228,14 +273,75 @@ export function UpcomingAssignments() {
 
   // track which details panels are open (allow multiple)
   const [openDetailsKeys, setOpenDetailsKeys] = useState(() => new Set());
+  const [todos, setTodos] = useState(() => loadTodos());
 
-  const items = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+  const canvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+  const canvasUndatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+
+  useEffect(() => {
+    function syncTodos() {
+      setTodos(loadTodos());
+    }
+
+    function onStorage(e) {
+      if (e.key === "canvassist:todos") syncTodos();
+    }
+
+    window.addEventListener("canvassist:todos:changed", syncTodos);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("canvassist:todos:changed", syncTodos);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  const todoItems = useMemo(() => todos.map(normalizeTodo), [todos]);
+  const datedTodoItems = useMemo(
+    () => todoItems.filter((todo) => !!todo.due_at),
+    [todoItems]
+  );
+  const undatedTodoItems = useMemo(
+    () => todoItems.filter((todo) => !todo.due_at),
+    [todoItems]
+  );
+
+  const canvasPointStats = useMemo(() => {
+    const datedWithPoints = canvasItems
+      .map((item) => {
+        const points = Number(item?.points_possible);
+        const dueTs = item?.due_at ? new Date(item.due_at).getTime() : NaN;
+        if (!Number.isFinite(points) || points <= 0 || !Number.isFinite(dueTs)) {
+          return null;
+        }
+        return { points, dueTs };
+      })
+      .filter(Boolean);
+
+    const allPoints = [...canvasItems, ...canvasUndatedItems]
+      .map((item) => Number(item?.points_possible))
+      .filter((points) => Number.isFinite(points) && points > 0);
+
+    const avgPoints =
+      allPoints.length > 0
+        ? allPoints.reduce((sum, points) => sum + points, 0) / allPoints.length
+        : 60;
+
+    return {
+      avgPoints,
+      datedWithPoints,
+    };
+  }, [canvasItems, canvasUndatedItems]);
+
+  const items = useMemo(
+    () => [...canvasItems, ...datedTodoItems],
+    [canvasItems, datedTodoItems]
+  );
 
   // Apply same loading logic as announcements
   const upcomingLoading =
     (upcomingQ.loading || upcomingQ.data == null) && !upcomingQ.error;
 
-  // Filter: all | missing | upcoming | completed | undated
+  // Filter: all | missing | upcoming | completed | undated | todo
   const [filterMode, setFilterMode] = useState("all");
 
   // Sorting blend: 0 = date only, 1 = points only
@@ -254,11 +360,55 @@ export function UpcomingAssignments() {
 
   const filteredSorted = useMemo(() => {
     const now = Date.now();
+    const TODO_NEARBY_WINDOW_HOURS = 72;
+    const todoWeightMemo = new Map();
 
     const normalizePoints = (p) => {
       const n = typeof p === "number" ? p : Number(p);
       if (!Number.isFinite(n)) return 0;
       return Math.max(0, Math.min(300, n));
+    };
+
+    const getSyntheticTodoWeight = (todo) => {
+      const key = String(todo?.id || "");
+      if (todoWeightMemo.has(key)) return todoWeightMemo.get(key);
+
+      const baseWeight = normalizePoints(canvasPointStats.avgPoints || 60);
+      let syntheticWeight = baseWeight;
+
+      if (todo?.due_at && canvasPointStats.datedWithPoints.length > 0) {
+        const dueTs = new Date(todo.due_at).getTime();
+        if (Number.isFinite(dueTs)) {
+          const nearbyPoints = canvasPointStats.datedWithPoints
+            .filter(
+              ({ dueTs: otherDueTs }) =>
+                Math.abs(otherDueTs - dueTs) <=
+                TODO_NEARBY_WINDOW_HOURS * 60 * 60 * 1000
+            )
+            .map(({ points }) => points);
+
+          if (nearbyPoints.length > 0) {
+            const nearbyAvg =
+              nearbyPoints.reduce((sum, points) => sum + points, 0) /
+              nearbyPoints.length;
+            syntheticWeight = normalizePoints(nearbyAvg);
+          }
+        }
+      }
+
+      if (todo?.due_at) {
+        const h = hoursUntil(todo.due_at);
+        if (h != null && h < 0) {
+          syntheticWeight = Math.max(syntheticWeight, baseWeight * 1.25);
+        } else if (h != null && h <= 48) {
+          syntheticWeight = Math.max(syntheticWeight, baseWeight * 1.1);
+        }
+      }
+
+      // Keep todo weight competitive but bounded.
+      const bounded = Math.max(30, Math.min(220, syntheticWeight));
+      todoWeightMemo.set(key, bounded);
+      return bounded;
     };
 
     // timeScore: higher means more urgent (time-heavy)
@@ -271,28 +421,30 @@ export function UpcomingAssignments() {
       return 1200 / Math.max(1, hours); // time-heavy curve
     };
 
-    const weightScore = (a) => normalizePoints(a?.points_possible);
+    const weightScore = (a) =>
+      isTodoItem(a)
+        ? getSyntheticTodoWeight(a)
+        : normalizePoints(a?.points_possible);
 
     const isMissing = (a) => {
-      if (a.submitted) return false;
+      if (isCompletedItem(a)) return false;
       const h = hoursUntil(a.due_at);
       return h != null && h < 0;
     };
 
-    const isUndated = (a) => !a?.due_at;
-
     const isUpcoming = (a) => {
-      if (!a?.due_at || a?.submitted) return false;
+      if (!a?.due_at || isCompletedItem(a)) return false;
       const h = hoursUntil(a.due_at);
       return h != null && h >= 0;
     };
 
-    const isCompleted = (a) => !!a?.submitted;
+    const isCompleted = (a) => isCompletedItem(a);
+    const isTodo = (a) => isTodoItem(a);
 
     // Filter out completed assignments that are past their due date
     const shouldShow = (a) => {
       // If completed and past due date, don't show
-      if (a.submitted && a.due_at) {
+      if (isCompletedItem(a) && a.due_at) {
         const h = hoursUntil(a.due_at);
         if (h != null && h < 0) return false;
       }
@@ -308,15 +460,17 @@ export function UpcomingAssignments() {
     if (filterMode === "missing") {
       filtered = missing;
       list = missing; // Only show missing items, don't duplicate
+    } else if (filterMode === "todo") {
+      filtered = list.filter(isTodo);
+      const filteredMissing = filtered.filter(isMissing);
+      const filteredNonMissing = filtered.filter((a) => !isMissing(a));
+      list = [...filteredMissing, ...filteredNonMissing];
     } else if (filterMode === "upcoming") {
       filtered = nonMissing.filter(isUpcoming);
       list = [...missing, ...filtered];
     } else if (filterMode === "completed") {
       filtered = list.filter(isCompleted);
       list = filtered;
-    } else if (filterMode === "undated") {
-      filtered = nonMissing.filter(isUndated);
-      list = filtered; // Don't include missing - undated means no due date at all
     } else {
       // "all"
       filtered = nonMissing;
@@ -329,8 +483,8 @@ export function UpcomingAssignments() {
       const bMissing = isMissing(b);
       if (aMissing !== bMissing) return aMissing ? -1 : 1;
 
-      const aCompleted = !!a.submitted;
-      const bCompleted = !!b.submitted;
+      const aCompleted = isCompleted(a);
+      const bCompleted = isCompleted(b);
       if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
 
       const aScore = (1 - blend) * timeScore(a) + blend * weightScore(a);
@@ -344,11 +498,15 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [items, filterMode, blend]);
+  }, [items, filterMode, blend, canvasPointStats]);
 
   // Separate list for undated assignments (for the undated section)
   const undatedSorted = useMemo(() => {
     const now = Date.now();
+    const TODO_BASE_WEIGHT = Math.max(
+      30,
+      Math.min(220, Number(canvasPointStats.avgPoints) || 60)
+    );
 
     const normalizePoints = (p) => {
       const n = typeof p === "number" ? p : Number(p);
@@ -365,14 +523,21 @@ export function UpcomingAssignments() {
       return 1200 / Math.max(1, hours);
     };
 
-    const weightScore = (a) => normalizePoints(a?.points_possible);
+    const weightScore = (a) =>
+      isTodoItem(a) ? TODO_BASE_WEIGHT : normalizePoints(a?.points_possible);
 
-    // Use undated data from API
-    const undatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+    const isCompleted = (a) => isCompletedItem(a);
+    const isTodo = (a) => isTodoItem(a);
+
+    let undatedItems = [...canvasUndatedItems, ...undatedTodoItems];
+
+    if (filterMode === "todo") {
+      undatedItems = undatedItems.filter(isTodo);
+    }
 
     // Filter out completed assignments that are past their due date
     const shouldShow = (a) => {
-      if (a.submitted && a.due_at) {
+      if (isCompleted(a) && a.due_at) {
         const h = hoursUntil(a.due_at);
         if (h != null && h < 0) return false;
       }
@@ -383,9 +548,11 @@ export function UpcomingAssignments() {
 
     // Sort: completed last
     list.sort((a, b) => {
-      const aCompleted = !!a.submitted;
-      const bCompleted = !!b.submitted;
+      const aCompleted = isCompleted(a);
+      const bCompleted = isCompleted(b);
       if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
+
+      if (isTodo(a) !== isTodo(b)) return isTodo(a) ? -1 : 1;
 
       const aScore = (1 - blend) * timeScore(a) + blend * weightScore(a);
       const bScore = (1 - blend) * timeScore(b) + blend * weightScore(b);
@@ -395,19 +562,19 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [undatedQ.data, blend]);
+  }, [canvasUndatedItems, undatedTodoItems, blend, filterMode, canvasPointStats]);
 
   // === Auto-focus target assignment ===
   useEffect(() => {
     // wait until we have *some* data (cached or freshly loaded)
-    if (!items?.length) return;
+    if (!canvasItems?.length) return;
 
     const raw = localStorage.getItem("nav:upcoming:target");
     const target = parseUpcomingTarget(raw);
     if (!target) return;
 
     const key = `${target.courseId}-${target.assignmentId}`;
-    const exists = items.some(
+    const exists = canvasItems.some(
       (a) =>
         Number(a.course_id) === target.courseId &&
         Number(a.id) === target.assignmentId
@@ -427,7 +594,7 @@ export function UpcomingAssignments() {
 
     // Mark pending focus; we’ll execute scroll when DOM is present
     pendingFocusRef.current = key;
-  }, [items, filterMode]);
+  }, [canvasItems, filterMode]);
 
   // After list renders (filteredSorted changes), perform scroll if pending
   useEffect(() => {
@@ -460,7 +627,8 @@ export function UpcomingAssignments() {
     };
   }, [filteredSorted]);
 
-  if (upcomingQ.error) return <ErrorBox error={upcomingQ.error} />
+  if (upcomingQ.error || undatedQ.error)
+    return <ErrorBox error={upcomingQ.error || undatedQ.error} />
 
 
   const filterLabel =
@@ -472,6 +640,8 @@ export function UpcomingAssignments() {
       ? "Upcoming"
       : filterMode === "completed"
       ? "Completed"
+      : filterMode === "todo"
+      ? "TO-DO's"
       : "Undated";
 
   return (
@@ -486,6 +656,7 @@ export function UpcomingAssignments() {
       >
         <div className="muted">
           Powered by <span className="mono">GET /api/upcoming</span>.
+          <span> • Includes personal TO-DO items stored in this browser.</span>
           {upcomingQ.refreshing ? (
             <span className="muted"> • Updating…</span>
           ) : null}
@@ -524,7 +695,10 @@ export function UpcomingAssignments() {
 
           <button
             className="btn"
-            onClick={() => upcomingQ.refresh()}
+            onClick={() => {
+              upcomingQ.refresh();
+              undatedQ.refresh();
+            }}
             title="Fetch fresh upcoming assignments"
             style={{ whiteSpace: "nowrap" }}
           >
@@ -545,7 +719,7 @@ export function UpcomingAssignments() {
           <div className="h3" style={{ marginBottom: 2 }}>
             Filter
           </div>
-          <div className="muted">Show only assignments matching:</div>
+          <div className="muted">Show only items matching:</div>
 
           <div
             style={{
@@ -560,6 +734,7 @@ export function UpcomingAssignments() {
               ["missing", "Missing"],
               ["upcoming", "Upcoming"],
               ["completed", "Completed"],
+              ["todo", "TO-DO's"],
               ["undated", "Undated"],
             ].map(([key, label]) => (
               <button
@@ -569,7 +744,7 @@ export function UpcomingAssignments() {
                   setFilterMode(key);
                   setFilterOpen(false);
                 }}
-                title={`Show ${label.toLowerCase()} assignments`}
+                title={`Show ${label.toLowerCase()} items`}
                 style={{ textAlign: "left", width: "100%" }}
               >
                 {label}
@@ -677,25 +852,30 @@ export function UpcomingAssignments() {
               <Loading label="Loading upcoming assignments…" />
             ) : filteredSorted.length === 0 ? (
               <div className="muted" style={{ padding: 10 }}>
-                No assignments found for the selected filter.
+                No items found for the selected filter.
               </div>
             ) : (
               <ul className="list listSpaced">{filteredSorted.map((a) => {
                 const badge = getUrgencyBadge(a);
+                const todoItem = isTodoItem(a);
 
                 const isMissing =
-                  !a.submitted &&
+                  !isCompletedItem(a) &&
                   a.due_at &&
                   hoursUntil(a.due_at) != null &&
                   hoursUntil(a.due_at) < 0;
 
-                const courseLabel = a.course_name ?? "Unknown Course";
+                const courseLabel = todoItem
+                  ? "TO-DO's"
+                  : a.course_name ?? "Unknown Course";
                 const dueLabel = fmtDue(a.due_at);
 
-                const desc = stripHtml(a.description);
+                const desc = todoItem
+                  ? String(a.description || "").trim()
+                  : stripHtml(a.description);
                 const hasDesc = !!desc;
 
-                const focusId = `${a.course_id}-${a.id}`;
+                const focusId = todoItem ? `todo-${a.id}` : `${a.course_id}-${a.id}`;
                 const isFocused = focusKey === focusId;
 
                 const badgeClass =
@@ -707,43 +887,10 @@ export function UpcomingAssignments() {
                     ? "badgeWarn"
                     : "badgeNeutral";
 
-                const subtitle = (
-                  <span className={`muted ${isMissing ? "dangerMuted" : ""}`}>
-                    <span className="mono">{courseLabel}</span>
-                    {" • "}
-                    Due:{" "}
-                    <span className={`mono ${isMissing ? "dangerText" : ""}`}>
-                      {dueLabel}
-                    </span>
-                    {typeof a.points_possible === "number" ? (
-                      <>
-                        {" • "}
-                        <span className="mono">{a.points_possible}</span> pts
-                      </>
-                    ) : null}
-                    {" • "}
-                    <span className={`badge ${badgeClass}`}>{badge.label}</span>
-                  </span>
-                );
-
-                const right = a.html_url ? (
-                  <a
-                    className="btn"
-                    href={a.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open assignment in Canvas"
-                    style={{ whiteSpace: "nowrap" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Open in Canvas
-                  </a>
-                ) : null;
-
                 return (
                   <li
                     id={`asg-${focusId}`}
-                    key={`${a.course_id}-${a.id}`}
+                    key={focusId}
                     className={`listItem ${isMissing ? "dangerItem" : ""} ${
                       isFocused ? "isFocused" : ""
                     }`}
@@ -769,7 +916,9 @@ export function UpcomingAssignments() {
                                 {badge.label}
                               </span>
 
-                              {typeof a.points_possible === "number" ? (
+                              {todoItem ? (
+                                <span className="badge badgeNeutral">Personal</span>
+                              ) : typeof a.points_possible === "number" ? (
                                 <span className="muted assignmentPts">
                                   <span className="mono">
                                     {a.points_possible}
@@ -791,7 +940,7 @@ export function UpcomingAssignments() {
 
                         <div className="assignmentControls">
                           <WorkloadEstimateControl
-                            courseId={a.course_id}
+                            courseId={todoItem ? "todo" : a.course_id}
                             assignmentId={a.id}
                           />
                         </div>
@@ -868,19 +1017,23 @@ export function UpcomingAssignments() {
       ) : null}
 
       {/* === Undated assignments section (show when filtering by undated OR when mode is "all") === */}
-      {filterMode === "undated" || filterMode === "all" ? (
+      {filterMode === "undated" || filterMode === "all" || filterMode === "todo" ? (
         <div className="upcomingPanel">
           <div className="upcomingPanelHeader">
             <div className="upcomingPanelHeaderLeft">
               <div className="upcomingPanelTitle">
                 Undated assignments
                 <span className="upcomingPanelCount mono">
-                  {filterMode === "undated" ? filteredSorted.length : undatedSorted.length}
+                  {undatedSorted.length}
                 </span>
               </div>
 
               <div className="muted">
-                {filterMode === "undated" ? `Filter: ${filterLabel}` : "No due date set"}
+                {filterMode === "todo"
+                  ? "Undated personal TO-DO items"
+                  : filterMode === "undated"
+                  ? `Filter: ${filterLabel}`
+                  : "No due date set"}
                 {undatedQ.refreshing ? (
                   <span className="muted"> • Updating…</span>
                 ) : null}
@@ -891,39 +1044,34 @@ export function UpcomingAssignments() {
           <div className="upcomingPanelBody">
             {(undatedQ.loading || undatedQ.data == null) && !undatedQ.error ? (
               <Loading label="Loading assignments…" />
-            ) : (filterMode === "undated" ? filteredSorted : undatedSorted).length === 0 ? (
+            ) : undatedSorted.length === 0 ? (
               <div className="muted" style={{ padding: 10 }}>
-                No undated assignments.
+                {filterMode === "todo" ? "No undated TO-DO items." : "No undated assignments."}
               </div>
             ) : (
               <ul className="list listSpaced">
-                {(filterMode === "undated" ? filteredSorted : undatedSorted).map((a) => {
+                {undatedSorted.map((a) => {
                   const badge = getUrgencyBadge(a);
+                  const todoItem = isTodoItem(a);
 
-                  const courseLabel = a.course_name ?? "Unknown Course";
-                  const dueLabel = fmtDue(a.due_at);
+                  const courseLabel = todoItem
+                    ? "TO-DO's"
+                    : a.course_name ?? "Unknown Course";
 
-                  const desc = stripHtml(a.description);
+                  const desc = todoItem
+                    ? String(a.description || "").trim()
+                    : stripHtml(a.description);
                   const hasDesc = !!desc;
 
-                  const focusId = `${a.course_id}-${a.id}`;
+                  const focusId = todoItem ? `todo-${a.id}` : `${a.course_id}-${a.id}`;
                   const isFocused = focusKey === focusId;
-
-                  const badgeClass =
-                    badge.variant === "success"
-                      ? "badgeSuccess"
-                      : badge.variant === "danger"
-                      ? "badgeDanger"
-                      : badge.variant === "warning"
-                      ? "badgeWarn"
-                      : "badgeNeutral";
 
                   return (
                     <li
                       id={`asg-${focusId}`}
-                      key={`${a.course_id}-${a.id}`}
+                      key={focusId}
                       className={`listItem ${isFocused ? "isFocused" : ""}`}
-                      style={{ overflow: 'hidden' }}
+                      style={{ overflow: "hidden" }}
                     >
                       <div className="assignmentRow" style={{ minWidth: 0 }}>
                         <div className="assignmentMain" style={{ minWidth: 0 }}>
@@ -946,11 +1094,11 @@ export function UpcomingAssignments() {
                                   {badge.label}
                                 </span>
 
-                                {typeof a.points_possible === "number" ? (
+                                {todoItem ? (
+                                  <span className="badge badgeNeutral">Personal</span>
+                                ) : typeof a.points_possible === "number" ? (
                                   <span className="muted assignmentPts">
-                                    <span className="mono">
-                                      {a.points_possible}
-                                    </span>{" "}
+                                    <span className="mono">{a.points_possible}</span>{" "}
                                     pts
                                   </span>
                                 ) : null}
@@ -964,7 +1112,7 @@ export function UpcomingAssignments() {
 
                           <div className="assignmentControls">
                             <WorkloadEstimateControl
-                              courseId={a.course_id}
+                              courseId={todoItem ? "todo" : a.course_id}
                               assignmentId={a.id}
                             />
                           </div>
@@ -979,7 +1127,9 @@ export function UpcomingAssignments() {
                                 ) : hasDesc ? (
                                   <span className="muted"> </span>
                                 ) : (
-                                  <span className="muted">No description</span>
+                                  <span className="muted">
+                                    {todoItem ? "No notes" : "No description"}
+                                  </span>
                                 )
                               }
                               onToggle={(isOpen) => {
@@ -996,7 +1146,9 @@ export function UpcomingAssignments() {
                                   <div className="preserveWhitespace">{desc}</div>
                                 ) : (
                                   <div className="muted">
-                                    No description provided.
+                                    {todoItem
+                                      ? "No notes provided."
+                                      : "No description provided."}
                                   </div>
                                 )}
                               </div>
@@ -1004,7 +1156,17 @@ export function UpcomingAssignments() {
                           </div>
                         </div>
 
-                        {a.html_url ? (
+                        {todoItem ? (
+                          <div className="assignmentActions" style={{ minWidth: 0 }}>
+                            <button
+                              className="btn"
+                              onClick={() => navigateToTodoItem(a.id)}
+                              title="Open this item in TO-DO's"
+                            >
+                              View TO-DO
+                            </button>
+                          </div>
+                        ) : a.html_url ? (
                           <div className="assignmentActions" style={{ minWidth: 0 }}>
                             <a
                               className="btn"

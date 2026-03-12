@@ -84,6 +84,11 @@ function _writeState({ courseId, assignmentId }, state) {
   } catch {
     // ignore
   }
+  // Skip backend sync for personal to-do items (non-positive-integer courseId).
+  // Canvas course IDs are always positive integers; "todo" triggers no network request.
+  const cidNum = Number(courseId);
+  if (!Number.isFinite(cidNum) || cidNum <= 0) return;
+
   // Schedule a debounced background sync to the backend
   _scheduleSyncToBackend(courseId, assignmentId);
 }

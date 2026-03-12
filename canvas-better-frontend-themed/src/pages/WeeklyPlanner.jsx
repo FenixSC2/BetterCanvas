@@ -11,6 +11,7 @@ import {
   getEffortState,
   setCompletedHours,
 } from "../lib/workloadEstimates";
+import { loadTodos } from "../lib/todoStore";
 
 /* ---------------- UI tuning knobs ---------------- */
 const UI = {
@@ -377,7 +378,7 @@ function makeId() {
 function loadPlannerSettings() {
   try {
     const raw = localStorage.getItem("weeklyPlanner:settings");
-    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7" };
+    if (!raw) return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7", showPersonalTodos: true };
 
     const obj = JSON.parse(raw);
     return {
@@ -386,9 +387,10 @@ function loadPlannerSettings() {
         : 3.0,
       showCompleted: !!obj?.showCompleted,
       dayViewMode: (obj?.dayViewMode === "next7" || obj?.dayViewMode === "week") ? obj.dayViewMode : "next7",
+      showPersonalTodos: obj?.showPersonalTodos !== false,
     };
   } catch {
-    return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7" };
+    return { dailyCapacityHours: 3.0, showCompleted: false, dayViewMode: "next7", showPersonalTodos: true };
   }
 }
 function savePlannerSettings(settings) {
@@ -457,6 +459,17 @@ function navigateToAssignment(courseId, assignmentId) {
 
   window.dispatchEvent(
     new CustomEvent("canvasbetter:navigate", { detail: { tab: "upcoming" } }),
+  );
+}
+
+function navigateToTodoItem(todoId) {
+  localStorage.setItem(
+    "nav:todo:target",
+    JSON.stringify({ todoId, ts: Date.now() }),
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("canvasbetter:navigate", { detail: { tab: "todo" } }),
   );
 }
 
@@ -644,7 +657,14 @@ export function WeeklyPlanner() {
     { ttlMs: 60 * 1000 },
   );
 
+  const undatedQ = useCachedAsync(
+    "planner:undated",
+    ({ signal }) => canvasApi.getUndatedAssignments({ signal }),
+    { ttlMs: 60 * 1000 },
+  );
+
   const itemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
+  const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
   const [weekStart, setWeekStart] = useState(() =>
     startOfWeekSunday(new Date()),
@@ -658,6 +678,8 @@ export function WeeklyPlanner() {
 
   const [effortKeyMap, setEffortKeyMap] = useState(() => loadEffortKeyMap());
   const [storageTick, setStorageTick] = useState(0);
+
+  const [todos, setTodos] = useState(() => loadTodos());
 
   const [courseFilter, setCourseFilter] = useState("all");
   const [sortMode, setSortMode] = useState("time");
@@ -699,6 +721,7 @@ export function WeeklyPlanner() {
       if (e.key === "weeklyPlanner:splits") setSplits(loadSplits());
       if (e.key === "weeklyPlanner:effortKeyMap")
         setEffortKeyMap(loadEffortKeyMap());
+      if (e.key === "canvassist:todos") setTodos(loadTodos());
     }
 
     function onPlannerSettingsChanged() {
@@ -713,6 +736,10 @@ export function WeeklyPlanner() {
       setStorageTick((t) => t + 1);
     }
 
+    function onTodosChanged() {
+      setTodos(loadTodos());
+    }
+
     window.addEventListener("storage", onStorage);
     window.addEventListener("canvassist:planner-settings-changed", onPlannerSettingsChanged);
     window.addEventListener("canvassist:workload:changed", onWorkloadChanged);
@@ -720,6 +747,7 @@ export function WeeklyPlanner() {
       "canvassist:workload:settingsChanged",
       onWorkloadSettingsChanged,
     );
+    window.addEventListener("canvassist:todos:changed", onTodosChanged);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("canvassist:planner-settings-changed", onPlannerSettingsChanged);
@@ -731,6 +759,7 @@ export function WeeklyPlanner() {
         "canvassist:workload:settingsChanged",
         onWorkloadSettingsChanged,
       );
+      window.removeEventListener("canvassist:todos:changed", onTodosChanged);
     };
   }, []);
 
@@ -861,9 +890,16 @@ export function WeeklyPlanner() {
     return itemsRaw.filter((a) => Number(a.course_id) === cid);
   }, [itemsRaw, courseFilter]);
 
+  const undatedItems = useMemo(() => {
+    if (courseFilter === "all") return undatedItemsRaw;
+    const cid = Number(courseFilter);
+    if (!Number.isFinite(cid)) return undatedItemsRaw;
+    return undatedItemsRaw.filter((a) => Number(a.course_id) === cid);
+  }, [undatedItemsRaw, courseFilter]);
+
   const courseOptions = useMemo(() => {
     const map = new Map();
-    for (const a of itemsRaw) {
+    for (const a of [...itemsRaw, ...undatedItemsRaw]) {
       const cid = a?.course_id;
       if (cid == null) continue;
       const name = a?.course_name || `Course ${cid}`;
@@ -872,7 +908,7 @@ export function WeeklyPlanner() {
     const arr = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     arr.sort((a, b) => a.name.localeCompare(b.name));
     return arr;
-  }, [itemsRaw]);
+  }, [itemsRaw, undatedItemsRaw]);
 
   const filteredSplits = useMemo(() => {
     if (courseFilter === "all") return splits;
@@ -1110,6 +1146,13 @@ export function WeeklyPlanner() {
     const buckets = new Map();
     for (let i = 0; i < 7; i++) buckets.set(i, []);
     const undated = [];
+    const undatedSeen = new Set();
+    const pushUndated = (assignment) => {
+      const key = `${assignment?.course_id}:${assignment?.id}`;
+      if (undatedSeen.has(key)) return;
+      undatedSeen.add(key);
+      undated.push(assignment);
+    };
 
     const splitsByKey = new Map();
     for (const s of filteredSplits) {
@@ -1148,13 +1191,13 @@ export function WeeklyPlanner() {
       if (!settings.showCompleted && a.submitted) continue;
 
       if (!a?.due_at) {
-        undated.push(a);
+        pushUndated(a);
         continue;
       }
 
       const due = new Date(a.due_at);
       if (!Number.isFinite(due.getTime())) {
-        undated.push(a);
+        pushUndated(a);
         continue;
       }
 
@@ -1170,6 +1213,11 @@ export function WeeklyPlanner() {
         });
         buckets.set(dayIdx, list);
       }
+    }
+
+    for (const a of undatedItems || []) {
+      if (!settings.showCompleted && a.submitted) continue;
+      pushUndated(a);
     }
 
     for (let i = 0; i < 7; i++) {
@@ -1248,18 +1296,47 @@ export function WeeklyPlanner() {
     const weekTotal = dayTotals.reduce((s, x) => s + x, 0);
     undated.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-    return { start, end, days, buckets, undated, dayTotals, weekTotal };
+    // --- Personal to-do items ---
+    const todoUndated = [];
+    if (settings.showPersonalTodos) {
+      for (const t of todos) {
+        if (t.completed) continue;
+        if (!t.due_at) {
+          todoUndated.push(t);
+          continue;
+        }
+        const due = new Date(t.due_at);
+        if (!Number.isFinite(due.getTime())) {
+          todoUndated.push(t);
+          continue;
+        }
+        if (due >= start && due < end) {
+          const dayIdx = Math.floor(
+            (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          const list = buckets.get(dayIdx) || [];
+          list.push({ __kind: "todo", todo: t });
+          buckets.set(dayIdx, list);
+        }
+      }
+      todoUndated.sort((a, b) => a.title.localeCompare(b.title));
+    }
+
+    return { start, end, days, buckets, undated, todoUndated, dayTotals, weekTotal };
   }, [
     items,
     itemsRaw,
+    undatedItems,
     weekStart,
     next7Start,
     settings.showCompleted,
     settings.dayViewMode,
+    settings.showPersonalTodos,
     storageTick,
     filteredSplits,
     effortKeyMap,
     sortMode,
+    todos,
   ]);
 
   const nextUp = useMemo(() => {
@@ -1295,8 +1372,9 @@ export function WeeklyPlanner() {
       : `Viewing ${absWeeks} weeks earlier`;
   }, [settings.dayViewMode, view.start]);
 
-  if (plannerQ.error) return <ErrorBox error={plannerQ.error} />;
-  if (plannerQ.loading && itemsRaw.length === 0)
+  if (plannerQ.error || undatedQ.error)
+    return <ErrorBox error={plannerQ.error || undatedQ.error} />;
+  if ((plannerQ.loading || undatedQ.loading) && itemsRaw.length === 0 && undatedItemsRaw.length === 0)
     return <Loading label="Loading planner…" />;
 
   const capacity = settings.dailyCapacityHours;
@@ -1516,7 +1594,7 @@ export function WeeklyPlanner() {
                     {viewOffsetLabel}
                   </span>
                 ) : null}
-                {plannerQ.refreshing ? (
+                {plannerQ.refreshing || undatedQ.refreshing ? (
                   <span className="muted"> • Updating…</span>
                 ) : null}
               </div>
@@ -1561,7 +1639,10 @@ export function WeeklyPlanner() {
               </button>
               <button
                 className="btn"
-                onClick={() => plannerQ.refresh()}
+                onClick={() => {
+                  plannerQ.refresh();
+                  undatedQ.refresh();
+                }}
                 title="Refresh from Canvas"
               >
                 Refresh
@@ -1571,37 +1652,59 @@ export function WeeklyPlanner() {
 
           <div
             className="rowWrap"
-            style={{ gap: 14, alignItems: "center", marginTop: 12 }}
+            style={{
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 12,
+              flexWrap: "nowrap",
+              overflowX: "auto",
+              paddingBottom: 2,
+            }}
           >
-            <div className="muted">
-              Daily capacity: {" "}
-              <span className="capacityValue" title="Used to warn about overloaded days">
-                <span className="mono capacityNumber">{capacity.toFixed(1)}</span>
-                <span className="capacityUnit">h/day</span>
-              </span>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                flexShrink: 0,
+                minWidth: 260,
+              }}
+            >
+              <div className="muted">
+                Daily capacity:{" "}
+                <span
+                  className="capacityValue"
+                  title="Used to warn about overloaded days"
+                >
+                  <span className="mono capacityNumber">{capacity.toFixed(1)}</span>
+                  <span className="capacityUnit">h/day</span>
+                </span>
+              </div>
+              <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="12"
+                  step="0.5"
+                  value={capacity}
+                  onChange={(e) => setCapacityFromInput(e.target.value)}
+                  style={{ width: 240, flexShrink: 0 }}
+                  aria-label="Daily capacity hours"
+                />
+                <input
+                  type="number"
+                  min="0.5"
+                  max="12"
+                  step="0.5"
+                  value={capacity}
+                  onChange={(e) => setCapacityFromInput(e.target.value)}
+                  style={{ width: 76, flexShrink: 0 }}
+                  aria-label="Daily capacity numeric"
+                  title="Type a capacity value"
+                />
+              </div>
             </div>
-            <input
-              type="range"
-              min="0.5"
-              max="12"
-              step="0.5"
-              value={capacity}
-              onChange={(e) => setCapacityFromInput(e.target.value)}
-              style={{ width: 220 }}
-              aria-label="Daily capacity hours"
-            />
-            <input
-              type="number"
-              min="0.5"
-              max="12"
-              step="0.5"
-              value={capacity}
-              onChange={(e) => setCapacityFromInput(e.target.value)}
-              style={{ width: 90 }}
-              aria-label="Daily capacity numeric"
-              title="Type a capacity value"
-            />
-            
+
             <div className="toggleRow">
               <span className="muted">Show submitted:</span>
               <Toggle
@@ -1615,6 +1718,25 @@ export function WeeklyPlanner() {
                 }
                 label={
                   settings.showCompleted ? "Hide submitted" : "Show submitted"
+                }
+              />
+            </div>
+
+            <div className="toggleRow">
+              <span className="muted">Show To-Do's:</span>
+              <Toggle
+                checked={!!settings.showPersonalTodos}
+                onChange={() =>
+                  setSettings((s) => {
+                    const next = { ...s, showPersonalTodos: !s.showPersonalTodos };
+                    savePlannerSettings(next);
+                    return next;
+                  })
+                }
+                label={
+                  settings.showPersonalTodos
+                    ? "Hide personal to-do items"
+                    : "Show personal to-do items"
                 }
               />
             </div>
@@ -1633,9 +1755,9 @@ export function WeeklyPlanner() {
                       "All"
                 }
                 style={{
-                  width: 240,
-                  minWidth: 240,
-                  maxWidth: 240,
+                  width: 160,
+                  minWidth: 160,
+                  maxWidth: 160,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -1661,10 +1783,11 @@ export function WeeklyPlanner() {
                 <option value="course">Course</option>
               </select>
             </div>
-            <div className="muted" style={{ marginLeft: "auto" }}>
-              Tip: Missing/Submitted = Canvas state • Complete = workload
-              progress • Yellow bar = split
-            </div>
+          </div>
+
+          <div className="muted" style={{ marginTop: 8 }}>
+            Tip: Missing/Submitted = Canvas state • Complete = workload
+            progress • Yellow bar = split
           </div>
         </div>
       </div>
@@ -1747,8 +1870,59 @@ export function WeeklyPlanner() {
                     }}
                   >
                     {list.map((entry) => {
-                      // --- your existing card rendering stays the same ---
-                      // (unchanged from your pasted file; keep everything below as-is)
+                      // --- Personal to-do items ---
+                      if (entry.__kind === "todo") {
+                        const t = entry.todo;
+                        const dueTime = fmtTime(t.due_at);
+                        const dueDate = fmtShortDate(t.due_at);
+                        return (
+                          <div key={`todo-${t.id}`} className="card">
+                            <div className="cardBody" style={{ padding: 0 }}>
+                              <div className="plannerCard">
+                                <div className="plannerBar plannerBar-todo" />
+                                <div className="plannerContent" style={{ padding: 10 }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                    <div className="plannerTitle" title={t.title} style={{ fontWeight: 900 }}>
+                                      {t.title}
+                                    </div>
+                                    <span className="badge badgeNeutral" style={{ flexShrink: 0 }}>
+                                      Personal
+                                    </span>
+                                  </div>
+                                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                    <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
+                                    <span className="mono">{dueDate || "—"} {dueTime || ""}</span>
+                                  </div>
+                                  {t.notes ? (
+                                    <div
+                                      className="muted"
+                                      style={{
+                                        marginTop: 6,
+                                        fontSize: 11,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                      title={t.notes}
+                                    >
+                                      {t.notes}
+                                    </div>
+                                  ) : null}
+                                  <div className="plannerEffortCompact" style={{ marginTop: 10 }}>
+                                    <WorkloadEstimateControl
+                                      courseId="todo"
+                                      assignmentId={t.id}
+                                      compactLabels={true}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // --- Canvas assignment split cards ---
                       if (entry.__kind === "split") {
                         const s = entry.split;
                         const a = (itemsRaw || []).find(
@@ -2374,41 +2548,159 @@ export function WeeklyPlanner() {
             Undated assignments
           </div>
 
-          {view.undated.length === 0 ? (
+          {view.undated.length === 0 && (!view.todoUndated || view.todoUndated.length === 0) ? (
             <div className="muted">None</div>
-          ) : (
-            <div className="muted">
-              Count: <span className="mono">{view.undated.length}</span> •
-              (These don’t appear in the calendar columns.)
-            </div>
-          )}
+          ) : null}
 
-          {view.undated.length ? (
-            <ul className="list" style={{ marginTop: 10 }}>
-              {view.undated.slice(0, 10).map((a) => {
-                const courseLabel = a.course_name ?? "Unknown Course";
-                const hasDesc = !!stripHtml(a.description);
+          {/* Personal to-do items without a due date */}
+          {view.todoUndated && view.todoUndated.length > 0 ? (
+            <div style={{ marginTop: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div
+                  className="h3"
+                  style={{ marginTop: 0, marginBottom: 0, fontSize: "var(--fontSm)", textTransform: "uppercase", letterSpacing: "0.04em" }}
+                >
+                  Personal — undated
+                </div>
+                <span className="pill">{view.todoUndated.length}</span>
+              </div>
+              <ul className="list">
+                {view.todoUndated.map((t) => (
+                  <li key={`todo-und-${t.id}`} className="card plannerUndatedItem">
+                    <div className="cardBody" style={{ padding: 0, height: "auto" }}>
+                      <div className="plannerCard">
+                        <div className="plannerBar plannerBar-todo" />
+                        <div className="plannerContent plannerUndatedContent">
+                          <div className="plannerUndatedTopRow">
+                            <div className="plannerUndatedMain">
+                              <div
+                                className="plannerTitle plannerUndatedTitle"
+                                title={t.title}
+                              >
+                                {t.title}
+                                <span className="badge badgeNeutral plannerUndatedBadge">Personal</span>
+                              </div>
+                              <div className="muted plannerUndatedMeta">
+                                <span className="mono">TO-DO's</span> • No due date
+                              </div>
+                              {t.notes ? (
+                                <div className="muted plannerUndatedNotes" title={t.notes}>
+                                  {t.notes}
+                                </div>
+                              ) : null}
+                            </div>
 
-                return (
-                  <li key={`und-${a.course_id}-${a.id}`} className="listItem">
-                    <div className="listMain">
-                      <div className="listTitle">{a.name}</div>
-                      <div className="muted">
-                        <span className="mono">{courseLabel}</span>
-                        {hasDesc ? " • Description available" : ""}
+                            <button
+                              className="btn plannerUndatedAction"
+                              onClick={() => navigateToTodoItem(t.id)}
+                            >
+                              View
+                            </button>
+                          </div>
+
+                          <div className="plannerEffortCompact plannerUndatedEffort">
+                            <WorkloadEstimateControl
+                              courseId="todo"
+                              assignmentId={t.id}
+                              compactLabels={true}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
-
-                    <button
-                      className="btn"
-                      onClick={() => navigateToAssignment(a.course_id, a.id)}
-                    >
-                      View
-                    </button>
                   </li>
-                );
-              })}
-            </ul>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {view.undated.length ? (
+            <div style={{ marginTop: view.todoUndated && view.todoUndated.length > 0 ? 16 : 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div
+                  className="h3"
+                  style={{ marginTop: 0, marginBottom: 0, fontSize: "var(--fontSm)", textTransform: "uppercase", letterSpacing: "0.04em" }}
+                >
+                  Canvas — undated
+                </div>
+                <span className="pill">{view.undated.length}</span>
+              </div>
+              <div className="muted">
+                Count: <span className="mono">{view.undated.length}</span> •
+                (These don’t appear in the calendar columns.)
+              </div>
+              <ul className="list" style={{ marginTop: 10 }}>
+                {view.undated.slice(0, 10).map((a) => {
+                  const courseLabel = a.course_name ?? "Unknown Course";
+                  const hasDesc = !!stripHtml(a.description);
+                  const submitted = !!a.submitted;
+                  const status = renderSingleStatusBadge({
+                    missing: false,
+                    submitted,
+                    complete: false,
+                  });
+                  const barVariant = submitted ? "submitted" : "original";
+
+                  return (
+                    <li key={`und-${a.course_id}-${a.id}`} className="card plannerUndatedItem">
+                      <div className="cardBody" style={{ padding: 0, height: "auto" }}>
+                        <div className="plannerCard">
+                          <div className={`plannerBar plannerBar-${barVariant}`} />
+                          <div className="plannerContent plannerUndatedContent">
+                            <div className="plannerUndatedTopRow">
+                              <div className="plannerUndatedMain">
+                                <div
+                                  className="plannerTitle plannerUndatedTitle"
+                                  title={a.name}
+                                >
+                                  {a.name}
+                                  {status}
+                                </div>
+                                <div className="muted plannerUndatedMeta" title={courseLabel}>
+                                  <span className="mono">{courseLabel}</span>
+                                  {hasDesc ? " • Description available" : ""}
+                                </div>
+                              </div>
+
+                              <button
+                                className="btn plannerUndatedAction"
+                                onClick={() => navigateToAssignment(a.course_id, a.id)}
+                              >
+                                View
+                              </button>
+                            </div>
+
+                            <div className="plannerEffortCompact plannerUndatedEffort">
+                              <WorkloadEstimateControl
+                                courseId={a.course_id}
+                                assignmentId={a.id}
+                                compactLabels={true}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
         </div>
       </div>

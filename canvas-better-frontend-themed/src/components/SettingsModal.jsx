@@ -75,11 +75,14 @@ export function SettingsModal({
   const [plannerSettings, setPlannerSettings] = useState(() => {
     try {
       const raw = localStorage.getItem("weeklyPlanner:settings");
-      if (!raw) return { dayViewMode: "next7" };
+      if (!raw) return { dayViewMode: "next7", showPersonalTodos: true };
       const obj = JSON.parse(raw);
-      return { dayViewMode: obj?.dayViewMode || "next7" };
+      return {
+        dayViewMode: obj?.dayViewMode || "next7",
+        showPersonalTodos: obj?.showPersonalTodos !== false,
+      };
     } catch {
-      return { dayViewMode: "next7" };
+      return { dayViewMode: "next7", showPersonalTodos: true };
     }
   });
 
@@ -451,6 +454,36 @@ export function SettingsModal({
                       >
                         <div className="segmentedTitle">Week view</div>
                         <div className="segmentedDesc">Monday–Sunday of the selected week</div>
+                      </button>
+                    </div>
+
+                    <div className="rowWrap" style={{ alignItems: "center", marginTop: 14, gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontWeight: 800 }}>Show personal to-do items</div>
+                        <div className="muted" style={{ marginTop: 2 }}>
+                          Display your personal to-do items in the day grid and undated section.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={plannerSettings.showPersonalTodos}
+                        className="toggle"
+                        onClick={() => {
+                          const newValue = !plannerSettings.showPersonalTodos;
+                          const newSettings = { ...plannerSettings, showPersonalTodos: newValue };
+                          setPlannerSettings(newSettings);
+                          const fullSettings = JSON.parse(localStorage.getItem("weeklyPlanner:settings") || "{}");
+                          const updated = { ...fullSettings, showPersonalTodos: newValue };
+                          localStorage.setItem("weeklyPlanner:settings", JSON.stringify(updated));
+                          window.dispatchEvent(
+                            new CustomEvent("canvassist:planner-settings-changed")
+                          );
+                        }}
+                      >
+                        <span className={`toggleTrack ${plannerSettings.showPersonalTodos ? "on" : "off"}`}>
+                          <span className={`toggleThumb ${plannerSettings.showPersonalTodos ? "on" : ""}`} />
+                        </span>
                       </button>
                     </div>
                   </div>
