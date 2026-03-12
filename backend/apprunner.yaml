@@ -26,9 +26,9 @@ run:
   # {"username":"...","password":"..."}
   secrets:
     - name: SMTP_USERNAME
-      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:username::
+      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:username
     - name: SMTP_PASSWORD
-      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:password::
+      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:password
   network:
     port: 8080
     env: PORT
