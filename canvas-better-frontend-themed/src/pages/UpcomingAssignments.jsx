@@ -235,7 +235,7 @@ export function UpcomingAssignments() {
   const upcomingLoading =
     (upcomingQ.loading || upcomingQ.data == null) && !upcomingQ.error;
 
-  // Filter: all | missing | upcoming | undated
+  // Filter: all | missing | upcoming | completed | undated
   const [filterMode, setFilterMode] = useState("all");
 
   // Sorting blend: 0 = date only, 1 = points only
@@ -282,10 +282,12 @@ export function UpcomingAssignments() {
     const isUndated = (a) => !a?.due_at;
 
     const isUpcoming = (a) => {
-      if (!a?.due_at) return false;
+      if (!a?.due_at || a?.submitted) return false;
       const h = hoursUntil(a.due_at);
       return h != null && h >= 0;
     };
+
+    const isCompleted = (a) => !!a?.submitted;
 
     // Filter out completed assignments that are past their due date
     const shouldShow = (a) => {
@@ -309,6 +311,9 @@ export function UpcomingAssignments() {
     } else if (filterMode === "upcoming") {
       filtered = nonMissing.filter(isUpcoming);
       list = [...missing, ...filtered];
+    } else if (filterMode === "completed") {
+      filtered = list.filter(isCompleted);
+      list = filtered;
     } else if (filterMode === "undated") {
       filtered = nonMissing.filter(isUndated);
       list = filtered; // Don't include missing - undated means no due date at all
@@ -465,6 +470,8 @@ export function UpcomingAssignments() {
       ? "Missing"
       : filterMode === "upcoming"
       ? "Upcoming"
+      : filterMode === "completed"
+      ? "Completed"
       : "Undated";
 
   return (
@@ -552,6 +559,7 @@ export function UpcomingAssignments() {
               ["all", "All"],
               ["missing", "Missing"],
               ["upcoming", "Upcoming"],
+              ["completed", "Completed"],
               ["undated", "Undated"],
             ].map(([key, label]) => (
               <button

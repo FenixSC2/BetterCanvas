@@ -1,5 +1,6 @@
 // src/pages/MyInformation.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
@@ -122,9 +123,9 @@ export function MyInformation() {
   const [showGpaCollapsed, setShowGpaCollapsed] = useState(() => {
     try {
       const raw = localStorage.getItem(SHOW_GPA_KEY);
-      return raw == null ? true : raw === "true";
+      return raw == null ? false : raw === "true";
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -164,6 +165,16 @@ export function MyInformation() {
   const missingCount = overview?.missing_count ?? 0;
   const due24Count = overview?.due_next_24h_count ?? 0;
   const gpa = overview?.gpa;
+
+  // GPA info tooltip (portal-based to escape overflow:hidden containers)
+  const gpaInfoBtnRef = useRef(null);
+  const [gpaInfoOpen, setGpaInfoOpen] = useState(false);
+  const [gpaInfoPos, setGpaInfoPos] = useState({ top: 0, left: 0 });
+  function openGpaInfo() {
+    const rect = gpaInfoBtnRef.current?.getBoundingClientRect();
+    if (rect) setGpaInfoPos({ top: rect.top + rect.height / 2, left: rect.right + 10 });
+    setGpaInfoOpen(true);
+  }
 
   const notificationsOn = !!notif.enabled;
   const isSecureContext =
@@ -672,7 +683,46 @@ export function MyInformation() {
 
       {/* Grade overview */}
       <Expandable
-        title="Grade overview"
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            Grade overview
+            <button
+              ref={gpaInfoBtnRef}
+              type="button"
+              className="authInfoBubble authInfoBubbleInfo"
+              aria-label="GPA scope: current semester only"
+              onMouseEnter={openGpaInfo}
+              onMouseLeave={() => setGpaInfoOpen(false)}
+              onFocus={openGpaInfo}
+              onBlur={() => setGpaInfoOpen(false)}
+              style={{ width: 18, height: 18, fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+            >
+              i
+            </button>
+            {gpaInfoOpen && createPortal(
+              <div style={{
+                position: "fixed",
+                top: gpaInfoPos.top,
+                left: gpaInfoPos.left,
+                transform: "translateY(-50%)",
+                zIndex: 9999,
+                width: "min(280px, 72vw)",
+                padding: "10px 12px",
+                borderRadius: "var(--radiusSm)",
+                border: "1px solid var(--border2)",
+                background: "var(--surface)",
+                color: "var(--text)",
+                fontSize: "var(--fontSm)",
+                lineHeight: 1.45,
+                boxShadow: "var(--shadow)",
+                pointerEvents: "none",
+              }}>
+                This GPA is calculated from your current semester courses only.
+              </div>,
+              document.body
+            )}
+          </span>
+        }
         right={
           <div className="toggleRow">
             <span className="muted">Toggle GPA visibility:</span>
@@ -913,11 +963,6 @@ export function MyInformation() {
         </div>
       </div>
 
-      <div className="muted">
-        Tip: this tab uses <span className="mono">GET /api/profile</span>,{" "}
-        <span className="mono">GET /api/overview</span>, and cached/polled
-        announcements.
-      </div>
     </div>
   );
 }

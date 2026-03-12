@@ -166,9 +166,9 @@ export function MyCourses() {
   }, [gradeVisibleById]);
 
   function isGradeVisible(courseId) {
-    // default ON if not set
+    // default OFF if not set
     const v = gradeVisibleById?.[String(courseId)];
-    return v == null ? true : !!v;
+    return v == null ? false : !!v;
   }
 
   function setGradeVisible(courseId, next) {

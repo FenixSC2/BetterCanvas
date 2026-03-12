@@ -2077,6 +2077,12 @@ details.expandable > .cardBody,
   color: #3d2b00;
 }
 
+.authInfoBubbleInfo {
+  background: color-mix(in srgb, var(--accent, #4f8ef7) 18%, var(--surface2));
+  border-color: color-mix(in srgb, var(--accent, #4f8ef7) 50%, var(--border2));
+  color: var(--accent, #4f8ef7);
+}
+
 .authInfoBubbleNeutral {
   background: color-mix(in srgb, var(--surface2), var(--surface) 30%);
   border-color: var(--border2);
@@ -2112,6 +2118,20 @@ details.expandable > .cardBody,
   opacity: 1;
   visibility: visible;
   transform: translate(0, -50%);
+}
+
+/* Below variant — opens downward to avoid clipping by header row containers */
+.authInfoTooltipBelow {
+  top: calc(100% + 8px);
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -4px);
+}
+
+.authInfoBubble:hover .authInfoTooltipBelow,
+.authInfoBubble:focus-within .authInfoTooltipBelow,
+.authInfoBubble:focus .authInfoTooltipBelow {
+  transform: translate(-50%, 0);
 }
 
 @media (max-width: 520px) {

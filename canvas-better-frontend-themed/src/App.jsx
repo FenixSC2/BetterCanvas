@@ -288,7 +288,8 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
             </div>
           ) : (
             <>
-              Backend expected at <span className="mono">VITE_API_BASE_URL</span> (default: http://localhost:8000)
+              Questions, comments, or feedback? Reach us at{" "}
+              <a href="mailto:support@canvassist.com">support@canvassist.com</a>.
             </>
           )}
         </footer>

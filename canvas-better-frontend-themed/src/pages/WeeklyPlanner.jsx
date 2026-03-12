@@ -51,11 +51,10 @@ function addDays(d, n) {
   x.setDate(x.getDate() + n);
   return x;
 }
-function startOfWeekMonday(date) {
+function startOfWeekSunday(date) {
   const d = startOfDay(date);
   const day = d.getDay(); // 0=Sun ... 6=Sat
-  const diff = day === 0 ? -6 : 1 - day; // move to Monday
-  return addDays(d, diff);
+  return addDays(d, -day); // move to Sunday
 }
 function isoDay(d) {
   const x = startOfDay(d);
@@ -648,7 +647,7 @@ export function WeeklyPlanner() {
   const itemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
 
   const [weekStart, setWeekStart] = useState(() =>
-    startOfWeekMonday(new Date()),
+    startOfWeekSunday(new Date()),
   );
   const [next7Start, setNext7Start] = useState(() => startOfDay(new Date()));
   const [settings, setSettings] = useState(() => loadPlannerSettings());
@@ -677,7 +676,11 @@ export function WeeklyPlanner() {
   useEffect(() => {
     if (settings.dayViewMode === "next7") {
       setNext7Start(startOfDay(new Date()));
+      return;
     }
+
+    // In week mode, anchor the grid to Sunday-start weeks.
+    setWeekStart((d) => startOfWeekSunday(d));
   }, [settings.dayViewMode]);
 
   useEffect(() => {
@@ -1275,7 +1278,7 @@ export function WeeklyPlanner() {
   const viewOffsetLabel = useMemo(() => {
     const today = startOfDay(new Date());
     const baselineStart =
-      settings.dayViewMode === "next7" ? today : startOfWeekMonday(today);
+      settings.dayViewMode === "next7" ? today : startOfWeekSunday(today);
     const offsetDays =
       dayNumberUTC(startOfDay(view.start)) - dayNumberUTC(baselineStart);
     const offsetWeeks = Math.round(offsetDays / 7);
@@ -1539,7 +1542,7 @@ export function WeeklyPlanner() {
                     setNext7Start(startOfDay(new Date()));
                     return;
                   }
-                  setWeekStart(startOfWeekMonday(new Date()));
+                  setWeekStart(startOfWeekSunday(new Date()));
                 }}
               >
                 Today
