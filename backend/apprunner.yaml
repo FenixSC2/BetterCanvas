@@ -14,6 +14,21 @@ run:
       value: https://canvassist.com
     - name: SECURE_COOKIES
       value: "true"
+    - name: SMTP_HOST
+      value: email-smtp.us-east-1.amazonaws.com
+    - name: SMTP_PORT
+      value: "587"
+    - name: SMTP_USE_TLS
+      value: "true"
+    - name: MAIL_FROM
+      value: no-reply@canvassist.com
+  # One Secrets Manager secret holds both key/value pairs:
+  # {"username":"...","password":"..."}
+  secrets:
+    - name: SMTP_USERNAME
+      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:username::
+    - name: SMTP_PASSWORD
+      value-from: arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:password::
   network:
     port: 8080
     env: PORT
