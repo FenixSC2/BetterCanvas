@@ -129,7 +129,31 @@ These endpoints require a valid session:
 These are public:
 - `POST /api/auth/register` - Create account
 - `POST /api/auth/login` - Login
+- `POST /api/auth/forgot-password` - Request password reset link
+- `POST /api/auth/reset-password` - Reset password with one-time token
 - `POST /api/auth/logout` - Logout
+
+### Password Reset Environment Variables
+
+```env
+# URL used in reset links
+FRONTEND_BASE_URL=https://canvassist.com
+
+# SMTP settings for sending reset emails
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_USE_TLS=true
+MAIL_FROM=no-reply@canvassist.com
+```
+
+If `SMTP_HOST` is omitted, the backend still returns a generic success message for forgot-password,
+but email delivery is disabled and reset links are only written to backend logs.
+
+For AWS SES specifically:
+- `MAIL_FROM` must be a verified SES identity in the same region as your SMTP endpoint.
+- If SES is in sandbox mode, both sender and recipient addresses must be verified.
 
 ## File Structure
 

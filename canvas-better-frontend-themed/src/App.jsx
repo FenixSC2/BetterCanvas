@@ -7,6 +7,8 @@ import { UpcomingAssignments } from "./pages/UpcomingAssignments";
 import { WeeklyPlanner } from "./pages/WeeklyPlanner";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
+import { ForgotPassword } from "./pages/ForgotPassword";
+import { ResetPassword } from "./pages/ResetPassword";
 import { TokenEntry } from "./pages/TokenEntry";
 import { TopLoadingBar } from "./components/TopLoadingBar";
 import { SettingsButton } from "./components/SettingsButton";
@@ -17,7 +19,7 @@ import "./styles.css";
 
 function DashboardApp() {
   const { user, loading, hasToken } = useAuth();
-  const [authPage, setAuthPage] = useState("login"); // "login" or "register"
+  const [authPage, setAuthPage] = useState("login"); // "login" | "register" | "forgot-password" | "reset-password"
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem("demoMode") === "true");
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
   const ANNOUNCEMENT_SEEN_KEYS = ["announcements:seenIds", "announcements:lastSeenId"];
@@ -51,8 +53,13 @@ function DashboardApp() {
   useEffect(() => {
     function handleHashChange() {
       const hash = window.location.hash.slice(1); // Remove the '#'
-      if (hash === "register") {
+      const route = hash.split("?")[0];
+      if (route === "register") {
         setAuthPage("register");
+      } else if (route === "forgot-password") {
+        setAuthPage("forgot-password");
+      } else if (route === "reset-password") {
+        setAuthPage("reset-password");
       } else {
         setAuthPage("login");
       }
@@ -96,7 +103,10 @@ function DashboardApp() {
       <ThemeProvider>
         <div className="app">
           <TopLoadingBar />
-          {authPage === "register" ? <Register /> : <Login onViewDemo={enterDemoMode} />}
+          {authPage === "register" ? <Register /> : null}
+          {authPage === "forgot-password" ? <ForgotPassword /> : null}
+          {authPage === "reset-password" ? <ResetPassword /> : null}
+          {authPage === "login" ? <Login onViewDemo={enterDemoMode} /> : null}
         </div>
       </ThemeProvider>
     );

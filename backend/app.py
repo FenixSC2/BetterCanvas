@@ -4,11 +4,16 @@ from __future__ import annotations
 import os
 import time
 import logging
+import smtplib
+import ssl
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from random import randint
 from enum import Enum
 from typing import Tuple
+from email.message import EmailMessage
+from urllib.parse import quote_plus
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -26,6 +31,8 @@ from sqlalchemy.orm import Session
 # imports for caching / background sync
 import asyncio
 from threading import Lock
+
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 # Auth imports
 from auth import (
@@ -52,9 +59,13 @@ from auth import (
     UserResponse,
     CanvasTokenRequest,
     CanvasTokenStatus,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    create_password_reset_token,
+    get_valid_password_reset_token,
+    mark_password_reset_token_used,
+    update_user_password,
 )
-
-load_dotenv()
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +78,15 @@ CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
 SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "180"))
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 SECURE_COOKIES = os.getenv("SECURE_COOKIES", "false").lower() == "true"
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
+
+# Optional SMTP config for password reset email delivery.
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+MAIL_FROM = os.getenv("MAIL_FROM", "no-reply@canvassist.local")
 
 _cache_lock = Lock()
 _cache: dict[str, dict[str, Any]] = {}  # key -> {"ts": float, "value": Any}
@@ -316,9 +336,56 @@ def invalidate_session(session_id: str) -> None:
     with _sessions_lock:
         _sessions.pop(session_id, None)
 
+def invalidate_user_sessions(user_id: int) -> None:
+    """Invalidate all active sessions for a user."""
+    with _sessions_lock:
+        for sid in list(_sessions.keys()):
+            if _sessions[sid].get("user_id") == user_id:
+                _sessions.pop(sid, None)
+
 def get_session_id(session_id: Optional[str] = Cookie(None)) -> Optional[str]:
     """Helper dependency to get session ID from the httponly session cookie."""
     return session_id
+
+def _build_password_reset_url(raw_token: str) -> str:
+    encoded = quote_plus(raw_token)
+    return f"{FRONTEND_BASE_URL}/#reset-password?token={encoded}"
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    """Attempt to send a password reset email. Returns True when sent."""
+    if not SMTP_HOST:
+        logger.warning("SMTP not configured. Password reset link for %s: %s", to_email, reset_url)
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = "CanvAssist Password Reset"
+    msg["From"] = MAIL_FROM
+    msg["To"] = to_email
+    msg.set_content(
+        "You requested a password reset for your CanvAssist account.\n\n"
+        f"Use this link to set a new password (valid for 30 minutes):\n{reset_url}\n\n"
+        "If you did not request this reset, you can safely ignore this email — "
+        "your password will not be changed.\n\n"
+        "If you have any questions or need help, contact us at support@canvassist.com."
+    )
+
+    try:
+        if SMTP_USE_TLS:
+            context = ssl.create_default_context()
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+                server.starttls(context=context)
+                if SMTP_USERNAME and SMTP_PASSWORD:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+                if SMTP_USERNAME and SMTP_PASSWORD:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+        return True
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", to_email)
+        return False
 
 def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Session = Depends(get_db)) -> User:
     """Dependency to get the currently logged-in user from the session cookie."""
@@ -1717,6 +1784,40 @@ def auth_login(request: Request, payload: UserLogin, db: Session = Depends(get_d
         samesite="none" if SECURE_COOKIES else "lax"
     )
     return response
+
+@app.post("/api/auth/forgot-password")
+@limiter.limit("5/minute")
+def auth_forgot_password(request: Request, payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Request a password reset email. Always returns a generic response."""
+    user = get_user_by_email(payload.email, db)
+    if user:
+        raw_token = create_password_reset_token(user.id, db)
+        reset_url = _build_password_reset_url(raw_token)
+        _send_password_reset_email(user.email, reset_url)
+
+    # Do not reveal whether a user exists for the submitted email.
+    return {
+        "success": True,
+        "message": "If an account with that email exists, a reset link has been sent."
+    }
+
+@app.post("/api/auth/reset-password")
+@limiter.limit("10/minute")
+def auth_reset_password(request: Request, payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset password using a one-time token from email."""
+    token_row = get_valid_password_reset_token(payload.token, db)
+    if not token_row:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+
+    user = get_user_by_id(token_row.user_id, db)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid reset request")
+
+    update_user_password(user, payload.new_password, db)
+    mark_password_reset_token_used(token_row, db)
+    invalidate_user_sessions(user.id)
+
+    return {"success": True, "message": "Password reset successful. Please sign in."}
 
 @app.post("/api/auth/logout")
 def auth_logout(session_id: Optional[str] = Depends(get_session_id)):

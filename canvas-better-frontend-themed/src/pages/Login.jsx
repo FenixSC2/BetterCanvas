@@ -94,6 +94,19 @@ export function Login({ onViewDemo }) {
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
+            <div className="authHint">
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  clearError();
+                  window.location.hash = "#forgot-password";
+                }}
+                className="authLink"
+              >
+                Forgot password?
+              </a>
+            </div>
           </div>
 
           <button type="submit" disabled={loading} className="authButton">

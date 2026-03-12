@@ -192,6 +192,38 @@ export function AuthProvider({ children }) {
     setError(null);
   }, []);
 
+  const forgotPassword = useCallback(async (email) => {
+    setError(null);
+    const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(parseErrorDetail(data, "Failed to request password reset"));
+    }
+
+    return res.json();
+  }, []);
+
+  const resetPassword = useCallback(async (token, newPassword) => {
+    setError(null);
+    const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(parseErrorDetail(data, "Failed to reset password"));
+    }
+
+    return res.json();
+  }, []);
+
   const value = {
     user,
     loading,
@@ -203,6 +235,8 @@ export function AuthProvider({ children }) {
     checkAuth,
     setTokenStatus,
     clearError,
+    forgotPassword,
+    resetPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

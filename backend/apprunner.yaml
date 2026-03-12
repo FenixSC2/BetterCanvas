@@ -10,6 +10,8 @@ run:
   env:
     - name: ALLOWED_ORIGINS
       value: https://canvassist.com,https://www.canvassist.com
+    - name: FRONTEND_BASE_URL
+      value: https://canvassist.com
     - name: SECURE_COOKIES
       value: "true"
   network:

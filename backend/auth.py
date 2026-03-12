@@ -5,14 +5,19 @@ User authentication, token storage, and encryption utilities.
 
 import os
 import bcrypt
-from datetime import datetime, timezone
+import hashlib
+import secrets
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from pathlib import Path
 from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 from pydantic import BaseModel, EmailStr, field_validator
+
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./canvas_better.db")
@@ -98,6 +103,16 @@ class WorkloadEstimate(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -135,6 +150,13 @@ def create_user(email: str, password: str, db: Session) -> User:
     db.commit()
     db.refresh(db_user)
     return db_user
+
+def update_user_password(user: User, new_password: str, db: Session) -> User:
+    """Update and persist a user's password hash."""
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+    return user
 
 def get_user_by_email(email: str, db: Session) -> Optional[User]:
     """Retrieve user by email."""
@@ -292,6 +314,51 @@ def delete_workload_estimate(
         return True
     return False
 
+# === Password reset helpers ===
+
+def _hash_reset_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+def create_password_reset_token(user_id: int, db: Session, minutes_valid: int = 30) -> str:
+    """Create a one-time password reset token and return the raw token value."""
+    now = datetime.now(timezone.utc)
+    # Invalidate any previous active reset tokens for this user.
+    active_rows = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user_id,
+        PasswordResetToken.used_at.is_(None),
+        PasswordResetToken.expires_at > now,
+    ).all()
+    for row in active_rows:
+        row.used_at = now
+
+    raw_token = secrets.token_urlsafe(48)
+    row = PasswordResetToken(
+        user_id=user_id,
+        token_hash=_hash_reset_token(raw_token),
+        expires_at=now + timedelta(minutes=minutes_valid),
+    )
+    db.add(row)
+    db.commit()
+    return raw_token
+
+def get_valid_password_reset_token(raw_token: str, db: Session) -> Optional[PasswordResetToken]:
+    """Return a token row if present, unexpired, and unused."""
+    now = datetime.now(timezone.utc)
+    token_hash = _hash_reset_token(raw_token)
+    row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
+    if not row:
+        return None
+    if row.used_at is not None:
+        return None
+    if row.expires_at <= now:
+        return None
+    return row
+
+def mark_password_reset_token_used(row: PasswordResetToken, db: Session) -> None:
+    """Mark a reset token as used."""
+    row.used_at = datetime.now(timezone.utc)
+    db.commit()
+
 # === Pydantic schemas ===
 class UserLogin(BaseModel):
     email: EmailStr
@@ -319,6 +386,24 @@ class UserResponse(BaseModel):
 
 class CanvasTokenRequest(BaseModel):
     token: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one number")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain at least one letter")
+        return v
 
 class CanvasTokenStatus(BaseModel):
     has_token: bool
