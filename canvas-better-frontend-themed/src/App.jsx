@@ -20,6 +20,7 @@ function DashboardApp() {
   const [authPage, setAuthPage] = useState("login"); // "login" or "register"
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem("demoMode") === "true");
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const ANNOUNCEMENT_SEEN_KEYS = ["announcements:seenIds", "announcements:lastSeenId"];
 
   async function enterDemoMode() {
     try {
@@ -30,6 +31,12 @@ function DashboardApp() {
     } catch (err) {
       console.error("Failed to create demo session:", err);
     }
+
+    // Re-opened demos should always present announcements as fresh/new.
+    for (const key of ANNOUNCEMENT_SEEN_KEYS) {
+      localStorage.removeItem(key);
+    }
+
     setDemoMode(true);
     localStorage.setItem("demoMode", "true");
   }
