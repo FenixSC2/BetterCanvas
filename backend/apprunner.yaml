@@ -7,6 +7,11 @@ build:
       - python3 -m pip install --no-cache-dir -r requirements.txt --target .
 run:
   command: python3 -m gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8080 app:app
+  env:
+    - name: ALLOWED_ORIGINS
+      value: https://canvassist.com,https://www.canvassist.com
+    - name: SECURE_COOKIES
+      value: "true"
   network:
     port: 8080
     env: PORT
