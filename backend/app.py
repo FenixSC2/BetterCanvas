@@ -568,6 +568,18 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             score=None,
         ),
         Assignment(
+            id=4 + course_id * 1000,
+            course_id=course_id,
+            name="Checkpoint: Week 1 Reflection",
+            due_at=now + timedelta(hours=12),
+            points_possible=15,
+            description="<p>A short reflection to keep you on track this week. This is intentionally due soon and unsubmitted so the demo shows the next-24-hours urgency and workload planning views.</p>",
+            submission_types=["online_text_entry"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{4 + course_id * 1000}",
+            submitted=False,
+            score=None,
+        ),
+        Assignment(
             id=2 + course_id * 1000,
             course_id=course_id,
             name="Project Proposal",
@@ -576,6 +588,18 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             description="<p>Submit a 1-page proposal describing your project idea.</p>",
             submission_types=["online_text_entry"],
             html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{2 + course_id * 1000}",
+            submitted=False,
+            score=None,
+        ),
+        Assignment(
+            id=5 + course_id * 1000,
+            course_id=course_id,
+            name="Optional Extra Credit Survey",
+            due_at=None,
+            points_possible=2,
+            description="<p>An undated optional item that demonstrates how assignments without due dates can still exist in Canvas courses.</p>",
+            submission_types=["online_url"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{5 + course_id * 1000}",
             submitted=False,
             score=None,
         ),
@@ -594,6 +618,53 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
     ]
     base.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
     return base[:limit] if limit else base
+
+def mock_announcements(days_back: int = 14, limit: int = 30) -> List[Announcement]:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    earliest = now - timedelta(days=days_back)
+
+    items = [
+        Announcement(
+            id=90001,
+            title="Tip: Customize Your View with Hidden Assignments",
+            message=(
+                "<p>Testing the dashboard in demo mode? You can preview where hidden assignments would appear in your workflow. "
+                "To actually hide assignments, sign in first, then open Settings and use the Hidden Assignments tools.</p>"
+            ),
+            posted_at=now - timedelta(hours=6),
+            html_url=f"{CANVAS_BASE_URL}/courses/101/discussion_topics/90001",
+            course_id=101,
+            course_name="CS 3000 — Algorithms (Mock)",
+        ),
+        Announcement(
+            id=90002,
+            title="Plan Ahead with Workload Estimates",
+            message=(
+                "<p>You can estimate hours per assignment and track completed time. "
+                "This helps the Weekly Planner prioritize urgent work due in the next 24 hours.</p>"
+            ),
+            posted_at=now - timedelta(days=1, hours=2),
+            html_url=f"{CANVAS_BASE_URL}/courses/202/discussion_topics/90002",
+            course_id=202,
+            course_name="MATH 2001 — Discrete Structures (Mock)",
+        ),
+        Announcement(
+            id=90003,
+            title="Mock Data Walkthrough",
+            message=(
+                "<p>This demo includes overdue items, due-soon assignments, and undated work so you can test filtering and planning behavior before connecting Canvas.</p>"
+            ),
+            posted_at=now - timedelta(days=3),
+            html_url=f"{CANVAS_BASE_URL}/courses/303/discussion_topics/90003",
+            course_id=303,
+            course_name="ENGW 1111 — Writing (Score Only Mock)",
+        ),
+    ]
+
+    # Keep recent items only, newest first, matching real endpoint behavior.
+    out = [a for a in items if (a.posted_at is not None and a.posted_at >= earliest)]
+    out.sort(key=lambda x: sort_key_due_at(x.posted_at), reverse=True)
+    return out[:limit]
 
 def mock_upcoming(limit: int = 50) -> List[Assignment]:
     courses = mock_courses()
@@ -1567,10 +1638,10 @@ def api_announcements(
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
-    """Get announcements. Demo mode returns empty list, authenticated mode uses real data."""
+    """Get announcements. Demo mode returns mock announcements, authenticated mode uses real data."""
     # Check for demo mode
     if session_id and is_demo_session(session_id):
-        return []
+        return mock_announcements(days_back=days_back, limit=limit)
     
     token = None
     user_id = 0
