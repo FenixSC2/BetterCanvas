@@ -14,6 +14,12 @@ run:
       value: https://canvassist.com
     - name: SECURE_COOKIES
       value: "true"
+    - name: CANVAS_BASE_URL
+      value: https://northeastern.instructure.com
+    - name: CACHE_TTL_SECONDS
+      value: "600"
+    - name: SYNC_INTERVAL_SECONDS
+      value: "180"
     - name: SMTP_HOST
       value: email-smtp.us-east-1.amazonaws.com
     - name: SMTP_PORT
@@ -22,13 +28,17 @@ run:
       value: "true"
     - name: MAIL_FROM
       value: no-reply@canvassist.com
-  # One Secrets Manager secret holds both key/value pairs:
-  # {"username":"...","password":"..."}
+  # Secrets Manager references below.
+  # SMTP secret holds: {"username":"...","password":"..."}
   secrets:
     - name: SMTP_USERNAME
       value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:username::"
     - name: SMTP_PASSWORD
       value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:password::"
+    - name: DATABASE_URL
+      value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:DATABASE_URL-c62Bbc"
+    - name: TOKEN_ENCRYPTION_KEY
+      value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:TOKEN_ENCRYPTION_KEY-PTLfLw"
   network:
     port: 8080
     env: PORT

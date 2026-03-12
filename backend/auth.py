@@ -7,6 +7,7 @@ import os
 import bcrypt
 import hashlib
 import secrets
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from pathlib import Path
@@ -18,11 +19,39 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, EmailStr, field_validator
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
+logger = logging.getLogger("canvas_backend")
+
+
+def _is_cloud_runtime() -> bool:
+    return bool(os.getenv("AWS_REGION") or os.getenv("AWS_EXECUTION_ENV"))
 
 # Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./canvas_better.db")
+def _resolve_database_url() -> str:
+    """Resolve DB URL from common env names, falling back to local SQLite for dev."""
+    raw = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRESQL_URL")
+        or os.getenv("RDS_DATABASE_URL")
+    )
+    if not raw:
+        return "sqlite:///./canvas_better.db"
+    if raw.startswith("postgres://"):
+        # SQLAlchemy expects postgresql://
+        return "postgresql://" + raw[len("postgres://") :]
+    return raw
+
+
+DATABASE_URL = _resolve_database_url()
+if DATABASE_URL.startswith("sqlite") and _is_cloud_runtime():
+    logger.warning(
+        "DATABASE_URL resolved to SQLite in cloud runtime; data will not persist across redeploys. "
+        "Set DATABASE_URL to your PostgreSQL endpoint."
+    )
+
 engine = create_engine(
     DATABASE_URL,
+    pool_pre_ping=True,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -33,6 +62,12 @@ def _load_or_create_token_encryption_key() -> str:
     env_key = os.getenv("TOKEN_ENCRYPTION_KEY")
     if env_key:
         return env_key
+
+    if _is_cloud_runtime():
+        logger.warning(
+            "TOKEN_ENCRYPTION_KEY is not set in environment. Falling back to local key file, "
+            "which may rotate on redeploy and make stored Canvas tokens unreadable."
+        )
 
     key_file = Path(__file__).resolve().parent / ".token_encryption_key"
     if key_file.exists():
@@ -111,6 +146,16 @@ class PasswordResetToken(Base):
     token_hash = Column(String, unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class SessionToken(Base):
+    __tablename__ = "session_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 # Create tables
@@ -314,6 +359,74 @@ def delete_workload_estimate(
         return True
     return False
 
+
+# === Persistent auth sessions ===
+def _hash_session_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def _is_expired(expires_at: Optional[datetime]) -> bool:
+    """Return True when expires_at is in the past, handling naive/aware values."""
+    if not expires_at:
+        return True
+    if expires_at.tzinfo is None:
+        return expires_at <= datetime.utcnow()
+    return expires_at <= datetime.now(timezone.utc)
+
+
+def create_session(user_id: int, db: Session, days_valid: int = 30) -> str:
+    """Create a persistent auth session token and return the raw token."""
+    raw_token = secrets.token_urlsafe(32)
+    row = SessionToken(
+        user_id=user_id,
+        token_hash=_hash_session_token(raw_token),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=days_valid),
+    )
+    db.add(row)
+    db.commit()
+    return raw_token
+
+
+def get_session_user_id(raw_token: str, db: Session) -> Optional[int]:
+    """Return user id for a valid auth session token, else None."""
+    if not raw_token:
+        return None
+
+    row = (
+        db.query(SessionToken)
+        .filter(SessionToken.token_hash == _hash_session_token(raw_token))
+        .first()
+    )
+    if not row:
+        return None
+    if _is_expired(row.expires_at):
+        db.delete(row)
+        db.commit()
+        return None
+    return int(row.user_id)
+
+
+def invalidate_session(raw_token: str, db: Session) -> None:
+    """Invalidate one auth session token."""
+    if not raw_token:
+        return
+    row = (
+        db.query(SessionToken)
+        .filter(SessionToken.token_hash == _hash_session_token(raw_token))
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+
+
+def invalidate_user_sessions(user_id: int, db: Session) -> None:
+    """Invalidate all auth sessions for a user."""
+    db.query(SessionToken).filter(SessionToken.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.commit()
+
 # === Password reset helpers ===
 
 def _hash_reset_token(raw_token: str) -> str:
@@ -343,14 +456,13 @@ def create_password_reset_token(user_id: int, db: Session, minutes_valid: int = 
 
 def get_valid_password_reset_token(raw_token: str, db: Session) -> Optional[PasswordResetToken]:
     """Return a token row if present, unexpired, and unused."""
-    now = datetime.now(timezone.utc)
     token_hash = _hash_reset_token(raw_token)
     row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
     if not row:
         return None
     if row.used_at is not None:
         return None
-    if row.expires_at <= now:
+    if _is_expired(row.expires_at):
         return None
     return row
 
@@ -408,6 +520,3 @@ class ResetPasswordRequest(BaseModel):
 class CanvasTokenStatus(BaseModel):
     has_token: bool
     updated_at: Optional[datetime] = None
-
-import logging
-logger = logging.getLogger("canvas_backend")

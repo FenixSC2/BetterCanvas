@@ -65,13 +65,77 @@ from auth import (
     get_valid_password_reset_token,
     mark_password_reset_token_used,
     update_user_password,
+    create_session,
+    get_session_user_id,
+    invalidate_session,
+    invalidate_user_sessions,
 )
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("canvas_backend")
 
+
+def _is_cloud_runtime() -> bool:
+    return bool(os.getenv("AWS_REGION") or os.getenv("AWS_EXECUTION_ENV"))
+
+
+def _validate_required_cloud_env() -> None:
+    """Fail fast in cloud deployments when required configuration is missing."""
+    if not _is_cloud_runtime():
+        return
+
+    required = [
+        "DATABASE_URL",
+        "TOKEN_ENCRYPTION_KEY",
+        "CANVAS_BASE_URL",
+        "CACHE_TTL_SECONDS",
+        "SYNC_INTERVAL_SECONDS",
+        "ALLOWED_ORIGINS",
+        "SECURE_COOKIES",
+        "FRONTEND_BASE_URL",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USERNAME",
+        "SMTP_PASSWORD",
+        "SMTP_USE_TLS",
+        "MAIL_FROM",
+    ]
+
+    missing = [name for name in required if not (os.getenv(name) or "").strip()]
+    errors = []
+
+    for key in ("CACHE_TTL_SECONDS", "SYNC_INTERVAL_SECONDS", "SMTP_PORT"):
+        value = (os.getenv(key) or "").strip()
+        if not value:
+            continue
+        try:
+            parsed = int(value)
+            if parsed <= 0:
+                errors.append(f"{key} must be a positive integer")
+        except ValueError:
+            errors.append(f"{key} must be an integer")
+
+    for key in ("SECURE_COOKIES", "SMTP_USE_TLS"):
+        value = (os.getenv(key) or "").strip().lower()
+        if not value:
+            continue
+        if value not in {"true", "false"}:
+            errors.append(f"{key} must be 'true' or 'false'")
+
+    if missing or errors:
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(sorted(missing)))
+        if errors:
+            details.append("invalid=" + "; ".join(errors))
+        message = "Invalid cloud runtime configuration: " + " | ".join(details)
+        logger.critical(message)
+        raise RuntimeError(message)
+
 # === Configuration ===
+_validate_required_cloud_env()
+
 CANVAS_BASE_URL = os.getenv("CANVAS_BASE_URL", "https://northeastern.instructure.com").rstrip("/")
 
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
@@ -283,21 +347,6 @@ app.add_middleware(
 
 # === Session management ===
 
-# In-memory session store (dict: session_id -> {"user_id": int, "expires": float})
-_sessions: Dict[str, Dict[str, Any]] = {}
-_sessions_lock = Lock()
-
-def create_session(user_id: int) -> str:
-    """Create a new session for a user."""
-    import secrets
-    session_id = secrets.token_urlsafe(32)
-    expires_at = time.time() + (30 * 24 * 60 * 60)  # 30 days
-    
-    with _sessions_lock:
-        _sessions[session_id] = {"user_id": user_id, "expires": expires_at}
-    
-    return session_id
-
 def create_demo_session() -> str:
     """Create a demo session for unauthenticated mock mode access."""
     import secrets
@@ -319,29 +368,6 @@ def is_demo_session(session_id: str) -> bool:
             _demo_sessions.pop(session_id, None)
             return False
         return True
-
-def get_session_user_id(session_id: str) -> Optional[int]:
-    """Retrieve user_id from a valid session."""
-    with _sessions_lock:
-        session = _sessions.get(session_id)
-        if not session:
-            return None
-        if time.time() > session["expires"]:
-            _sessions.pop(session_id, None)
-            return None
-        return session["user_id"]
-
-def invalidate_session(session_id: str) -> None:
-    """Invalidate a session."""
-    with _sessions_lock:
-        _sessions.pop(session_id, None)
-
-def invalidate_user_sessions(user_id: int) -> None:
-    """Invalidate all active sessions for a user."""
-    with _sessions_lock:
-        for sid in list(_sessions.keys()):
-            if _sessions[sid].get("user_id") == user_id:
-                _sessions.pop(sid, None)
 
 def get_session_id(session_id: Optional[str] = Cookie(None)) -> Optional[str]:
     """Helper dependency to get session ID from the httponly session cookie."""
@@ -392,7 +418,7 @@ def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Se
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    user_id = get_session_user_id(session_id)
+    user_id = get_session_user_id(session_id, db)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Session invalid or expired")
     
@@ -1230,7 +1256,7 @@ def api_profile(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1254,7 +1280,7 @@ def api_courses(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1281,7 +1307,7 @@ def api_course_assignments(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1308,7 +1334,7 @@ def api_upcoming(
     user_id = None
     if session_id:
         try:
-            user_id = get_session_user_id(session_id)
+            user_id = get_session_user_id(session_id, db)
             if user_id:
                 token = get_canvas_token(user_id, db)
         except Exception:
@@ -1342,7 +1368,7 @@ def api_undated_assignments(
     user_id = None
     if session_id:
         try:
-            user_id = get_session_user_id(session_id)
+            user_id = get_session_user_id(session_id, db)
             if user_id:
                 token = get_canvas_token(user_id, db)
         except Exception:
@@ -1425,7 +1451,7 @@ def api_dashboard(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1519,7 +1545,7 @@ def api_courses_summary(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1673,7 +1699,7 @@ def api_overview(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1714,7 +1740,7 @@ def api_announcements(
     user_id = 0
     if session_id:
         try:
-            uid = get_session_user_id(session_id)
+            uid = get_session_user_id(session_id, db)
             if uid:
                 user_id = uid
                 token = get_canvas_token(user_id, db)
@@ -1772,7 +1798,7 @@ def auth_login(request: Request, payload: UserLogin, db: Session = Depends(get_d
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    session_id = create_session(user.id)
+    session_id = create_session(user.id, db)
     response = JSONResponse({"success": True, "user": UserResponse.model_validate(user).model_dump(mode='json')})
     response.set_cookie(
         "session_id",
@@ -1815,15 +1841,18 @@ def auth_reset_password(request: Request, payload: ResetPasswordRequest, db: Ses
 
     update_user_password(user, payload.new_password, db)
     mark_password_reset_token_used(token_row, db)
-    invalidate_user_sessions(user.id)
+    invalidate_user_sessions(user.id, db)
 
     return {"success": True, "message": "Password reset successful. Please sign in."}
 
 @app.post("/api/auth/logout")
-def auth_logout(session_id: Optional[str] = Depends(get_session_id)):
+def auth_logout(
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
     """Logout the current user."""
     if session_id:
-        invalidate_session(session_id)
+        invalidate_session(session_id, db)
     
     response = JSONResponse({"success": True})
     response.delete_cookie("session_id")
