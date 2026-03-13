@@ -1,7 +1,7 @@
 // src/api/canvasApi.js
 import { loadingBus } from "../lib/loadingBus";
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "");
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://api.canvassist.com");
 
 async function request(path, { signal, method = "GET" } = {}) {
   loadingBus.start();
