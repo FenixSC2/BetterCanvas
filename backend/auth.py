@@ -9,9 +9,11 @@ import hashlib
 import secrets
 import logging
 import json
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -57,6 +59,26 @@ def _read_secret_env(env_name: str, preferred_keys: tuple[str, ...] = ()) -> Opt
 
     return text
 
+
+def _ensure_postgres_runtime_params(url: str) -> str:
+    """Ensure resilient PostgreSQL runtime params in cloud deployments."""
+    if not url.startswith("postgresql+psycopg://"):
+        return url
+
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+
+    # RDS commonly requires TLS when force_ssl is enabled.
+    if _is_cloud_runtime() and "sslmode" not in query:
+        query["sslmode"] = "require"
+
+    # Keep connection failures fast so startup doesn't hang for long periods.
+    if "connect_timeout" not in query:
+        query["connect_timeout"] = "5"
+
+    new_query = urlencode(query, doseq=True)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
 # Database setup
 def _resolve_database_url() -> str:
     """Resolve DB URL from common env names, falling back to local SQLite for dev."""
@@ -86,11 +108,13 @@ def _resolve_database_url() -> str:
         return "sqlite:///./canvas_better.db"
     if raw.startswith("postgres://"):
         # Normalize legacy scheme and force psycopg3 driver.
-        return "postgresql+psycopg://" + raw[len("postgres://") :]
+        normalized = "postgresql+psycopg://" + raw[len("postgres://") :]
+        return _ensure_postgres_runtime_params(normalized)
     if raw.startswith("postgresql://"):
         # Default SQLAlchemy postgres dialect expects psycopg2; we install psycopg3.
-        return "postgresql+psycopg://" + raw[len("postgresql://") :]
-    return raw
+        normalized = "postgresql+psycopg://" + raw[len("postgresql://") :]
+        return _ensure_postgres_runtime_params(normalized)
+    return _ensure_postgres_runtime_params(raw)
 
 
 DATABASE_URL = _resolve_database_url()
@@ -217,8 +241,34 @@ class SessionToken(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
+def _initialize_database() -> None:
+    """Create database tables with retries to handle transient cloud startup issues."""
+    attempts = int(os.getenv("DB_INIT_MAX_ATTEMPTS", "6" if _is_cloud_runtime() else "1"))
+    delay_seconds = float(os.getenv("DB_INIT_RETRY_DELAY_SECONDS", "2"))
+
+    for attempt in range(1, attempts + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            if attempt > 1:
+                logger.info("Database initialization succeeded on retry %s/%s", attempt, attempts)
+            return
+        except Exception as exc:
+            logger.error("Database initialization attempt %s/%s failed: %s", attempt, attempts, exc)
+            if attempt == attempts:
+                logger.critical(
+                    "Database initialization failed after %s attempts. Verify DATABASE_URL, "
+                    "RDS connectivity/security groups, and SSL requirements.",
+                    attempts,
+                )
+                raise RuntimeError(
+                    "Database initialization failed after retries. "
+                    "Verify DATABASE_URL, RDS connectivity/security groups, and SSL requirements."
+                ) from exc
+            time.sleep(delay_seconds)
+
+
 # Create tables
-Base.metadata.create_all(bind=engine)
+_initialize_database()
 
 # === Password hashing ===
 def hash_password(password: str) -> str:
