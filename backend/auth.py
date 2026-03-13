@@ -79,7 +79,22 @@ def _ensure_postgres_runtime_params(url: str) -> str:
     new_query = urlencode(query, doseq=True)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
+
+def _resolve_db_url() -> str:
+    """Normalize the database URL so SQLAlchemy uses the psycopg3 driver."""
+    url = os.getenv("DATABASE_URL", "sqlite:///./canvas_better.db")
+    if url.startswith("postgres://"):
+        # Legacy Heroku/render scheme; also force psycopg3.
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        # Default scheme makes SQLAlchemy try psycopg2, which is not installed.
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    # Already includes driver (e.g. postgresql+psycopg://) or is sqlite.
+    return url
+
+
 # Database setup
+<<<<<<< Updated upstream
 def _resolve_database_url() -> str:
     """Resolve DB URL from common env names, falling back to local SQLite for dev."""
     raw = None
@@ -124,6 +139,9 @@ if DATABASE_URL.startswith("sqlite") and _is_cloud_runtime():
         "Set DATABASE_URL to your PostgreSQL endpoint."
     )
 
+=======
+DATABASE_URL = _resolve_db_url()
+>>>>>>> Stashed changes
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,

@@ -18,6 +18,7 @@ from urllib.parse import quote_plus
 import requests
 from requests.adapters import HTTPAdapter, Retry
 from fastapi import FastAPI, HTTPException, Query, Depends, Cookie, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -344,6 +345,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def _cors_safe_500_handler(request: Request, exc: Exception):
+    """Return a CORS-annotated 500 for any unhandled exception.
+
+    Starlette's CORSMiddleware does not add Access-Control-Allow-Origin to
+    responses that bypass the middleware (i.e. unhandled exceptions that
+    produce a raw 500).  This handler catches those and manually attaches
+    CORS headers so the browser sees a real 500 rather than a fake CORS error.
+    """
+    origin = request.headers.get("origin", "")
+    headers: Dict[str, str] = {}
+    if origin and (origin in ALLOWED_ORIGINS or "*" in ALLOWED_ORIGINS):
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+    logger.exception("Unhandled server error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
+
+
+@app.exception_handler(HTTPException)
+async def _cors_safe_http_handler(request: Request, exc: HTTPException):
+    """Ensure HTTPExceptions also carry CORS headers."""
+    origin = request.headers.get("origin", "")
+    headers: Dict[str, str] = dict(exc.headers or {})
+    if origin and (origin in ALLOWED_ORIGINS or "*" in ALLOWED_ORIGINS):
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
 
 # === Session management ===
 
