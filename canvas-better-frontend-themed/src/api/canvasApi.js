@@ -3,13 +3,20 @@ import { loadingBus } from "../lib/loadingBus";
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://api.canvassist.com");
 
-async function request(path, { signal, method = "GET" } = {}) {
+async function request(path, { signal, method = "GET", body } = {}) {
   loadingBus.start();
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       signal,
       method,
       credentials: "include",
+      headers:
+        body !== undefined
+          ? {
+              "Content-Type": "application/json",
+            }
+          : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (!res.ok) {
@@ -103,4 +110,22 @@ export const canvasApi = {
       ),
 
     getCandidatesForHiding: (opts) => request("/api/candidates-for-hiding", opts),
+
+    getTodos: (opts) => request("/api/todos", opts),
+
+    createTodo: (todo, opts) =>
+      request("/api/todos", { ...opts, method: "POST", body: todo }),
+
+    updateTodo: (todoId, todo, opts) =>
+      request(`/api/todos/${encodeURIComponent(todoId)}`, {
+        ...opts,
+        method: "PUT",
+        body: todo,
+      }),
+
+    deleteTodo: (todoId, opts) =>
+      request(`/api/todos/${encodeURIComponent(todoId)}`, {
+        ...opts,
+        method: "DELETE",
+      }),
 };

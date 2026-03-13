@@ -42,6 +42,7 @@ from auth import (
     CanvasToken,
     HiddenAssignment,
     WorkloadEstimate,
+    TodoItemPayload,
     describe_database_target,
     get_db,
     create_user,
@@ -55,6 +56,10 @@ from auth import (
     unhide_assignment,
     get_hidden_assignments,
     get_workload_estimates,
+    get_todos,
+    create_todo,
+    update_todo,
+    delete_todo,
     upsert_workload_estimate,
     delete_workload_estimate,
     UserCreate,
@@ -2105,6 +2110,94 @@ def delete_workload_estimate_endpoint(
     """Delete the workload estimate for a specific assignment."""
     delete_workload_estimate(current_user.id, course_id, assignment_id, db)
     return {"success": True}
+
+
+# === Personal Todos ===
+
+@app.get("/api/todos")
+def get_todos_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all personal todo items for the authenticated user."""
+    return {"todos": get_todos(current_user.id, db)}
+
+
+@app.post("/api/todos")
+def create_todo_endpoint(
+    body: TodoItemPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create one personal todo item for the authenticated user."""
+    try:
+        row = create_todo(
+            current_user.id,
+            body.id,
+            body.title,
+            body.notes,
+            body.due_at,
+            body.completed,
+            db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "todo": {
+            "id": row.todo_id,
+            "title": row.title,
+            "notes": row.notes or "",
+            "due_at": row.due_at,
+            "completed": bool(row.completed),
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+            "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+        },
+    }
+
+
+@app.put("/api/todos/{todo_id}")
+def update_todo_endpoint(
+    todo_id: str,
+    body: TodoItemPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update one personal todo item for the authenticated user."""
+    row = update_todo(
+        current_user.id,
+        todo_id,
+        body.title,
+        body.notes,
+        body.due_at,
+        body.completed,
+        db,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Todo item not found")
+    return {
+        "success": True,
+        "todo": {
+            "id": row.todo_id,
+            "title": row.title,
+            "notes": row.notes or "",
+            "due_at": row.due_at,
+            "completed": bool(row.completed),
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+            "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+        },
+    }
+
+
+@app.delete("/api/todos/{todo_id}")
+def delete_todo_endpoint(
+    todo_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete one personal todo item for the authenticated user."""
+    deleted = delete_todo(current_user.id, todo_id, db)
+    return {"success": deleted}
 
 @app.get("/api/debug/cache")
 def debug_cache():

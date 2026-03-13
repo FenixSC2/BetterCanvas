@@ -1,8 +1,10 @@
 // src/lib/todoStore.js
-// Persistent storage for personal to-do items.
-// Items are kept in localStorage under STORAGE_KEY and never synced to the backend.
+// Server-backed storage for personal to-do items with a local cache for fast reads.
+
+import { canvasApi } from "../api/canvasApi";
 
 const STORAGE_KEY = "canvassist:todos";
+const CHANGE_EVENT = "canvassist:todos:changed";
 
 export function makeTodoId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -10,47 +12,142 @@ export function makeTodoId() {
   return `todo_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-/**
- * Load all todo items from localStorage.
- * Returns a validated array of todo objects.
- */
-export function loadTodos() {
+function normalizeTodo(raw) {
+  return {
+    id: String(raw?.id || ""),
+    title: String(raw?.title || ""),
+    notes: String(raw?.notes || ""),
+    due_at: raw?.due_at ? String(raw.due_at) : null,
+    completed: !!raw?.completed,
+    createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
+    updatedAt: raw?.updatedAt ? String(raw.updatedAt) : null,
+  };
+}
+
+function normalizeTodos(rawTodos) {
+  if (!Array.isArray(rawTodos)) return [];
+  return rawTodos
+    .filter((todo) => todo && todo.id && typeof todo.title === "string")
+    .map(normalizeTodo);
+}
+
+function notifyTodosChanged() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .filter((t) => t && t.id && typeof t.title === "string")
-      .map((t) => ({
-        id: String(t.id),
-        title: String(t.title || ""),
-        notes: String(t.notes || ""),
-        // due_at is a local datetime string like "2026-03-15T23:59:00" (no Z),
-        // so new Date(due_at) treats it as local time — consistent with how
-        // user-entered datetime-local values work.
-        due_at: t.due_at ? String(t.due_at) : null,
-        completed: !!t.completed,
-        createdAt: t.createdAt ? String(t.createdAt) : new Date().toISOString(),
-      }));
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
   } catch {
-    return [];
+    // ignore
   }
 }
 
-/**
- * Persist todos and notify same-tab listeners.
- */
-export function saveTodos(todos) {
+function writeCache(todos) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   } catch {
     // ignore write errors (e.g. private mode quota)
   }
-  // Notify same-tab listeners (storage event doesn't fire in the same tab)
+}
+
+export function loadTodos() {
   try {
-    window.dispatchEvent(new CustomEvent("canvassist:todos:changed"));
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    return normalizeTodos(JSON.parse(raw));
   } catch {
-    // ignore
+    return [];
   }
+}
+
+export function saveTodos(todos) {
+  const normalized = normalizeTodos(todos);
+  writeCache(normalized);
+  notifyTodosChanged();
+}
+
+async function fetchServerTodos(opts = {}) {
+  const res = await canvasApi.getTodos(opts);
+  return normalizeTodos(res?.todos);
+}
+
+async function migrateLocalTodos(localTodos, serverTodos, opts = {}) {
+  const serverIds = new Set(serverTodos.map((todo) => String(todo.id)));
+  const localOnly = localTodos.filter((todo) => !serverIds.has(String(todo.id)));
+  if (localOnly.length === 0) return serverTodos;
+
+  await Promise.allSettled(
+    localOnly.map((todo) =>
+      canvasApi.createTodo(
+        {
+          id: todo.id,
+          title: todo.title,
+          notes: todo.notes,
+          due_at: todo.due_at,
+          completed: todo.completed,
+        },
+        opts,
+      ),
+    ),
+  );
+
+  return fetchServerTodos(opts);
+}
+
+export async function syncTodos(opts = {}) {
+  const localTodos = loadTodos();
+  try {
+    let serverTodos = await fetchServerTodos(opts);
+    serverTodos = await migrateLocalTodos(localTodos, serverTodos, opts);
+    writeCache(serverTodos);
+    notifyTodosChanged();
+    return serverTodos;
+  } catch {
+    return localTodos;
+  }
+}
+
+export async function createTodoItem(todo, opts = {}) {
+  const payload = normalizeTodo(todo);
+  const res = await canvasApi.createTodo(
+    {
+      id: payload.id,
+      title: payload.title,
+      notes: payload.notes,
+      due_at: payload.due_at,
+      completed: payload.completed,
+    },
+    opts,
+  );
+  const created = normalizeTodo(res?.todo || payload);
+  const next = [...loadTodos().filter((item) => item.id !== created.id), created];
+  writeCache(next);
+  notifyTodosChanged();
+  return created;
+}
+
+export async function updateTodoItem(todoId, todo, opts = {}) {
+  const payload = normalizeTodo({ ...todo, id: todoId });
+  const res = await canvasApi.updateTodo(
+    todoId,
+    {
+      id: payload.id,
+      title: payload.title,
+      notes: payload.notes,
+      due_at: payload.due_at,
+      completed: payload.completed,
+    },
+    opts,
+  );
+  const updated = normalizeTodo(res?.todo || payload);
+  const next = loadTodos().map((item) =>
+    item.id === updated.id ? updated : item,
+  );
+  writeCache(next);
+  notifyTodosChanged();
+  return updated;
+}
+
+export async function deleteTodoItem(todoId, opts = {}) {
+  await canvasApi.deleteTodo(todoId, opts);
+  const next = loadTodos().filter((item) => item.id !== todoId);
+  writeCache(next);
+  notifyTodosChanged();
 }

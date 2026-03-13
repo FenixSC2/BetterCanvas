@@ -1,7 +1,14 @@
 // src/pages/TodoPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
-import { loadTodos, makeTodoId, saveTodos } from "../lib/todoStore";
+import {
+  createTodoItem,
+  deleteTodoItem,
+  loadTodos,
+  makeTodoId,
+  syncTodos,
+  updateTodoItem,
+} from "../lib/todoStore";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
 // WorkloadEstimateControl uses courseId/assignmentId to namespace localStorage keys.
@@ -454,6 +461,12 @@ export function TodoPage() {
 
   // Keep in sync when another tab or the planner writes to the store
   useEffect(() => {
+    let active = true;
+
+    syncTodos().then((serverTodos) => {
+      if (active) setTodos(serverTodos);
+    });
+
     function onTodosChanged() {
       setTodos(loadTodos());
     }
@@ -463,6 +476,7 @@ export function TodoPage() {
     window.addEventListener("canvassist:todos:changed", onTodosChanged);
     window.addEventListener("storage", onStorage);
     return () => {
+      active = false;
       window.removeEventListener("canvassist:todos:changed", onTodosChanged);
       window.removeEventListener("storage", onStorage);
     };
@@ -518,12 +532,7 @@ export function TodoPage() {
 
   /* ---------- helpers to mutate state + store ---------- */
 
-  function persist(updated) {
-    setTodos(updated);
-    saveTodos(updated);
-  }
-
-  function handleCreate(draft) {
+  async function handleCreate(draft) {
     const now = new Date().toISOString();
     const newItem = {
       id: makeTodoId(),
@@ -533,24 +542,26 @@ export function TodoPage() {
       completed: false,
       createdAt: now,
     };
-    persist([...todos, newItem]);
+    await createTodoItem(newItem);
     setShowNewForm(false);
     // Scroll to top so the new item is visible (it may land in any section)
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleEdit(id, draft) {
-    persist(todos.map((t) => (t.id === id ? { ...t, ...draft } : t)));
+  async function handleEdit(id, draft) {
+    const existing = todos.find((t) => t.id === id);
+    if (!existing) return;
+    await updateTodoItem(id, { ...existing, ...draft });
   }
 
-  function handleToggleComplete(id) {
-    persist(
-      todos.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+  async function handleToggleComplete(id) {
+    const existing = todos.find((t) => t.id === id);
+    if (!existing) return;
+    await updateTodoItem(id, { ...existing, completed: !existing.completed });
   }
 
-  function handleDelete(id) {
-    persist(todos.filter((t) => t.id !== id));
+  async function handleDelete(id) {
+    await deleteTodoItem(id);
   }
 
   /* ---------- derive sections ---------- */

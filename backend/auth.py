@@ -255,6 +255,31 @@ class WorkloadEstimate(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
+class TodoItem(Base):
+    __tablename__ = "todo_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    todo_id = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    notes = Column(String, default="")
+    due_at = Column(String, nullable=True)
+    completed = Column(Boolean, default=False)
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    __table_args__ = (
+        UniqueConstraint('user_id', 'todo_id', name='uq_todo_item'),
+    )
+
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
 
@@ -506,6 +531,102 @@ def delete_workload_estimate(
     return False
 
 
+# === Personal todo CRUD ===
+
+def _todo_to_dict(row: TodoItem) -> dict:
+    return {
+        "id": row.todo_id,
+        "title": row.title,
+        "notes": row.notes or "",
+        "due_at": row.due_at,
+        "completed": bool(row.completed),
+        "createdAt": row.created_at.isoformat() if row.created_at else None,
+        "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def get_todos(user_id: int, db: Session) -> list:
+    """Get all personal todo items for a user."""
+    rows = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == user_id)
+        .order_by(TodoItem.created_at.asc(), TodoItem.id.asc())
+        .all()
+    )
+    return [_todo_to_dict(row) for row in rows]
+
+
+def create_todo(
+    user_id: int,
+    todo_id: str,
+    title: str,
+    notes: str,
+    due_at: Optional[str],
+    completed: bool,
+    db: Session,
+) -> TodoItem:
+    existing = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == user_id, TodoItem.todo_id == todo_id)
+        .first()
+    )
+    if existing:
+        raise ValueError("Todo item already exists")
+
+    row = TodoItem(
+        user_id=user_id,
+        todo_id=todo_id,
+        title=title,
+        notes=notes,
+        due_at=due_at,
+        completed=completed,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def update_todo(
+    user_id: int,
+    todo_id: str,
+    title: str,
+    notes: str,
+    due_at: Optional[str],
+    completed: bool,
+    db: Session,
+) -> Optional[TodoItem]:
+    row = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == user_id, TodoItem.todo_id == todo_id)
+        .first()
+    )
+    if not row:
+        return None
+
+    row.title = title
+    row.notes = notes
+    row.due_at = due_at
+    row.completed = completed
+    row.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_todo(user_id: int, todo_id: str, db: Session) -> bool:
+    row = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == user_id, TodoItem.todo_id == todo_id)
+        .first()
+    )
+    if not row:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
 # === Persistent auth sessions ===
 def _hash_session_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
@@ -666,3 +787,30 @@ class ResetPasswordRequest(BaseModel):
 class CanvasTokenStatus(BaseModel):
     has_token: bool
     updated_at: Optional[datetime] = None
+
+
+class TodoItemPayload(BaseModel):
+    id: str
+    title: str
+    notes: str = ""
+    due_at: Optional[str] = None
+    completed: bool = False
+
+    @field_validator("id", "title")
+    @classmethod
+    def required_text(cls, v: str) -> str:
+        text = str(v or "").strip()
+        if not text:
+            raise ValueError("Field is required")
+        return text
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, v: str) -> str:
+        return str(v or "")
+
+    @field_validator("due_at")
+    @classmethod
+    def normalize_due_at(cls, v: Optional[str]) -> Optional[str]:
+        text = str(v).strip() if v is not None else None
+        return text or None

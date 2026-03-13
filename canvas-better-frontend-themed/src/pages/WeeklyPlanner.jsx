@@ -11,7 +11,7 @@ import {
   getEffortState,
   setCompletedHours,
 } from "../lib/workloadEstimates";
-import { loadTodos } from "../lib/todoStore";
+import { loadTodos, syncTodos } from "../lib/todoStore";
 
 /* ---------------- UI tuning knobs ---------------- */
 const UI = {
@@ -723,6 +723,12 @@ export function WeeklyPlanner() {
   }, [settings.dayViewMode]);
 
   useEffect(() => {
+    let active = true;
+
+    syncTodos().then((serverTodos) => {
+      if (active) setTodos(serverTodos);
+    });
+
     function onStorage(e) {
       if (!e?.key) return;
 
@@ -766,6 +772,7 @@ export function WeeklyPlanner() {
     );
     window.addEventListener("canvassist:todos:changed", onTodosChanged);
     return () => {
+      active = false;
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("canvassist:planner-settings-changed", onPlannerSettingsChanged);
       window.removeEventListener(

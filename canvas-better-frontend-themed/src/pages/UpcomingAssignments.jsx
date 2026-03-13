@@ -6,7 +6,7 @@ import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
-import { loadTodos } from "../lib/todoStore";
+import { loadTodos, syncTodos } from "../lib/todoStore";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
 function fmtDue(dt) {
@@ -298,18 +298,25 @@ export function UpcomingAssignments() {
   const canvasUndatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
   useEffect(() => {
-    function syncTodos() {
+    let active = true;
+
+    syncTodos().then((serverTodos) => {
+      if (active) setTodos(serverTodos);
+    });
+
+    function syncTodosLocal() {
       setTodos(loadTodos());
     }
 
     function onStorage(e) {
-      if (e.key === "canvassist:todos") syncTodos();
+      if (e.key === "canvassist:todos") syncTodosLocal();
     }
 
-    window.addEventListener("canvassist:todos:changed", syncTodos);
+    window.addEventListener("canvassist:todos:changed", syncTodosLocal);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("canvassist:todos:changed", syncTodos);
+      active = false;
+      window.removeEventListener("canvassist:todos:changed", syncTodosLocal);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
