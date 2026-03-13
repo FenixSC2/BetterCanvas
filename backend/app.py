@@ -1051,8 +1051,36 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
             )
         )
 
+    # Planner items can occasionally miss assignment-backed objects for some Canvas setups.
+    # Backfill from per-course assignment lists so upcoming/weekly stays complete.
+    seen_refs = {(a.course_id, a.id) for a in out}
+    for course in courses:
+        cid = course.id
+        asgs = get_course_assignments_for(
+            cid,
+            mode=mode,
+            token=token,
+            user_id=user_id,
+            db=db,
+        )
+        for a in asgs:
+            if not a.due_at:
+                continue
+            if a.due_at < start or a.due_at > end:
+                continue
+            key = (cid, a.id)
+            if key in hidden_set or key in seen_refs:
+                continue
+
+            out.append(
+                a.copy(
+                    update={"course_name": (course_map.get(cid).name if course_map.get(cid) else a.course_name)}
+                )
+            )
+            seen_refs.add(key)
+
     out.sort(key=lambda a: sort_key_due_at(a.due_at))
-    return out
+    return out[:limit] if limit else out
 
 # === Unified getters with cache policy ===
 def get_profile(mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: int = 0) -> Profile:
@@ -1409,7 +1437,7 @@ def api_upcoming(
             pass
     
     lim = limit or 50
-    key = f"upcoming:{user_id or 0}:v2:limit={lim}:days={days_ahead}"
+    key = f"upcoming:{user_id or 0}:v3:limit={lim}:days={days_ahead}"
 
     if _use_cache(cache):
         v = cache_get(key)
