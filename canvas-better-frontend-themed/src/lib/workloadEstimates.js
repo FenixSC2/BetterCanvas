@@ -1,7 +1,8 @@
 // src/lib/workloadEstimates.js
 
 const NS = "canvassist:workload:v1";
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "");
 
 // In-memory store used exclusively in demo/mock mode — nothing is persisted
 const _mockStore = new Map();

@@ -22,7 +22,8 @@ function DashboardApp() {
   const { user, loading, hasToken } = useAuth();
   const [authPage, setAuthPage] = useState("login"); // "login" | "register" | "forgot-password" | "reset-password"
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem("demoMode") === "true");
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const API_BASE =
+    import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "");
   const ANNOUNCEMENT_SEEN_KEYS = ["announcements:seenIds", "announcements:lastSeenId"];
 
   async function enterDemoMode() {
