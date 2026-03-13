@@ -42,6 +42,7 @@ from auth import (
     CanvasToken,
     HiddenAssignment,
     WorkloadEstimate,
+    describe_database_target,
     get_db,
     create_user,
     get_user_by_email,
@@ -2139,6 +2140,7 @@ async def on_startup():
     try:
         loop = asyncio.get_event_loop()
         from auth import _initialize_database
+        logger.info("Verifying database connectivity for %s", describe_database_target())
         await loop.run_in_executor(None, _initialize_database)
         logger.info("Database tables verified/created successfully.")
     except Exception as exc:

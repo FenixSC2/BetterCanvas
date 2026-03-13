@@ -74,7 +74,7 @@ def _ensure_postgres_runtime_params(url: str) -> str:
 
     # Keep connection failures fast so startup doesn't hang for long periods.
     if "connect_timeout" not in query:
-        query["connect_timeout"] = "5"
+        query["connect_timeout"] = "3"
 
     new_query = urlencode(query, doseq=True)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
@@ -133,6 +133,23 @@ def _resolve_database_url() -> str:
     return _ensure_postgres_runtime_params(raw)
 
 
+def describe_database_target(url: Optional[str] = None) -> str:
+    """Return a credential-safe description of the active database target."""
+    resolved = url or DATABASE_URL
+    parts = urlsplit(resolved)
+    host = parts.hostname or "local"
+    port = parts.port or (5432 if parts.scheme.startswith("postgres") else "")
+    path = parts.path.lstrip("/") or "default"
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    extras = []
+    if query.get("sslmode"):
+        extras.append(f"sslmode={query['sslmode']}")
+    if query.get("connect_timeout"):
+        extras.append(f"connect_timeout={query['connect_timeout']}")
+    suffix = f" ({', '.join(extras)})" if extras else ""
+    return f"{parts.scheme}://{host}:{port}/{path}{suffix}"
+
+
 # Database setup
 DATABASE_URL = _resolve_database_url()
 if DATABASE_URL.startswith("sqlite") and _is_cloud_runtime():
@@ -143,6 +160,7 @@ if DATABASE_URL.startswith("sqlite") and _is_cloud_runtime():
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
+    pool_recycle=300,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -259,8 +277,8 @@ class SessionToken(Base):
 
 def _initialize_database() -> None:
     """Create database tables with retries to handle transient cloud startup issues."""
-    attempts = int(os.getenv("DB_INIT_MAX_ATTEMPTS", "6" if _is_cloud_runtime() else "1"))
-    delay_seconds = float(os.getenv("DB_INIT_RETRY_DELAY_SECONDS", "2"))
+    attempts = int(os.getenv("DB_INIT_MAX_ATTEMPTS", "2" if _is_cloud_runtime() else "1"))
+    delay_seconds = float(os.getenv("DB_INIT_RETRY_DELAY_SECONDS", "1" if _is_cloud_runtime() else "0"))
 
     for attempt in range(1, attempts + 1):
         try:
@@ -269,32 +287,25 @@ def _initialize_database() -> None:
                 logger.info("Database initialization succeeded on retry %s/%s", attempt, attempts)
             return
         except Exception as exc:
-            logger.error("Database initialization attempt %s/%s failed: %s", attempt, attempts, exc)
+            logger.error(
+                "Database initialization attempt %s/%s failed for %s: %s",
+                attempt,
+                attempts,
+                describe_database_target(),
+                exc,
+            )
             if attempt == attempts:
                 logger.critical(
-                    "Database initialization failed after %s attempts. Verify DATABASE_URL, "
+                    "Database initialization failed after %s attempts for %s. Verify DATABASE_URL, "
                     "RDS connectivity/security groups, and SSL requirements.",
                     attempts,
+                    describe_database_target(),
                 )
                 raise RuntimeError(
                     "Database initialization failed after retries. "
                     "Verify DATABASE_URL, RDS connectivity/security groups, and SSL requirements."
                 ) from exc
             time.sleep(delay_seconds)
-
-
-# Create tables — non-fatal at import time so the app always starts even when the DB
-# is briefly unreachable. Any endpoint that needs the DB will fail with a clear error.
-# The startup event in app.py retries this once workers are fully booted.
-try:
-    _initialize_database()
-except Exception as _db_init_exc:
-    logger.critical(
-        "Database initialization failed at startup: %s. "
-        "App will start but DB-backed endpoints may fail until connectivity is restored. "
-        "Verify DATABASE_URL, RDS security groups, and SSL requirements.",
-        _db_init_exc,
-    )
 
 # === Password hashing ===
 def hash_password(password: str) -> str:
