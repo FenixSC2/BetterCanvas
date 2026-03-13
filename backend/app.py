@@ -2077,6 +2077,18 @@ def debug_terms(current_user: User = Depends(get_current_user), db: Session = De
 @app.on_event("startup")
 async def on_startup():
     global _sync_task
+
+    # Re-run table creation in a thread pool so a brief DB hiccup at import time
+    # doesn't leave the app without its tables.  This is a no-op when tables
+    # already exist.
+    try:
+        loop = asyncio.get_event_loop()
+        from auth import _initialize_database
+        await loop.run_in_executor(None, _initialize_database)
+        logger.info("Database tables verified/created successfully.")
+    except Exception as exc:
+        logger.critical("Startup DB init failed: %s", exc)
+
     _sync_task = asyncio.create_task(sync_loop())
 
 @app.on_event("shutdown")

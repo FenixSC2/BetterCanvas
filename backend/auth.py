@@ -267,8 +267,18 @@ def _initialize_database() -> None:
             time.sleep(delay_seconds)
 
 
-# Create tables
-_initialize_database()
+# Create tables — non-fatal at import time so the app always starts even when the DB
+# is briefly unreachable. Any endpoint that needs the DB will fail with a clear error.
+# The startup event in app.py retries this once workers are fully booted.
+try:
+    _initialize_database()
+except Exception as _db_init_exc:
+    logger.critical(
+        "Database initialization failed at startup: %s. "
+        "App will start but DB-backed endpoints may fail until connectivity is restored. "
+        "Verify DATABASE_URL, RDS security groups, and SSL requirements.",
+        _db_init_exc,
+    )
 
 # === Password hashing ===
 def hash_password(password: str) -> str:
