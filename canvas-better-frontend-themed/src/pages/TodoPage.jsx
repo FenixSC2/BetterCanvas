@@ -224,6 +224,9 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
       : "badgeNeutral";
 
   const hasNotes = !!todo.notes.trim();
+  const notesPreview = hasNotes
+    ? todo.notes.replace(/\s+/g, " ").trim()
+    : "";
 
   if (editing) {
     return (
@@ -278,9 +281,10 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
           {/* Checkbox */}
           <input
             type="checkbox"
+            className="themeCheckbox"
             checked={todo.completed}
             onChange={() => onToggleComplete(todo.id)}
-            style={{ marginTop: 2, flexShrink: 0, cursor: "pointer" }}
+            style={{ marginTop: 2, flexShrink: 0 }}
             aria-label={todo.completed ? "Mark incomplete" : "Mark complete"}
           />
 
@@ -289,7 +293,6 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
             <div
               style={{
                 fontWeight: 800,
-                textDecoration: todo.completed ? "line-through" : "none",
                 wordBreak: "break-word",
                 lineHeight: 1.3,
                 display: "flex",
@@ -299,14 +302,13 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
               }}
             >
               {isFavorited ? <FavoriteMarker /> : null}
-              <span>{todo.title}</span>
-            </div>
-            <div
-              className="muted"
-              style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
-            >
+              <span style={{ textDecoration: todo.completed ? "line-through" : "none" }}>
+                {todo.title}
+              </span>
               <span className={`badge ${badgeClass}`}>{urgencyLabel}</span>
-              <span style={{ fontSize: "var(--fontSm)" }}>{fmtDue(todo.due_at)}</span>
+              <span className="muted" style={{ fontSize: "var(--fontSm)" }}>
+                {fmtDue(todo.due_at)}
+              </span>
             </div>
           </div>
 
@@ -336,23 +338,60 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
         {/* Notes (collapsible) */}
         {hasNotes ? (
           <div style={{ marginTop: 10, paddingLeft: 26 }}>
-            <button
-              type="button"
-              className="muted"
-              onClick={() => setExpanded((v) => !v)}
+            <div
               style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                fontWeight: 600,
-                fontSize: "var(--fontSm)",
-                textDecoration: "underline",
-                textDecorationStyle: "dotted",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                maxWidth: "100%",
               }}
             >
-              {expanded ? "Hide notes" : "Show notes"}
-            </button>
+              <button
+                type="button"
+                className="muted"
+                onClick={() => setExpanded((v) => !v)}
+                style={{
+                  background: "var(--surface2)",
+                  border: "1px solid var(--border2)",
+                  borderRadius: "var(--radiusSm)",
+                  cursor: "pointer",
+                  padding: "2px 8px",
+                  fontWeight: 700,
+                  fontSize: "var(--fontSm)",
+                  textDecoration: "underline",
+                  textDecorationStyle: "dotted",
+                  flexShrink: 0,
+                }}
+              >
+                {expanded ? "Hide notes" : "Show notes"}
+              </button>
+              {!expanded ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 1,
+                      height: 14,
+                      background: "var(--border2)",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    className="muted"
+                    style={{
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: "var(--fontSm)",
+                    }}
+                  >
+                    <strong style={{ color: "var(--text)" }}>Preview:</strong>{" "}
+                    {notesPreview}
+                  </span>
+                </>
+              ) : null}
+            </div>
             {expanded ? (
               <div
                 style={{

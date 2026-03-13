@@ -441,6 +441,7 @@ ol {
 input[type="number"],
 input[type="text"],
 input[type="date"],
+input[type="datetime-local"],
 textarea {
   padding: 8px 10px;
   border-radius: var(--radiusSm);
@@ -456,8 +457,64 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: var(--datePickerIconFilter, none);
+  cursor: pointer;
+}
+
 input[type="date"]::-webkit-datetime-edit {
   color: var(--text);
+}
+
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field {
+  color: var(--text);
+}
+
+/* Theme-aware custom checkbox used in todo + workload tasklists */
+.themeCheckbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface2);
+  display: inline-block;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin: 0;
+  vertical-align: middle;
+  transition: background-color 120ms ease, border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.themeCheckbox:hover {
+  border-color: color-mix(in srgb, var(--text), var(--border2) 45%);
+}
+
+.themeCheckbox:focus-visible {
+  outline: none;
+  box-shadow: var(--interactive-focus-ring);
+}
+
+.themeCheckbox:checked {
+  border-color: color-mix(in srgb, var(--text), var(--border2) 30%);
+  background-color: color-mix(in srgb, var(--text), var(--surface) 18%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.2 2.2L11 4.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+}
+
+.themeCheckbox:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Stabilize capacity numeric width to avoid layout shifts when digits change */
@@ -1694,11 +1751,6 @@ details.expandable > .cardBody,
   align-items: center;
   gap: 10px;
   font-weight: 800;
-}
-
-.effortCheckboxRow input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
 }
 
 .effortCta {

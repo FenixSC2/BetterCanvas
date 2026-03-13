@@ -213,6 +213,7 @@ function ChecklistEditorRow({ item, onToggle, onSaveText, onRemove }) {
       <label className="effortChecklistItem effortChecklistEditorLabel">
         <input
           type="checkbox"
+          className="themeCheckbox"
           checked={!!item.completed}
           onChange={(e) => onToggle(e.target.checked)}
         />
@@ -660,34 +661,36 @@ export function WorkloadEstimateControl({
         </div>
 
         <div className="effortActions">
-          <button
-            type="button"
-            className={`effortFavoriteBtn ${isFavorite ? "active" : ""}`}
-            onClick={() =>
-              setAssignmentFavorite(
-                { courseId, assignmentId },
-                !isFavorite,
-              )
-            }
-            title={isFavorite ? "Unfavorite item" : "Favorite item"}
-            aria-label={isFavorite ? "Unfavorite item" : "Favorite item"}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill={isFavorite ? "currentColor" : "none"}
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
+          {!compactLabels ? (
+            <button
+              type="button"
+              className={`effortFavoriteBtn ${isFavorite ? "active" : ""}`}
+              onClick={() =>
+                setAssignmentFavorite(
+                  { courseId, assignmentId },
+                  !isFavorite,
+                )
+              }
+              title={isFavorite ? "Unfavorite item" : "Favorite item"}
+              aria-label={isFavorite ? "Unfavorite item" : "Favorite item"}
             >
-              <path
-                d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={isFavorite ? "currentColor" : "none"}
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -707,8 +710,19 @@ export function WorkloadEstimateControl({
             <>
               {checklistProgress.nextItem ? (
                 <label className="effortChecklistPrimary">
+                  <span
+                    style={{
+                      fontSize: "var(--fontSm)",
+                      fontWeight: 700,
+                      flexShrink: 0,
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Next up:
+                  </span>
                   <input
                     type="checkbox"
+                    className="themeCheckbox"
                     checked={!!checklistProgress.nextItem.completed}
                     onChange={(e) =>
                       toggleChecklistItem(
@@ -724,7 +738,12 @@ export function WorkloadEstimateControl({
                 </label>
               ) : (
                 <div className="effortChecklistPrimary isDone">
-                  <input type="checkbox" checked={true} readOnly />
+                  <input
+                    type="checkbox"
+                    className="themeCheckbox"
+                    checked={true}
+                    readOnly
+                  />
                   <span className="effortChecklistPrimaryText isDone">
                     All checklist items complete.
                   </span>
@@ -755,6 +774,7 @@ export function WorkloadEstimateControl({
             <label key={item.id} className="effortChecklistItem">
               <input
                 type="checkbox"
+                className="themeCheckbox"
                 checked={!!item.completed}
                 onChange={(e) =>
                   toggleChecklistItem(
@@ -807,6 +827,7 @@ export function WorkloadEstimateControl({
           >
             <input
               type="checkbox"
+              className="themeCheckbox"
               checked={true}
               onChange={(e) => setCompletedChecked(e.target.checked)}
             />
@@ -1126,6 +1147,36 @@ export function WorkloadEstimateControl({
                 </div>
               </>
             )}
+
+            <div className="effortDivider" />
+
+            <div className="effortField">
+              <label
+                className="effortCheckboxRow"
+                style={{ cursor: "pointer", userSelect: "none" }}
+              >
+                <input
+                  type="checkbox"
+                  className="themeCheckbox"
+                  checked={isFavorite}
+                  onChange={(e) =>
+                    setAssignmentFavorite(
+                      { courseId, assignmentId },
+                      e.target.checked,
+                    )
+                  }
+                />
+                <span>
+                  Favorite this item
+                  <span
+                    className="muted"
+                    style={{ fontWeight: 400, marginLeft: 6 }}
+                  >
+                    — highlights it across pages
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
         </div>
       </AnchoredPopover>
