@@ -2749,11 +2749,10 @@ export function WeeklyPlanner() {
                             </button>
                           </div>
 
-                          <div className="plannerEffortCompact plannerUndatedEffort">
+                          <div className="plannerUndatedEffort">
                             <WorkloadEstimateControl
                               courseId="todo"
                               assignmentId={t.id}
-                              compactLabels={true}
                             />
                           </div>
                         </div>
@@ -2833,11 +2832,10 @@ export function WeeklyPlanner() {
                               </button>
                             </div>
 
-                            <div className="plannerEffortCompact plannerUndatedEffort">
+                            <div className="plannerUndatedEffort">
                               <WorkloadEstimateControl
                                 courseId={a.course_id}
                                 assignmentId={a.id}
-                                compactLabels={true}
                               />
                             </div>
                           </div>
