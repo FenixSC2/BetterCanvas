@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from dateutil import parser as dateparser
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 # imports for caching / background sync
 import asyncio
@@ -380,6 +381,22 @@ async def _cors_safe_http_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
+        headers=headers,
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def _database_error_handler(request: Request, exc: SQLAlchemyError):
+    """Surface database failures as 503s instead of generic 500s."""
+    origin = request.headers.get("origin", "")
+    headers: Dict[str, str] = {}
+    if origin and (origin in ALLOWED_ORIGINS or "*" in ALLOWED_ORIGINS):
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+    logger.exception("Database error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database unavailable"},
         headers=headers,
     )
 
@@ -2126,6 +2143,8 @@ async def on_startup():
         logger.info("Database tables verified/created successfully.")
     except Exception as exc:
         logger.critical("Startup DB init failed: %s", exc)
+        if _is_cloud_runtime():
+            raise RuntimeError("Database initialization failed during cloud startup") from exc
 
     _sync_task = asyncio.create_task(sync_loop())
 
