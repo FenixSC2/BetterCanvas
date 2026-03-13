@@ -8,6 +8,7 @@ import bcrypt
 import hashlib
 import secrets
 import logging
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from pathlib import Path
@@ -25,20 +26,70 @@ logger = logging.getLogger("canvas_backend")
 def _is_cloud_runtime() -> bool:
     return bool(os.getenv("AWS_REGION") or os.getenv("AWS_EXECUTION_ENV"))
 
+
+def _read_secret_env(env_name: str, preferred_keys: tuple[str, ...] = ()) -> Optional[str]:
+    """Read an env var and unwrap JSON secret payloads when needed."""
+    raw = os.getenv(env_name)
+    if raw is None:
+        return None
+
+    text = raw.strip()
+    if not text:
+        return None
+
+    # Secrets Manager values are often stored as JSON blobs; support that format.
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+        if isinstance(parsed, dict):
+            for key in preferred_keys:
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+            # Fallback: if there is exactly one string value, use it.
+            string_values = [v.strip() for v in parsed.values() if isinstance(v, str) and v.strip()]
+            if len(string_values) == 1:
+                return string_values[0]
+
+    return text
+
 # Database setup
 def _resolve_database_url() -> str:
     """Resolve DB URL from common env names, falling back to local SQLite for dev."""
-    raw = (
-        os.getenv("DATABASE_URL")
-        or os.getenv("POSTGRES_URL")
-        or os.getenv("POSTGRESQL_URL")
-        or os.getenv("RDS_DATABASE_URL")
-    )
+    raw = None
+    for env_name in ("DATABASE_URL", "POSTGRES_URL", "POSTGRESQL_URL", "RDS_DATABASE_URL"):
+        raw = _read_secret_env(
+            env_name,
+            preferred_keys=(
+                env_name,
+                env_name.lower(),
+                "DATABASE_URL",
+                "database_url",
+                "POSTGRES_URL",
+                "postgres_url",
+                "POSTGRESQL_URL",
+                "postgresql_url",
+                "RDS_DATABASE_URL",
+                "rds_database_url",
+                "url",
+                "value",
+            ),
+        )
+        if raw:
+            break
+
     if not raw:
         return "sqlite:///./canvas_better.db"
     if raw.startswith("postgres://"):
-        # SQLAlchemy expects postgresql://
-        return "postgresql://" + raw[len("postgres://") :]
+        # Normalize legacy scheme and force psycopg3 driver.
+        return "postgresql+psycopg://" + raw[len("postgres://") :]
+    if raw.startswith("postgresql://"):
+        # Default SQLAlchemy postgres dialect expects psycopg2; we install psycopg3.
+        return "postgresql+psycopg://" + raw[len("postgresql://") :]
     return raw
 
 
@@ -59,7 +110,15 @@ Base = declarative_base()
 
 def _load_or_create_token_encryption_key() -> str:
     """Load token encryption key from env or a local persistent file."""
-    env_key = os.getenv("TOKEN_ENCRYPTION_KEY")
+    env_key = _read_secret_env(
+        "TOKEN_ENCRYPTION_KEY",
+        preferred_keys=(
+            "TOKEN_ENCRYPTION_KEY",
+            "token_encryption_key",
+            "key",
+            "value",
+        ),
+    )
     if env_key:
         return env_key
 
