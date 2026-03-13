@@ -1034,9 +1034,16 @@ export function UpcomingAssignments() {
                     className={`listItem ${isMissing ? "dangerItem" : ""} ${
                       isFocused ? "isFocused" : ""
                     }`}
+                    style={{ overflow: "hidden" }}
                   >
-                    <div className="assignmentRow">
-                      <div className="assignmentMain">
+                    <div
+                      className="assignmentRow"
+                      style={{ minWidth: 0, width: "100%", maxWidth: "100%" }}
+                    >
+                      <div
+                        className="assignmentMain"
+                        style={{ minWidth: 0, flex: "1 1 0", width: "100%", maxWidth: "100%" }}
+                      >
                         <div className="assignmentTop">
                           <div className="assignmentTitleRow">
                             <div className="assignmentTitleRowLeft">
@@ -1123,11 +1130,15 @@ export function UpcomingAssignments() {
                         </div>
                       </div>
 
-                      <div className="assignmentActions">
+                      <div
+                        className="assignmentActions"
+                        style={{ minWidth: 0, maxWidth: "100%" }}
+                      >
                         <div
                           className={`muted assignmentDueRight ${
                             isMissing ? "dangerText" : ""
                           }`}
+                          style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
                         >
                           Due: <span className="mono">{dueLabel}</span>
                         </div>
