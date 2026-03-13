@@ -80,9 +80,14 @@ def _ensure_postgres_runtime_params(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
 
+def _default_sqlite_url() -> str:
+    db_path = Path(__file__).resolve().with_name("canvas_better.db")
+    return f"sqlite:///{db_path}"
+
+
 def _resolve_db_url() -> str:
     """Normalize the database URL so SQLAlchemy uses the psycopg3 driver."""
-    url = os.getenv("DATABASE_URL", "sqlite:///./canvas_better.db")
+    url = os.getenv("DATABASE_URL", _default_sqlite_url())
     if url.startswith("postgres://"):
         # Legacy Heroku/render scheme; also force psycopg3.
         return "postgresql+psycopg://" + url[len("postgres://"):]
@@ -93,8 +98,6 @@ def _resolve_db_url() -> str:
     return url
 
 
-# Database setup
-<<<<<<< Updated upstream
 def _resolve_database_url() -> str:
     """Resolve DB URL from common env names, falling back to local SQLite for dev."""
     raw = None
@@ -120,28 +123,23 @@ def _resolve_database_url() -> str:
             break
 
     if not raw:
-        return "sqlite:///./canvas_better.db"
+        return _default_sqlite_url()
     if raw.startswith("postgres://"):
-        # Normalize legacy scheme and force psycopg3 driver.
         normalized = "postgresql+psycopg://" + raw[len("postgres://") :]
         return _ensure_postgres_runtime_params(normalized)
     if raw.startswith("postgresql://"):
-        # Default SQLAlchemy postgres dialect expects psycopg2; we install psycopg3.
         normalized = "postgresql+psycopg://" + raw[len("postgresql://") :]
         return _ensure_postgres_runtime_params(normalized)
     return _ensure_postgres_runtime_params(raw)
 
 
+# Database setup
 DATABASE_URL = _resolve_database_url()
 if DATABASE_URL.startswith("sqlite") and _is_cloud_runtime():
     logger.warning(
         "DATABASE_URL resolved to SQLite in cloud runtime; data will not persist across redeploys. "
         "Set DATABASE_URL to your PostgreSQL endpoint."
     )
-
-=======
-DATABASE_URL = _resolve_db_url()
->>>>>>> Stashed changes
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
