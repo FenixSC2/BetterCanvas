@@ -552,10 +552,12 @@ export function WorkloadEstimateControl({
         <div className="effortNumbers">
           {isChecklistMode ? (
             <>
-              <span className="effortPill">
-                <span className="muted">Checklist:</span>{" "}
-                <span className="mono">{Math.round(displayPct)}%</span>
-              </span>
+              {!compactLabels ? (
+                <span className="effortPill">
+                  <span className="muted">Checklist:</span>{" "}
+                  <span className="mono">{Math.round(displayPct)}%</span>
+                </span>
+              ) : null}
 
               <span className="effortPill">
                 <span className="muted">Done:</span>{" "}
