@@ -473,6 +473,23 @@ function navigateToTodoItem(todoId) {
   );
 }
 
+function FavoriteMarker() {
+  return (
+    <span className="favoriteMarker" title="Favorited" aria-label="Favorited">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z" />
+      </svg>
+    </span>
+  );
+}
+
 /**
  * IMPORTANT:
  * - "Submitted" should ONLY mean Canvas submission (assignment.submitted === true).
@@ -787,6 +804,10 @@ export function WeeklyPlanner() {
     const est = workloadEstimateHours(courseId, assignmentId);
     const done = workloadCompletedHours(courseId, assignmentId);
     return Math.max(0, est - done);
+  }
+  function workloadIsFavorite(courseId, assignmentId) {
+    const st = getWorkloadState(courseId, assignmentId);
+    return !!st?.favorite;
   }
   function hasWorkloadEstimate(courseId, assignmentId) {
     return workloadEstimateHours(courseId, assignmentId) > 0;
@@ -1171,6 +1192,77 @@ export function WeeklyPlanner() {
       );
     };
 
+    const entryCourseLabel = (entry) => {
+      if (entry.__kind === "base") return entry.assignment?.course_name || "";
+      if (entry.__kind === "todo") return "TO-DO's";
+      const assignment = (itemsRaw || []).find(
+        (it) =>
+          it.course_id === entry.split.courseId &&
+          it.id === entry.split.assignmentId,
+      );
+      return assignment?.course_name || "";
+    };
+
+    const isEntryFavorite = (entry) => {
+      if (entry.__kind === "base") {
+        return workloadIsFavorite(
+          entry.assignment?.course_id,
+          entry.assignment?.id,
+        );
+      }
+      if (entry.__kind === "todo") {
+        return workloadIsFavorite("todo", entry.todo?.id);
+      }
+      return false;
+    };
+
+    const sortBucketEntries = (list) => {
+      list.sort((x, y) => {
+        const xSplit = x.__kind === "split";
+        const ySplit = y.__kind === "split";
+        if (xSplit !== ySplit) return xSplit ? 1 : -1;
+
+        const xFavorite = isEntryFavorite(x);
+        const yFavorite = isEntryFavorite(y);
+        if (xFavorite !== yFavorite) return xFavorite ? -1 : 1;
+
+        if (sortMode === "course") {
+          const ac = entryCourseLabel(x).toLowerCase();
+          const bc = entryCourseLabel(y).toLowerCase();
+          if (ac !== bc) return ac.localeCompare(bc);
+        }
+
+        if (x.__kind === "todo" || y.__kind === "todo") {
+          if (x.__kind !== y.__kind) return x.__kind === "base" ? -1 : 1;
+          const xt = x.todo?.due_at ? new Date(x.todo.due_at).getTime() : Infinity;
+          const yt = y.todo?.due_at ? new Date(y.todo.due_at).getTime() : Infinity;
+          if (xt !== yt) return xt - yt;
+          return String(x.todo?.title || "").localeCompare(
+            String(y.todo?.title || ""),
+          );
+        }
+
+        if (x.__kind === "base") {
+          const a = x.assignment;
+          const b = y.assignment;
+
+          const am = isMissing(a);
+          const bm = isMissing(b);
+          if (am !== bm) return am ? -1 : 1;
+
+          const at = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
+          const bt = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
+          return at - bt;
+        }
+
+        if (!!x.split.completed !== !!y.split.completed)
+          return x.split.completed ? 1 : -1;
+        if ((y.split.hours || 0) !== (x.split.hours || 0))
+          return (y.split.hours || 0) - (x.split.hours || 0);
+        return String(x.split.id).localeCompare(String(y.split.id));
+      });
+    };
+
     // split entries (always visible)
     for (const s of filteredSplits) {
       const splitDay = new Date(`${s.dateISO}T00:00:00`);
@@ -1220,55 +1312,6 @@ export function WeeklyPlanner() {
       pushUndated(a);
     }
 
-    for (let i = 0; i < 7; i++) {
-      const list = buckets.get(i) || [];
-      list.sort((x, y) => {
-        if (x.__kind !== y.__kind) return x.__kind === "base" ? -1 : 1;
-
-        if (sortMode === "course") {
-          const ax =
-            x.__kind === "base"
-              ? x.assignment
-              : (itemsRaw || []).find(
-                  (it) =>
-                    it.course_id === x.split.courseId &&
-                    it.id === x.split.assignmentId,
-                );
-          const ay =
-            y.__kind === "base"
-              ? y.assignment
-              : (itemsRaw || []).find(
-                  (it) =>
-                    it.course_id === y.split.courseId &&
-                    it.id === y.split.assignmentId,
-                );
-          const ac = (ax?.course_name || "").toLowerCase();
-          const bc = (ay?.course_name || "").toLowerCase();
-          if (ac !== bc) return ac.localeCompare(bc);
-        }
-
-        if (x.__kind === "base") {
-          const a = x.assignment;
-          const b = y.assignment;
-
-          const am = isMissing(a);
-          const bm = isMissing(b);
-          if (am !== bm) return am ? -1 : 1;
-
-          const at = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
-          const bt = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
-          return at - bt;
-        }
-
-        if (!!x.split.completed !== !!y.split.completed)
-          return x.split.completed ? 1 : -1;
-        if ((y.split.hours || 0) !== (x.split.hours || 0))
-          return (y.split.hours || 0) - (x.split.hours || 0);
-        return String(x.split.id).localeCompare(String(y.split.id));
-      });
-      buckets.set(i, list);
-    }
-
     // Planned totals now tied to workload estimate state (same data as widget)
     const dayTotals = days.map((_, i) => {
       const list = buckets.get(i) || [];
@@ -1294,7 +1337,12 @@ export function WeeklyPlanner() {
     });
 
     const weekTotal = dayTotals.reduce((s, x) => s + x, 0);
-    undated.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    undated.sort(
+      (a, b) =>
+        (workloadIsFavorite(a.course_id, a.id) ? 0 : 1) -
+          (workloadIsFavorite(b.course_id, b.id) ? 0 : 1) ||
+        (a.name || "").localeCompare(b.name || ""),
+    );
 
     // --- Personal to-do items ---
     const todoUndated = [];
@@ -1319,7 +1367,18 @@ export function WeeklyPlanner() {
           buckets.set(dayIdx, list);
         }
       }
-      todoUndated.sort((a, b) => a.title.localeCompare(b.title));
+      todoUndated.sort(
+        (a, b) =>
+          (workloadIsFavorite("todo", a.id) ? 0 : 1) -
+            (workloadIsFavorite("todo", b.id) ? 0 : 1) ||
+          a.title.localeCompare(b.title),
+      );
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const list = buckets.get(i) || [];
+      sortBucketEntries(list);
+      buckets.set(i, list);
     }
 
     return { start, end, days, buckets, undated, todoUndated, dayTotals, weekTotal };
@@ -1346,11 +1405,16 @@ export function WeeklyPlanner() {
       .map((a) => ({ a, t: new Date(a.due_at).getTime() }))
       .filter((x) => Number.isFinite(x.t) && x.t >= after)
       .filter((x) => (settings.showCompleted ? true : !x.a.submitted))
-      .sort((x, y) => x.t - y.t)
+      .sort((x, y) => {
+        const xf = workloadIsFavorite(x.a.course_id, x.a.id);
+        const yf = workloadIsFavorite(y.a.course_id, y.a.id);
+        if (xf !== yf) return xf ? -1 : 1;
+        return x.t - y.t;
+      })
       .slice(0, UI.NEXT_UP_LIMIT) // ✅ limit
       .map((x) => x.a);
     return upcoming;
-  }, [items, view.end, settings.showCompleted]);
+  }, [items, view.end, settings.showCompleted, storageTick]);
 
   const viewOffsetLabel = useMemo(() => {
     const today = startOfDay(new Date());
@@ -1875,6 +1939,7 @@ export function WeeklyPlanner() {
                         const t = entry.todo;
                         const dueTime = fmtTime(t.due_at);
                         const dueDate = fmtShortDate(t.due_at);
+                        const isFavorited = workloadIsFavorite("todo", t.id);
                         return (
                           <div key={`todo-${t.id}`} className="card">
                             <div className="cardBody" style={{ padding: 0 }}>
@@ -1883,7 +1948,10 @@ export function WeeklyPlanner() {
                                 <div className="plannerContent" style={{ padding: 10 }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                                     <div className="plannerTitle" title={t.title} style={{ fontWeight: 900 }}>
-                                      {t.title}
+                                      <span className="plannerTitleWrap">
+                                        {isFavorited ? <FavoriteMarker /> : null}
+                                        <span>{t.title}</span>
+                                      </span>
                                     </div>
                                     <span className="badge badgeNeutral" style={{ flexShrink: 0 }}>
                                       Personal
@@ -1941,6 +2009,7 @@ export function WeeklyPlanner() {
                           isSplit: true,
                           assignment: a,
                         });
+                        const isFavorited = workloadIsFavorite(s.courseId, s.assignmentId);
 
                         const missing = a ? isMissing(a) : false;
                         const submitted = !!a?.submitted;
@@ -1968,7 +2037,10 @@ export function WeeklyPlanner() {
                                       title={name}
                                       style={{ fontWeight: 900 }}
                                     >
-                                      {name}
+                                      <span className="plannerTitleWrap">
+                                        {isFavorited ? <FavoriteMarker /> : null}
+                                        <span>{name}</span>
+                                      </span>
                                     </div>
                                     <div
                                       style={{
@@ -2118,6 +2190,7 @@ export function WeeklyPlanner() {
                         hasEstimate &&
                         cap != null &&
                         cap > 1e-9;
+                      const isFavorited = workloadIsFavorite(a.course_id, a.id);
 
                       return (
                         <div key={`${a.course_id}-${a.id}`} className="card">
@@ -2142,7 +2215,10 @@ export function WeeklyPlanner() {
                                     title={a.name}
                                     style={{ fontWeight: 900 }}
                                   >
-                                    {a.name}
+                                    <span className="plannerTitleWrap">
+                                      {isFavorited ? <FavoriteMarker /> : null}
+                                      <span>{a.name}</span>
+                                    </span>
                                   </div>
                                   <div
                                     style={{
@@ -2326,6 +2402,7 @@ export function WeeklyPlanner() {
                   const submitted = !!a.submitted;
                   const complete =
                     !submitted && isWorkloadComplete(a.course_id, a.id);
+                  const isFavorited = workloadIsFavorite(a.course_id, a.id);
 
                   return (
                     <div key={`next-${a.course_id}-${a.id}`} className="card">
@@ -2348,7 +2425,10 @@ export function WeeklyPlanner() {
                                 title={a.name}
                                 style={{ fontWeight: 900 }}
                               >
-                                {a.name}
+                                <span className="plannerTitleWrap">
+                                  {isFavorited ? <FavoriteMarker /> : null}
+                                  <span>{a.name}</span>
+                                </span>
                               </div>
                               <div
                                 style={{
@@ -2585,7 +2665,10 @@ export function WeeklyPlanner() {
                                 className="plannerTitle plannerUndatedTitle"
                                 title={t.title}
                               >
-                                {t.title}
+                                <span className="plannerTitleWrap">
+                                  {workloadIsFavorite("todo", t.id) ? <FavoriteMarker /> : null}
+                                  <span>{t.title}</span>
+                                </span>
                                 <span className="badge badgeNeutral plannerUndatedBadge">Personal</span>
                               </div>
                               <div className="muted plannerUndatedMeta">
@@ -2656,6 +2739,7 @@ export function WeeklyPlanner() {
                     complete: false,
                   });
                   const barVariant = submitted ? "submitted" : "original";
+                  const isFavorited = workloadIsFavorite(a.course_id, a.id);
 
                   return (
                     <li key={`und-${a.course_id}-${a.id}`} className="card plannerUndatedItem">
@@ -2669,7 +2753,10 @@ export function WeeklyPlanner() {
                                   className="plannerTitle plannerUndatedTitle"
                                   title={a.name}
                                 >
-                                  {a.name}
+                                  <span className="plannerTitleWrap">
+                                    {isFavorited ? <FavoriteMarker /> : null}
+                                    <span>{a.name}</span>
+                                  </span>
                                   {status}
                                 </div>
                                 <div className="muted plannerUndatedMeta" title={courseLabel}>

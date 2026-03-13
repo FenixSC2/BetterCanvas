@@ -333,8 +333,11 @@ ol {
 .segmentedBtn:focus-visible,
 .toggle:focus-visible,
 .effortGearBtn:focus-visible,
+.effortFavoriteBtn:focus-visible,
 .effortCloseBtn:focus-visible,
 .effortStepBtn:focus-visible,
+.effortChecklistExpandBtn:focus-visible,
+.effortModeBtn:focus-visible,
 .expandableSummary:focus-visible {
   outline: none;
   box-shadow: var(--interactive-focus-ring);
@@ -1169,10 +1172,31 @@ details.expandable > .cardBody,
   min-width: 0;
 }
 
+.assignmentNameWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .assignmentName {
   font-weight: 900;
   font-size: calc(var(--fontBase) + 4px);
   line-height: 1.15;
+}
+
+.favoriteMarker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #d97706;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.favoriteMarker svg {
+  width: 18px;
+  height: 18px;
 }
 
 .assignmentPts {
@@ -1317,6 +1341,12 @@ details.expandable > .cardBody,
   gap: 10px;
 }
 
+.effortActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .effortNumbers {
   display: flex;
   align-items: center;
@@ -1362,6 +1392,35 @@ details.expandable > .cardBody,
   transition: opacity 120ms ease;
 }
 
+.effortFavoriteBtn {
+  height: 34px;
+  width: 34px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease,
+    background 120ms ease;
+}
+
+.effortFavoriteBtn.active {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.effortFavoriteBtn:hover {
+  opacity: var(--interactive-hover-opacity);
+}
+
+.effortFavoriteBtn:active {
+  transform: scale(var(--interactive-active-scale));
+}
+
 .effortGearBtn:hover {
   opacity: var(--interactive-hover-opacity);
 }
@@ -1375,6 +1434,75 @@ details.expandable > .cardBody,
   grid-template-columns: 1fr auto;
   gap: 10px;
   align-items: center;
+}
+
+.effortChecklistSummary {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.effortChecklistPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.effortChecklistPrimary.isDone {
+  opacity: 0.88;
+}
+
+.effortChecklistPrimaryText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fontSm);
+}
+
+.effortChecklistExpandBtn {
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radiusSm);
+  min-width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.effortChecklistList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.effortChecklistItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.effortChecklistItemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fontSm);
+}
+
+.effortChecklistItemText.isDone,
+.effortChecklistPrimaryText.isDone {
+  text-decoration: line-through;
+  opacity: 0.72;
 }
 
 .effortBarTrack {
@@ -1459,9 +1587,82 @@ details.expandable > .cardBody,
   gap: 12px;
 }
 
+.effortModeRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.effortModeBtn {
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  border-radius: var(--radiusSm);
+  padding: 9px 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.effortModeBtn.active {
+  border-color: var(--text);
+  background: var(--surface);
+}
+
 .effortFieldLabel {
   font-weight: 900;
   margin-bottom: 6px;
+}
+
+.effortChecklistEditor {
+  display: grid;
+  gap: 8px;
+}
+
+.effortChecklistEditorRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.effortChecklistEditorLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.effortChecklistTextInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.effortChecklistPreview {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effortChecklistActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.effortChecklistActionBtn {
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.effortChecklistTextInput.isDone {
+  text-decoration: line-through;
+  opacity: 0.72;
 }
 
 .effortFieldRow {
@@ -1477,6 +1678,10 @@ details.expandable > .cardBody,
   border-radius: 10px;
   border: 1px solid var(--border2);
   background: var(--surface);
+}
+
+.effortChecklistEditorLabel .effortChecklistTextInput {
+  max-width: none;
 }
 
 .effortDivider {
@@ -1724,6 +1929,14 @@ details.expandable > .cardBody,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.plannerTitleWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* (1) Today emphasis */

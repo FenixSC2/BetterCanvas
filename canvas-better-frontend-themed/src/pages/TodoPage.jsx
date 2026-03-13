@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { loadTodos, makeTodoId, saveTodos } from "../lib/todoStore";
+import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
 // WorkloadEstimateControl uses courseId/assignmentId to namespace localStorage keys.
 // We use the special courseId "todo" to keep personal items isolated from Canvas data.
@@ -81,6 +82,23 @@ function parseTodoTarget(raw) {
   } catch {
     return null;
   }
+}
+
+function FavoriteMarker() {
+  return (
+    <span className="favoriteMarker" title="Favorited" aria-label="Favorited">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z" />
+      </svg>
+    </span>
+  );
 }
 
 /* ---------- TodoItemForm ---------- */
@@ -188,6 +206,10 @@ function TodoItemForm({ initial = {}, onSubmit, onCancel, submitLabel = "Save" }
 function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const isFavorited = isAssignmentFavorited({
+    courseId: TODO_COURSE_ID,
+    assignmentId: todo.id,
+  });
 
   const urgencyVariant = getUrgencyVariant(todo);
   const urgencyLabel = getUrgencyLabel(todo);
@@ -270,9 +292,14 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
                 textDecoration: todo.completed ? "line-through" : "none",
                 wordBreak: "break-word",
                 lineHeight: 1.3,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              {todo.title}
+              {isFavorited ? <FavoriteMarker /> : null}
+              <span>{todo.title}</span>
             </div>
             <div
               className="muted"
@@ -384,6 +411,7 @@ export function TodoPage() {
   const [todos, setTodos] = useState(() => loadTodos());
   const [showNewForm, setShowNewForm] = useState(false);
   const [focusedTodoId, setFocusedTodoId] = useState("");
+  const [workloadTick, setWorkloadTick] = useState(0);
 
   // Keep in sync when another tab or the planner writes to the store
   useEffect(() => {
@@ -398,6 +426,30 @@ export function TodoPage() {
     return () => {
       window.removeEventListener("canvassist:todos:changed", onTodosChanged);
       window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onStorage(e) {
+      if (!e?.key) return;
+      const lk = String(e.key).toLowerCase();
+      if (lk.includes("workload") || lk.includes("effort")) {
+        setWorkloadTick((t) => t + 1);
+      }
+    }
+
+    function onWorkloadChanged() {
+      setWorkloadTick((t) => t + 1);
+    }
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("canvassist:workload:changed", onWorkloadChanged);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(
+        "canvassist:workload:changed",
+        onWorkloadChanged,
+      );
     };
   }, []);
 
@@ -467,6 +519,13 @@ export function TodoPage() {
   const { overdue, upcoming, undated, completed } = useMemo(() => {
     const now = Date.now();
     const o = [], u = [], un = [], c = [];
+    const favoriteRank = (todo) =>
+      isAssignmentFavorited({
+        courseId: TODO_COURSE_ID,
+        assignmentId: todo.id,
+      })
+        ? 0
+        : 1;
 
     for (const t of todos) {
       if (t.completed) {
@@ -491,14 +550,21 @@ export function TodoPage() {
 
     // Sort each group
     const byDue = (a, b) => new Date(a.due_at) - new Date(b.due_at);
-    o.sort(byDue);
-    u.sort(byDue);
-    un.sort((a, b) => a.title.localeCompare(b.title));
+    o.sort((a, b) => favoriteRank(a) - favoriteRank(b) || byDue(a, b));
+    u.sort((a, b) => favoriteRank(a) - favoriteRank(b) || byDue(a, b));
+    un.sort(
+      (a, b) =>
+        favoriteRank(a) - favoriteRank(b) || a.title.localeCompare(b.title),
+    );
     // Completed: most recently created first
-    c.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    c.sort(
+      (a, b) =>
+        favoriteRank(a) - favoriteRank(b) ||
+        new Date(b.createdAt) - new Date(a.createdAt),
+    );
 
     return { overdue: o, upcoming: u, undated: un, completed: c };
-  }, [todos]);
+  }, [todos, workloadTick]);
 
   const totalActive = overdue.length + upcoming.length + undated.length;
 

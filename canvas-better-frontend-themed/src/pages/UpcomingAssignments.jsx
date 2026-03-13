@@ -7,6 +7,7 @@ import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 import { loadTodos } from "../lib/todoStore";
+import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -231,6 +232,23 @@ function normalizeTodo(todo) {
   };
 }
 
+function FavoriteMarker() {
+  return (
+    <span className="favoriteMarker" title="Favorited" aria-label="Favorited">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z" />
+      </svg>
+    </span>
+  );
+}
+
 export function UpcomingAssignments() {
   // ✅ Cached fetch (prevents tab-switch flash)
   const upcomingQ = useCachedAsync(
@@ -274,6 +292,7 @@ export function UpcomingAssignments() {
   // track which details panels are open (allow multiple)
   const [openDetailsKeys, setOpenDetailsKeys] = useState(() => new Set());
   const [todos, setTodos] = useState(() => loadTodos());
+  const [workloadTick, setWorkloadTick] = useState(0);
 
   const canvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
   const canvasUndatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
@@ -292,6 +311,30 @@ export function UpcomingAssignments() {
     return () => {
       window.removeEventListener("canvassist:todos:changed", syncTodos);
       window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onStorage(e) {
+      if (!e?.key) return;
+      const lk = String(e.key).toLowerCase();
+      if (lk.includes("workload") || lk.includes("effort")) {
+        setWorkloadTick((t) => t + 1);
+      }
+    }
+
+    function onWorkloadChanged() {
+      setWorkloadTick((t) => t + 1);
+    }
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("canvassist:workload:changed", onWorkloadChanged);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(
+        "canvassist:workload:changed",
+        onWorkloadChanged,
+      );
     };
   }, []);
 
@@ -440,6 +483,11 @@ export function UpcomingAssignments() {
 
     const isCompleted = (a) => isCompletedItem(a);
     const isTodo = (a) => isTodoItem(a);
+    const isFavorite = (a) =>
+      isAssignmentFavorited({
+        courseId: isTodoItem(a) ? "todo" : a.course_id,
+        assignmentId: a.id,
+      });
 
     // Filter out completed assignments that are past their due date
     const shouldShow = (a) => {
@@ -460,6 +508,11 @@ export function UpcomingAssignments() {
     if (filterMode === "missing") {
       filtered = missing;
       list = missing; // Only show missing items, don't duplicate
+    } else if (filterMode === "favorites") {
+      filtered = list.filter(isFavorite);
+      const filteredMissing = filtered.filter(isMissing);
+      const filteredNonMissing = filtered.filter((a) => !isMissing(a));
+      list = [...filteredMissing, ...filteredNonMissing];
     } else if (filterMode === "todo") {
       filtered = list.filter(isTodo);
       const filteredMissing = filtered.filter(isMissing);
@@ -483,6 +536,10 @@ export function UpcomingAssignments() {
       const bMissing = isMissing(b);
       if (aMissing !== bMissing) return aMissing ? -1 : 1;
 
+      const aFavorite = isFavorite(a);
+      const bFavorite = isFavorite(b);
+      if (aFavorite !== bFavorite) return aFavorite ? -1 : 1;
+
       const aCompleted = isCompleted(a);
       const bCompleted = isCompleted(b);
       if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
@@ -498,7 +555,7 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [items, filterMode, blend, canvasPointStats]);
+  }, [items, filterMode, blend, canvasPointStats, workloadTick]);
 
   // Separate list for undated assignments (for the undated section)
   const undatedSorted = useMemo(() => {
@@ -528,11 +585,18 @@ export function UpcomingAssignments() {
 
     const isCompleted = (a) => isCompletedItem(a);
     const isTodo = (a) => isTodoItem(a);
+    const isFavorite = (a) =>
+      isAssignmentFavorited({
+        courseId: isTodoItem(a) ? "todo" : a.course_id,
+        assignmentId: a.id,
+      });
 
     let undatedItems = [...canvasUndatedItems, ...undatedTodoItems];
 
     if (filterMode === "todo") {
       undatedItems = undatedItems.filter(isTodo);
+    } else if (filterMode === "favorites") {
+      undatedItems = undatedItems.filter(isFavorite);
     }
 
     // Filter out completed assignments that are past their due date
@@ -552,6 +616,10 @@ export function UpcomingAssignments() {
       const bCompleted = isCompleted(b);
       if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
 
+      const aFavorite = isFavorite(a);
+      const bFavorite = isFavorite(b);
+      if (aFavorite !== bFavorite) return aFavorite ? -1 : 1;
+
       if (isTodo(a) !== isTodo(b)) return isTodo(a) ? -1 : 1;
 
       const aScore = (1 - blend) * timeScore(a) + blend * weightScore(a);
@@ -562,7 +630,14 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [canvasUndatedItems, undatedTodoItems, blend, filterMode, canvasPointStats]);
+  }, [
+    canvasUndatedItems,
+    undatedTodoItems,
+    blend,
+    filterMode,
+    canvasPointStats,
+    workloadTick,
+  ]);
 
   // === Auto-focus target assignment ===
   useEffect(() => {
@@ -638,6 +713,8 @@ export function UpcomingAssignments() {
       ? "Missing"
       : filterMode === "upcoming"
       ? "Upcoming"
+      : filterMode === "favorites"
+      ? "Favorites"
       : filterMode === "completed"
       ? "Completed"
       : filterMode === "todo"
@@ -733,6 +810,7 @@ export function UpcomingAssignments() {
               ["all", "All"],
               ["missing", "Missing"],
               ["upcoming", "Upcoming"],
+              ["favorites", "Favorites"],
               ["completed", "Completed"],
               ["todo", "TO-DO's"],
               ["undated", "Undated"],
@@ -877,6 +955,10 @@ export function UpcomingAssignments() {
 
                 const focusId = todoItem ? `todo-${a.id}` : `${a.course_id}-${a.id}`;
                 const isFocused = focusKey === focusId;
+                const isFavorited = isAssignmentFavorited({
+                  courseId: todoItem ? "todo" : a.course_id,
+                  assignmentId: a.id,
+                });
 
                 const badgeClass =
                   badge.variant === "success"
@@ -900,7 +982,10 @@ export function UpcomingAssignments() {
                         <div className="assignmentTop">
                           <div className="assignmentTitleRow">
                             <div className="assignmentTitleRowLeft">
-                              <span className="assignmentName">{a.name}</span>
+                              <span className="assignmentNameWrap">
+                                {isFavorited ? <FavoriteMarker /> : null}
+                                <span className="assignmentName">{a.name}</span>
+                              </span>
 
                               <span
                                 className={`badge badge${
@@ -1017,7 +1102,7 @@ export function UpcomingAssignments() {
       ) : null}
 
       {/* === Undated assignments section (show when filtering by undated OR when mode is "all") === */}
-      {filterMode === "undated" || filterMode === "all" || filterMode === "todo" ? (
+      {filterMode === "undated" || filterMode === "all" || filterMode === "todo" || filterMode === "favorites" ? (
         <div className="upcomingPanel">
           <div className="upcomingPanelHeader">
             <div className="upcomingPanelHeaderLeft">
@@ -1031,6 +1116,8 @@ export function UpcomingAssignments() {
               <div className="muted">
                 {filterMode === "todo"
                   ? "Undated personal TO-DO items"
+                  : filterMode === "favorites"
+                  ? "Favorited items without due dates"
                   : filterMode === "undated"
                   ? `Filter: ${filterLabel}`
                   : "No due date set"}
@@ -1065,6 +1152,10 @@ export function UpcomingAssignments() {
 
                   const focusId = todoItem ? `todo-${a.id}` : `${a.course_id}-${a.id}`;
                   const isFocused = focusKey === focusId;
+                  const isFavorited = isAssignmentFavorited({
+                    courseId: todoItem ? "todo" : a.course_id,
+                    assignmentId: a.id,
+                  });
 
                   return (
                     <li
@@ -1078,7 +1169,10 @@ export function UpcomingAssignments() {
                           <div className="assignmentTop">
                             <div className="assignmentTitleRow">
                               <div className="assignmentTitleRowLeft">
-                                <span className="assignmentName">{a.name}</span>
+                                <span className="assignmentNameWrap">
+                                  {isFavorited ? <FavoriteMarker /> : null}
+                                  <span className="assignmentName">{a.name}</span>
+                                </span>
 
                                 <span
                                   className={`badge badge${

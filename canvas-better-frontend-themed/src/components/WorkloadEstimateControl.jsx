@@ -3,11 +3,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   addCompletedHours,
+  addChecklistItem,
   getEffortState,
+  removeChecklistItem,
+  setAssignmentFavorite,
   setCompletedHours,
+  setEffortMode,
   setEstimateHours,
   getEffortSnapMinutes,
+  toggleChecklistItem,
+  updateChecklistItemText,
 } from "../lib/workloadEstimates";
+
+const CHECKLIST_MODE = "checklist";
 
 // remaining hours helper (formats to minutes when less than 1 hour, otherwise hours with 1 decimal)
 function fmtRemaining(hrs) {
@@ -149,6 +157,125 @@ function roundToStep(value, step) {
   return Math.round(v / s) * s;
 }
 
+function getChecklistProgress(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const total = safeItems.length;
+  const done = safeItems.filter((item) => item.completed).length;
+  const pct = total > 0 ? clampPct((done / total) * 100) : 0;
+  const nextItem = safeItems.find((item) => !item.completed) || null;
+  return { total, done, pct, nextItem };
+}
+
+function ChecklistEditorRow({ item, onToggle, onSaveText, onRemove }) {
+  const [draft, setDraft] = useState(item.text);
+  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setDraft(item.text);
+  }, [item.id, item.text]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+  }, [isEditing]);
+
+  function commit() {
+    const trimmed = String(draft || "").trim();
+    if (!trimmed || trimmed === item.text) {
+      setDraft(item.text);
+      return;
+    }
+    onSaveText(trimmed);
+  }
+
+  function startEdit() {
+    setDraft(item.text);
+    setIsEditing(true);
+  }
+
+  function finishEdit(save = true) {
+    if (save) {
+      commit();
+    } else {
+      setDraft(item.text);
+    }
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="effortChecklistEditorRow">
+      <label className="effortChecklistItem effortChecklistEditorLabel">
+        <input
+          type="checkbox"
+          checked={!!item.completed}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            className={`effortInput effortChecklistTextInput ${
+              item.completed ? "isDone" : ""
+            }`}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => finishEdit(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                finishEdit(true);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                finishEdit(false);
+              }
+            }}
+            aria-label="Checklist item text"
+          />
+        ) : (
+          <span
+            className={`effortChecklistItemText effortChecklistPreview ${
+              item.completed ? "isDone" : ""
+            }`}
+            title={item.text}
+          >
+            {item.text}
+          </span>
+        )}
+      </label>
+
+      <div className="effortChecklistActions">
+        <button
+          type="button"
+          className="btn effortChecklistActionBtn"
+          onClick={() => {
+            if (isEditing) finishEdit(true);
+            else startEdit();
+          }}
+          title={isEditing ? "Save task text" : "Edit task text"}
+        >
+          {isEditing ? "Done" : "Edit"}
+        </button>
+
+        <button
+          type="button"
+          className="btn effortChecklistActionBtn"
+          onClick={onRemove}
+          title="Remove task"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function WorkloadEstimateControl({
   courseId,
   assignmentId,
@@ -163,7 +290,9 @@ export function WorkloadEstimateControl({
   // input state
   const [draftHours, setDraftHours] = useState("");
   const [addHoursDraft, setAddHoursDraft] = useState(""); // for "Add time" custom
+  const [newChecklistItemDraft, setNewChecklistItemDraft] = useState("");
   const [err, setErr] = useState("");
+  const [checklistExpanded, setChecklistExpanded] = useState(false);
 
   // inline estimate UI (used when estimate <= 0)
   const [showInlineEstimate, setShowInlineEstimate] = useState(false);
@@ -243,8 +372,18 @@ export function WorkloadEstimateControl({
   const completed = Number.isFinite(Number(st?.completedHours))
     ? Number(st.completedHours)
     : 0;
+  const mode = st?.mode === CHECKLIST_MODE ? CHECKLIST_MODE : "hours";
+  const isChecklistMode = mode === CHECKLIST_MODE;
+  const isFavorite = !!st?.favorite;
+  const checklistItems = Array.isArray(st?.checklistItems) ? st.checklistItems : [];
+  const checklistProgress = useMemo(
+    () => getChecklistProgress(checklistItems),
+    [checklistItems],
+  );
   const remaining = computeRemainingHours(st);
-  const isComplete = !!st?.completed;
+  const isComplete = isChecklistMode
+    ? checklistProgress.total > 0 && checklistProgress.done >= checklistProgress.total
+    : !!st?.completed;
   const compactComplete = compactLabels && isComplete;
 
   // Helper fn: gives a checkbox next to completed badge on assignments in weekly planner (or other uses of the shortened "compact" mode) to quickly mark complete/incomplete by toggling between 0% and 100% completed.
@@ -275,12 +414,14 @@ export function WorkloadEstimateControl({
     return clampPct((completed / estimate) * 100);
   }, [estimate, completed]);
 
-  const fillCls = useMemo(() => barColorClass(pct), [pct]);
+  const displayPct = isChecklistMode ? checklistProgress.pct : pct;
+  const fillCls = useMemo(() => barColorClass(displayPct), [displayPct]);
 
   function closePopover() {
     setOpen(false);
     setAnchorEl(null);
     setErr("");
+    setNewChecklistItemDraft("");
   }
 
   function applyEstimate() {
@@ -313,8 +454,24 @@ export function WorkloadEstimateControl({
     setErr("");
     setDraftHours(estimate > 0 ? String(estimate) : "");
     setAddHoursDraft("");
+    setNewChecklistItemDraft("");
     setAnchorEl(btn);
     setOpen(true);
+  }
+
+  function applyMode(nextMode) {
+    setEffortMode({ courseId, assignmentId }, nextMode);
+    if (nextMode === CHECKLIST_MODE) {
+      setChecklistExpanded(true);
+    }
+  }
+
+  function applyNewChecklistItem() {
+    const text = String(newChecklistItemDraft || "").trim();
+    if (!text) return;
+    addChecklistItem({ courseId, assignmentId }, text);
+    setNewChecklistItemDraft("");
+    setChecklistExpanded(true);
   }
 
   function doAddCompleted(delta) {
@@ -392,7 +549,21 @@ export function WorkloadEstimateControl({
     <div className="effortWidget">
       <div className="effortTopRow">
         <div className="effortNumbers">
-          {estimate > 0 ? (
+          {isChecklistMode ? (
+            <>
+              <span className="effortPill">
+                <span className="muted">Checklist:</span>{" "}
+                <span className="mono">{Math.round(displayPct)}%</span>
+              </span>
+
+              <span className="effortPill">
+                <span className="muted">Done:</span>{" "}
+                <span className="mono">
+                  {checklistProgress.done}/{checklistProgress.total}
+                </span>
+              </span>
+            </>
+          ) : estimate > 0 ? (
             <>
               <span className="effortPill">
                 <span className="muted">{L.total}</span>{" "}
@@ -488,19 +659,139 @@ export function WorkloadEstimateControl({
           ) : null}
         </div>
 
-        <button
-          type="button"
-          className="effortGearBtn"
-          onClick={openPopover}
-          title={L.inputBtn}
-          aria-label={L.inputBtn}
-        >
-          ✎
-        </button>
+        <div className="effortActions">
+          <button
+            type="button"
+            className={`effortFavoriteBtn ${isFavorite ? "active" : ""}`}
+            onClick={() =>
+              setAssignmentFavorite(
+                { courseId, assignmentId },
+                !isFavorite,
+              )
+            }
+            title={isFavorite ? "Unfavorite item" : "Favorite item"}
+            aria-label={isFavorite ? "Unfavorite item" : "Favorite item"}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill={isFavorite ? "currentColor" : "none"}
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="m12 3.5 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.68 6.44 20.6l1.06-6.19L3 10.03l6.22-.9L12 3.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className="effortGearBtn"
+            onClick={openPopover}
+            title={L.inputBtn}
+            aria-label={L.inputBtn}
+          >
+            ✎
+          </button>
+        </div>
       </div>
 
+      {isChecklistMode ? (
+        <div className="effortChecklistSummary">
+          {checklistProgress.total > 0 ? (
+            <>
+              {checklistProgress.nextItem ? (
+                <label className="effortChecklistPrimary">
+                  <input
+                    type="checkbox"
+                    checked={!!checklistProgress.nextItem.completed}
+                    onChange={(e) =>
+                      toggleChecklistItem(
+                        { courseId, assignmentId },
+                        checklistProgress.nextItem.id,
+                        e.target.checked,
+                      )
+                    }
+                  />
+                  <span className="effortChecklistPrimaryText">
+                    {checklistProgress.nextItem.text}
+                  </span>
+                </label>
+              ) : (
+                <div className="effortChecklistPrimary isDone">
+                  <input type="checkbox" checked={true} readOnly />
+                  <span className="effortChecklistPrimaryText isDone">
+                    All checklist items complete.
+                  </span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="effortChecklistExpandBtn"
+                onClick={() => setChecklistExpanded((v) => !v)}
+                aria-label={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+                title={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+              >
+                {checklistExpanded ? "▾" : "▸"}
+              </button>
+            </>
+          ) : (
+            <div className="muted" style={{ marginTop: 8 }}>
+              No checklist items yet. Open settings to add steps.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {isChecklistMode && checklistExpanded && checklistProgress.total > 0 ? (
+        <div className="effortChecklistList">
+          {checklistItems.map((item) => (
+            <label key={item.id} className="effortChecklistItem">
+              <input
+                type="checkbox"
+                checked={!!item.completed}
+                onChange={(e) =>
+                  toggleChecklistItem(
+                    { courseId, assignmentId },
+                    item.id,
+                    e.target.checked,
+                  )
+                }
+              />
+              <span
+                className={`effortChecklistItemText ${
+                  item.completed ? "isDone" : ""
+                }`}
+              >
+                {item.text}
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+
       {/* ✅ Draggable progress bar (snaps by global step) */}
-      {estimate <= 0 ? (
+      {isChecklistMode ? (
+        <div className="effortBarWrap">
+          <div
+            className="effortBarTrack"
+            title="Checklist completion"
+          >
+            <div
+              className={`effortBarFill ${fillCls}`}
+              style={{ width: `${displayPct}%` }}
+            />
+          </div>
+
+          <div className="effortBarMeta mono">{Math.round(displayPct)}%</div>
+        </div>
+      ) : estimate <= 0 ? (
         <div className="effortBarWrap">
         </div>
       ) : compactLabels && isComplete ? (
@@ -571,11 +862,11 @@ export function WorkloadEstimateControl({
           >
             <div
               className={`effortBarFill ${fillCls}`}
-              style={{ width: `${pct}%` }}
+              style={{ width: `${displayPct}%` }}
             />
           </div>
 
-          <div className="effortBarMeta mono">{Math.round(pct)}%</div>
+          <div className="effortBarMeta mono">{Math.round(displayPct)}%</div>
         </div>
       )}
 
@@ -603,151 +894,238 @@ export function WorkloadEstimateControl({
           </div>
 
           <div className="effortPopoverBody">
-            {/* ---- Estimate editor ---- */}
             <div className="effortField">
-              <div className="effortFieldLabel">Estimated hours</div>
-              <div className="effortFieldRow">
-                <input
-                  className="effortInput"
-                  type="number"
-                  min="0"
-                  step="0.25"
-                  value={draftHours}
-                  onChange={(e) => {
-                    setDraftHours(e.target.value);
-                    setErr("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      applyEstimate();
-                    }
-                  }}
-                  style={{ width: 140 }}
-                />
-                <span className="muted">hours</span>
-
+              <div className="effortFieldLabel">Tracking mode</div>
+              <div className="effortModeRow">
                 <button
                   type="button"
-                  className="btn effortApplyBtn"
-                  onClick={applyEstimate}
+                  className={`effortModeBtn ${!isChecklistMode ? "active" : ""}`}
+                  onClick={() => applyMode("hours")}
                 >
-                  Apply
+                  Hour estimate
+                </button>
+                <button
+                  type="button"
+                  className={`effortModeBtn ${isChecklistMode ? "active" : ""}`}
+                  onClick={() => applyMode(CHECKLIST_MODE)}
+                >
+                  Task list
                 </button>
               </div>
-
-              {err ? (
-                <div className="dangerText" style={{ fontSize: 12 }}>
-                  {err}
-                </div>
-              ) : null}
             </div>
 
             <div className="effortDivider" />
 
-            {/* ---- Add time / progress controls ---- */}
-            <div className="effortField">
-              <div className="effortFieldLabel">Track progress</div>
+            {isChecklistMode ? (
+              <div className="effortField">
+                <div className="effortFieldLabel">Task list</div>
 
-              <div
-                className="effortFieldRow"
-                style={{ flexWrap: "wrap", gap: 8 }}
-              >
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => doAddCompleted(snapStep)}
-                  title={`+${snapStep}h`}
-                  disabled={estimate <= 0}
-                >
-                  +{fmtRemaining(snapStep)}
-                </button>
+                {checklistItems.length === 0 ? (
+                  <div className="muted">No tasks yet. Add the first step below.</div>
+                ) : (
+                  <div className="effortChecklistEditor">
+                    {checklistItems.map((item) => (
+                      <ChecklistEditorRow
+                        key={item.id}
+                        item={item}
+                        onToggle={(checked) =>
+                          toggleChecklistItem(
+                            { courseId, assignmentId },
+                            item.id,
+                            checked,
+                          )
+                        }
+                        onSaveText={(text) =>
+                          updateChecklistItemText(
+                            { courseId, assignmentId },
+                            item.id,
+                            text,
+                          )
+                        }
+                        onRemove={() =>
+                          removeChecklistItem({ courseId, assignmentId }, item.id)
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => doAddCompleted(0.5)}
-                  title="+0.5h"
-                  disabled={estimate <= 0}
-                >
-                  +30m
-                </button>
+                <div className="effortFieldRow" style={{ marginTop: 10 }}>
+                  <input
+                    className="effortInput"
+                    type="text"
+                    placeholder="Add task…"
+                    value={newChecklistItemDraft}
+                    onChange={(e) => setNewChecklistItemDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applyNewChecklistItem();
+                      }
+                    }}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => doAddCompleted(1)}
-                  title="+1h"
-                  disabled={estimate <= 0}
-                >
-                  +1h
-                </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={applyNewChecklistItem}
+                  >
+                    Add step
+                  </button>
+                </div>
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => doAddCompleted(2)}
-                  title="+2h"
-                  disabled={estimate <= 0}
-                >
-                  +2h
-                </button>
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                  Progress is based on completed checklist items.
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="effortField">
+                  <div className="effortFieldLabel">Estimated hours</div>
+                  <div className="effortFieldRow">
+                    <input
+                      className="effortInput"
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={draftHours}
+                      onChange={(e) => {
+                        setDraftHours(e.target.value);
+                        setErr("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          applyEstimate();
+                        }
+                      }}
+                      style={{ width: 140 }}
+                    />
+                    <span className="muted">hours</span>
 
-              <div className="effortFieldRow" style={{ marginTop: 10 }}>
-                <input
-                  className="effortInput"
-                  type="number"
-                  min="0"
-                  step="0.25"
-                  placeholder="Add hours…"
-                  value={addHoursDraft}
-                  onChange={(e) => setAddHoursDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      const v = Number(addHoursDraft);
-                      if (Number.isFinite(v) && v !== 0) {
+                    <button
+                      type="button"
+                      className="btn effortApplyBtn"
+                      onClick={applyEstimate}
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  {err ? (
+                    <div className="dangerText" style={{ fontSize: 12 }}>
+                      {err}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="effortDivider" />
+
+                <div className="effortField">
+                  <div className="effortFieldLabel">Track progress</div>
+
+                  <div
+                    className="effortFieldRow"
+                    style={{ flexWrap: "wrap", gap: 8 }}
+                  >
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => doAddCompleted(snapStep)}
+                      title={`+${snapStep}h`}
+                      disabled={estimate <= 0}
+                    >
+                      +{fmtRemaining(snapStep)}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => doAddCompleted(0.5)}
+                      title="+0.5h"
+                      disabled={estimate <= 0}
+                    >
+                      +30m
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => doAddCompleted(1)}
+                      title="+1h"
+                      disabled={estimate <= 0}
+                    >
+                      +1h
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => doAddCompleted(2)}
+                      title="+2h"
+                      disabled={estimate <= 0}
+                    >
+                      +2h
+                    </button>
+                  </div>
+
+                  <div className="effortFieldRow" style={{ marginTop: 10 }}>
+                    <input
+                      className="effortInput"
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      placeholder="Add hours…"
+                      value={addHoursDraft}
+                      onChange={(e) => setAddHoursDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const v = Number(addHoursDraft);
+                          if (Number.isFinite(v) && v !== 0) {
+                            doAddCompleted(v);
+                            setAddHoursDraft("");
+                          }
+                        }
+                      }}
+                      style={{ width: 140 }}
+                      disabled={estimate <= 0}
+                    />
+                    <span className="muted">hours</span>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const v = Number(addHoursDraft);
+                        if (!Number.isFinite(v) || v === 0) return;
                         doAddCompleted(v);
                         setAddHoursDraft("");
-                      }
-                    }
-                  }}
-                  style={{ width: 140 }}
-                  disabled={estimate <= 0}
-                />
-                <span className="muted">hours</span>
+                      }}
+                      disabled={estimate <= 0}
+                      title="Add to completed hours"
+                    >
+                      Add
+                    </button>
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    const v = Number(addHoursDraft);
-                    if (!Number.isFinite(v) || v === 0) return;
-                    doAddCompleted(v);
-                    setAddHoursDraft("");
-                  }}
-                  disabled={estimate <= 0}
-                  title="Add to completed hours"
-                >
-                  Add
-                </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={resetProgress}
+                      disabled={completed <= 0}
+                      title="Reset completed hours to 0"
+                    >
+                      Reset progress
+                    </button>
+                  </div>
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={resetProgress}
-                  disabled={completed <= 0}
-                  title="Reset completed hours to 0"
-                >
-                  Reset progress
-                </button>
-              </div>
-
-              <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-                Drag the bar to set completed hours (snaps to {fmtRemaining(snapStep)}).
-              </div>
-            </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                    Drag the bar to set completed hours (snaps to {fmtRemaining(snapStep)}).
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </AnchoredPopover>

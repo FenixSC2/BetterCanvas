@@ -61,10 +61,11 @@ export function TopLoadingBar() {
         position: "fixed",
         top: 0,
         left: 0,
-        height: 3,
+        height: 6,
         width: "100%",
         zIndex: 1200,
-        background: "transparent",
+        background: "color-mix(in srgb, var(--surface), transparent 78%)",
+        backdropFilter: "blur(3px)",
       }}
       aria-hidden="true"
     >
@@ -72,10 +73,12 @@ export function TopLoadingBar() {
         style={{
           height: "100%",
           width: `${pct}%`,
-          // bright blue-ish bar (you can swap to your theme variable later)
-          background: "linear-gradient(90deg, #4f46e5, #22c55e)",
+          background:
+            "linear-gradient(90deg, #2563eb 0%, #14b8a6 52%, #f59e0b 100%)",
           transition: pct >= 100 ? "width 120ms ease-out" : "width 60ms linear",
-          boxShadow: "0 0 10px rgba(79,70,229,0.35)",
+          boxShadow:
+            "0 0 18px rgba(37,99,235,0.35), 0 0 28px rgba(20,184,166,0.22)",
+          borderRadius: 999,
         }}
       />
     </div>

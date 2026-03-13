@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../theme/useTheme";
 import {
+  getDefaultEffortMode,
   getEffortSnapMinutes,
+  setDefaultEffortMode,
   setEffortSnapMinutes,
 } from "../lib/workloadEstimates";
 import { useAuth } from "../hooks/useAuth";
@@ -70,6 +72,9 @@ export function SettingsModal({
 
   // Effort settings draft
   const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
+  const [defaultModeDraft, setDefaultModeDraft] = useState(() =>
+    getDefaultEffortMode(),
+  );
 
   // Weekly planner settings
   const [plannerSettings, setPlannerSettings] = useState(() => {
@@ -115,6 +120,7 @@ export function SettingsModal({
   useEffect(() => {
     if (!open) return;
     setSnapDraft(getEffortSnapMinutes());
+    setDefaultModeDraft(getDefaultEffortMode());
   }, [open]);
 
   // Load hidden assignments when opening the hidden assignments section
@@ -162,6 +168,11 @@ export function SettingsModal({
     const safe = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 10;
     setEffortSnapMinutes(safe);
     setSnapDraft(getEffortSnapMinutes());
+  }
+
+  function applyDefaultMode(mode = defaultModeDraft) {
+    setDefaultEffortMode(mode);
+    setDefaultModeDraft(getDefaultEffortMode());
   }
 
   async function handleHideAssignment(courseId, assignmentId) {
@@ -494,7 +505,43 @@ export function SettingsModal({
                     <div className="settingsSectionHeader">
                       <div className="h3">Effort</div>
                       <div className="muted">
-                        Controls how the progress bar snaps when you drag it.
+                        Controls how workload tracking behaves by default.
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 18 }}>
+                      <div style={{ minWidth: 220, fontWeight: 800, marginBottom: 10 }}>
+                        Default workload style
+                      </div>
+
+                      <div className="segmented">
+                        <button
+                          type="button"
+                          className={`segmentedBtn ${defaultModeDraft === "hours" ? "active" : ""}`}
+                          onClick={() => {
+                            setDefaultModeDraft("hours");
+                            applyDefaultMode("hours");
+                          }}
+                        >
+                          <div className="segmentedTitle">Hour estimate</div>
+                          <div className="segmentedDesc">Use the existing hour and progress slider workflow.</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          className={`segmentedBtn ${defaultModeDraft === "checklist" ? "active" : ""}`}
+                          onClick={() => {
+                            setDefaultModeDraft("checklist");
+                            applyDefaultMode("checklist");
+                          }}
+                        >
+                          <div className="segmentedTitle">Task list</div>
+                          <div className="segmentedDesc">Start new workload widgets in checklist mode.</div>
+                        </button>
+                      </div>
+
+                      <div className="muted" style={{ marginTop: 8 }}>
+                        You can still switch any individual assignment inside its workload settings.
                       </div>
                     </div>
 
