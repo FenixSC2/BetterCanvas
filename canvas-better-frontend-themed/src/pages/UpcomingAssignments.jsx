@@ -279,6 +279,16 @@ export function UpcomingAssignments() {
     undatedRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refresh immediately when the user hides/unhides an assignment via Settings
+  useEffect(() => {
+    function onHiddenChanged() {
+      refreshRef.current?.();
+      undatedRefreshRef.current?.();
+    }
+    window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
+    return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
+  }, []);
+
   // Auto-refresh every 2.5 minutes while the page is open
   useEffect(() => {
     const POLL_MS = 2.5 * 60 * 1000;

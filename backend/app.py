@@ -992,11 +992,18 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
     # Extract upcoming assignment IDs for current courses
     upcoming_refs: list[tuple[int, int, datetime]] = []  # (course_id, assignment_id, due_at)
     for it in items:
-        if it.get("plannable_type") != "assignment":
+        ptype = it.get("plannable_type")
+        cid = it.get("course_id")
+
+        if ptype == "assignment":
+            pid = it.get("plannable_id")
+        elif ptype in ("quiz", "discussion_topic"):
+            # Graded quizzes and discussions appear in the planner under their own type.
+            # Their plannable object carries assignment_id pointing to the underlying assignment.
+            pid = (it.get("plannable") or {}).get("assignment_id")
+        else:
             continue
 
-        cid = it.get("course_id")
-        pid = it.get("plannable_id")
         if not cid or not pid:
             continue
         if cid not in allowed_course_ids:
@@ -2024,6 +2031,9 @@ def add_hidden_assignment(
 ):
     """Hide an assignment from the user's view."""
     hide_assignment(current_user.id, course_id, assignment_id, db)
+    uid = current_user.id
+    for prefix in (f"upcoming:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
+        cache_clear(prefix)
     return {"success": True, "message": "Assignment hidden"}
 
 @app.delete("/api/hidden-assignments/{course_id}/{assignment_id}")
@@ -2035,6 +2045,9 @@ def remove_hidden_assignment(
 ):
     """Unhide an assignment."""
     success = unhide_assignment(current_user.id, course_id, assignment_id, db)
+    uid = current_user.id
+    for prefix in (f"upcoming:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
+        cache_clear(prefix)
     return {
         "success": success,
         "message": "Assignment unhidden" if success else "Assignment not found in hidden list"

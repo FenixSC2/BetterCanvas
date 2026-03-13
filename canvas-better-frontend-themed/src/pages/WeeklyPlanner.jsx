@@ -683,6 +683,22 @@ export function WeeklyPlanner() {
   const itemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
   const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
+  // Stable refs so event handlers always call the latest refresh
+  const plannerRefreshRef = useRef(null);
+  plannerRefreshRef.current = plannerQ.refresh;
+  const undatedRefreshRef = useRef(null);
+  undatedRefreshRef.current = undatedQ.refresh;
+
+  // Refresh immediately when the user hides/unhides an assignment via Settings
+  useEffect(() => {
+    function onHiddenChanged() {
+      plannerRefreshRef.current?.();
+      undatedRefreshRef.current?.();
+    }
+    window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
+    return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
+  }, []);
+
   const [weekStart, setWeekStart] = useState(() =>
     startOfWeekSunday(new Date()),
   );

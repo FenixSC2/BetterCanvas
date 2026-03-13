@@ -179,6 +179,7 @@ export function SettingsModal({
     setHideLoading(`${courseId}:${assignmentId}`);
     try {
       await canvasApi.addHiddenAssignment(courseId, assignmentId);
+      window.dispatchEvent(new CustomEvent("canvassist:hidden:changed"));
       // Update hidden assignments list without introducing duplicates.
       setHiddenAssignments((prev) => {
         if (
@@ -218,6 +219,7 @@ export function SettingsModal({
     setHideLoading(`${courseId}:${assignmentId}`);
     try {
       await canvasApi.removeHiddenAssignment(courseId, assignmentId);
+      window.dispatchEvent(new CustomEvent("canvassist:hidden:changed"));
       // Update hidden assignments list
       setHiddenAssignments((prev) =>
         prev.filter(
