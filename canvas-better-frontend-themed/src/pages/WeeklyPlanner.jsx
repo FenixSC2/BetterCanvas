@@ -502,6 +502,27 @@ function getPlannerBarVariant({ isSplit, assignment }) {
   return "original";
 }
 
+function mergeAssignmentsByIdentity(primary, crossCheck) {
+  const out = [];
+  const seen = new Set();
+
+  for (const item of primary || []) {
+    const key = `${item?.course_id}:${item?.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  for (const item of crossCheck || []) {
+    const key = `${item?.course_id}:${item?.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  return out;
+}
+
 /* ---------------- Anchored popover (like WorkloadEstimateControl) ---------------- */
 function AnchoredPopover({
   open,
@@ -674,18 +695,33 @@ export function WeeklyPlanner() {
     { ttlMs: 60 * 1000 },
   );
 
+  const plannerCrossCheckQ = useCachedAsync(
+    "planner:upcoming-cross-check",
+    ({ signal }) => canvasApi.getUpcomingCrossCheck({ signal }),
+    { ttlMs: 60 * 1000 },
+  );
+
   const undatedQ = useCachedAsync(
     "planner:undated",
     ({ signal }) => canvasApi.getUndatedAssignments({ signal }),
     { ttlMs: 60 * 1000 },
   );
 
-  const itemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
+  const primaryItemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
+  const crossCheckItemsRaw = Array.isArray(plannerCrossCheckQ.data)
+    ? plannerCrossCheckQ.data
+    : [];
+  const itemsRaw = useMemo(
+    () => mergeAssignmentsByIdentity(primaryItemsRaw, crossCheckItemsRaw),
+    [primaryItemsRaw, crossCheckItemsRaw],
+  );
   const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
   // Stable refs so event handlers always call the latest refresh
   const plannerRefreshRef = useRef(null);
   plannerRefreshRef.current = plannerQ.refresh;
+  const plannerCrossCheckRefreshRef = useRef(null);
+  plannerCrossCheckRefreshRef.current = plannerCrossCheckQ.refresh;
   const undatedRefreshRef = useRef(null);
   undatedRefreshRef.current = undatedQ.refresh;
 
@@ -693,6 +729,7 @@ export function WeeklyPlanner() {
   useEffect(() => {
     function onHiddenChanged() {
       plannerRefreshRef.current?.();
+      plannerCrossCheckRefreshRef.current?.();
       undatedRefreshRef.current?.();
     }
     window.addEventListener("canvassist:hidden:changed", onHiddenChanged);

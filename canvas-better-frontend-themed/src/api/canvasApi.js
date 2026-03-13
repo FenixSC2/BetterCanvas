@@ -71,6 +71,26 @@ export const canvasApi = {
 
     return request(`/api/upcoming?limit=${encodeURIComponent(limit)}`, opts);
   },
+  getUpcomingCrossCheck: (arg1, arg2) => {
+    let limit = 200;
+    let opts = {};
+
+    // Support both:
+    // getUpcomingCrossCheck(limit, opts)
+    // getUpcomingCrossCheck(opts)
+    if (typeof arg1 === "number" || arg1 == null) {
+      limit = arg1 ?? 200;
+      opts = arg2 || {};
+    } else if (typeof arg1 === "object") {
+      opts = arg1 || {};
+      limit = 200;
+    }
+
+    return request(
+      `/api/upcoming-cross-check?limit=${encodeURIComponent(limit)}`,
+      opts
+    );
+  },
   getUndatedAssignments: (opts) => request("/api/undated-assignments", opts),
   getDashboard: (upcomingLimit = 20, opts) =>
     request(`/api/dashboard?upcoming_limit=${upcomingLimit}`, opts),

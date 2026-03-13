@@ -232,6 +232,27 @@ function normalizeTodo(todo) {
   };
 }
 
+function mergeAssignmentsByIdentity(primary, crossCheck) {
+  const out = [];
+  const seen = new Set();
+
+  for (const item of primary || []) {
+    const key = `${item?.course_id}:${item?.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  for (const item of crossCheck || []) {
+    const key = `${item?.course_id}:${item?.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  return out;
+}
+
 function FavoriteMarker() {
   return (
     <span className="favoriteMarker" title="Favorited" aria-label="Favorited">
@@ -257,6 +278,12 @@ export function UpcomingAssignments() {
     { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
   );
 
+  const upcomingCrossCheckQ = useCachedAsync(
+    "upcoming:cross-check",
+    ({ signal }) => canvasApi.getUpcomingCrossCheck({ signal }),
+    { ttlMs: 60 * 1000 }
+  );
+
   const undatedQ = useCachedAsync(
     "undated:list",
     ({ signal }) => canvasApi.getUndatedAssignments({ signal }),
@@ -268,14 +295,19 @@ export function UpcomingAssignments() {
   const refreshRef = useRef(null);
   refreshRef.current = upcomingQ.refresh;
 
+  const crossCheckRefreshRef = useRef(null);
+  crossCheckRefreshRef.current = upcomingCrossCheckQ.refresh;
+
   const undatedRefreshRef = useRef(null);
   undatedRefreshRef.current = undatedQ.refresh;
 
   // Clear upcoming cache once on mount, then kick off the first fetch
   useEffect(() => {
     clearCachedAsync("upcoming:");
+    clearCachedAsync("upcoming:cross-check");
     clearCachedAsync("undated:");
     refreshRef.current?.();
+    crossCheckRefreshRef.current?.();
     undatedRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -283,6 +315,7 @@ export function UpcomingAssignments() {
   useEffect(() => {
     function onHiddenChanged() {
       refreshRef.current?.();
+      crossCheckRefreshRef.current?.();
       undatedRefreshRef.current?.();
     }
     window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
@@ -294,6 +327,7 @@ export function UpcomingAssignments() {
     const POLL_MS = 2.5 * 60 * 1000;
     const t = setInterval(() => {
       refreshRef.current?.();
+      crossCheckRefreshRef.current?.();
       undatedRefreshRef.current?.();
     }, POLL_MS);
     return () => clearInterval(t);
@@ -304,7 +338,14 @@ export function UpcomingAssignments() {
   const [todos, setTodos] = useState(() => loadTodos());
   const [workloadTick, setWorkloadTick] = useState(0);
 
-  const canvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+  const primaryCanvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+  const crossCheckCanvasItems = Array.isArray(upcomingCrossCheckQ.data)
+    ? upcomingCrossCheckQ.data
+    : [];
+  const canvasItems = useMemo(
+    () => mergeAssignmentsByIdentity(primaryCanvasItems, crossCheckCanvasItems),
+    [primaryCanvasItems, crossCheckCanvasItems]
+  );
   const canvasUndatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
   useEffect(() => {

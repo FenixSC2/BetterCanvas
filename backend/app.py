@@ -1082,6 +1082,47 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
     out.sort(key=lambda a: sort_key_due_at(a.due_at))
     return out[:limit] if limit else out
 
+def get_upcoming_cross_check_assignments(limit: int = 200, days_ahead: int = 30, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: int = 0, db: Optional[Session] = None) -> List[Assignment]:
+    now = datetime.now(timezone.utc)
+    end = now + timedelta(days=days_ahead)
+    start = now - timedelta(days=90)
+
+    courses = get_courses(mode=mode, token=token, user_id=user_id)
+    hidden_set = set(get_hidden_assignments(user_id, db)) if user_id and db else set()
+
+    out: List[Assignment] = []
+    seen_refs: set[tuple[int, int]] = set()
+
+    for course in courses:
+        cid = course.id
+        asgs = get_course_assignments_for(
+            cid,
+            mode=mode,
+            token=token,
+            user_id=user_id,
+            db=db,
+        )
+
+        for a in asgs:
+            if not a.due_at:
+                continue
+            if a.due_at < start or a.due_at > end:
+                continue
+
+            ref = (cid, a.id)
+            if ref in hidden_set or ref in seen_refs:
+                continue
+
+            course_name = course.name or a.course_name
+
+            out.append(
+                a.copy(update={"course_name": course_name})
+            )
+            seen_refs.add(ref)
+
+    out.sort(key=lambda a: sort_key_due_at(a.due_at))
+    return out[:limit] if limit else out
+
 # === Unified getters with cache policy ===
 def get_profile(mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: int = 0) -> Profile:
     key = f"profile:{user_id}"
@@ -1445,6 +1486,49 @@ def api_upcoming(
             return v
 
     out = get_upcoming_assignments(limit=lim, days_ahead=days_ahead, mode=cache, token=token, user_id=user_id, db=db)
+
+    cache_set(key, out)
+    return out
+
+@app.get("/api/upcoming-cross-check", response_model=List[Assignment])
+def api_upcoming_cross_check(
+    limit: Optional[int] = 200,
+    days_ahead: int = 30,
+    cache: CacheMode = Query(CacheMode.auto),
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Get upcoming assignments directly from per-course assignment lists for cross-checking."""
+    # Check for demo mode
+    if session_id and is_demo_session(session_id):
+        return mock_upcoming(limit=limit or 200)
+
+    token = None
+    user_id = None
+    if session_id:
+        try:
+            user_id = get_session_user_id(session_id, db)
+            if user_id:
+                token = get_canvas_token(user_id, db)
+        except Exception:
+            pass
+
+    lim = limit or 200
+    key = f"upcoming_cross_check:{user_id or 0}:v1:limit={lim}:days={days_ahead}"
+
+    if _use_cache(cache):
+        v = cache_get(key)
+        if v:
+            return v
+
+    out = get_upcoming_cross_check_assignments(
+        limit=lim,
+        days_ahead=days_ahead,
+        mode=cache,
+        token=token,
+        user_id=user_id or 0,
+        db=db,
+    )
 
     cache_set(key, out)
     return out
@@ -2060,7 +2144,7 @@ def add_hidden_assignment(
     """Hide an assignment from the user's view."""
     hide_assignment(current_user.id, course_id, assignment_id, db)
     uid = current_user.id
-    for prefix in (f"upcoming:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
+    for prefix in (f"upcoming:{uid}", f"upcoming_cross_check:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
         cache_clear(prefix)
     return {"success": True, "message": "Assignment hidden"}
 
@@ -2074,7 +2158,7 @@ def remove_hidden_assignment(
     """Unhide an assignment."""
     success = unhide_assignment(current_user.id, course_id, assignment_id, db)
     uid = current_user.id
-    for prefix in (f"upcoming:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
+    for prefix in (f"upcoming:{uid}", f"upcoming_cross_check:{uid}", f"undated_assignments:{uid}", f"assignments:{uid}", f"course_summaries:{uid}"):
         cache_clear(prefix)
     return {
         "success": success,
