@@ -360,7 +360,7 @@ function AnchoredPopover({ open, onClose, anchorEl, children, width = 420, gap =
   );
 }
 
-export function GradePerformance() {
+export function GradePerformance({ demoMode = false }) {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchScope, setSearchScope] = useState("all");
@@ -431,8 +431,8 @@ export function GradePerformance() {
   const allAssignments = Array.isArray(allAssignmentsQ.data) ? allAssignmentsQ.data : [];
 
   const overridesQ = useCachedAsync(
-    "grade-performance:assignment-weight-overrides",
-    ({ signal }) => canvasApi.getAssignmentWeightOverrides({ signal }),
+    `grade-performance:assignment-weight-overrides:${demoMode ? "demo" : "live"}`,
+    ({ signal }) => (demoMode ? Promise.resolve({ overrides: [] }) : canvasApi.getAssignmentWeightOverrides({ signal })),
     { ttlMs: 60 * 1000 }
   );
 
@@ -971,12 +971,20 @@ export function GradePerformance() {
     closeEditPopup();
   }
 
+  function isAuthOrTokenError(error) {
+    return !!(error && (error.status === 401 || error.status === 403 || error.needsToken));
+  }
+
+  const summariesErrorDisplay = summariesQ.error && !isAuthOrTokenError(summariesQ.error) ? summariesQ.error : null;
+  const allAssignmentsErrorDisplay = allAssignmentsQ.error && !isAuthOrTokenError(allAssignmentsQ.error) ? allAssignmentsQ.error : null;
+  const overridesErrorDisplay = overridesQ.error && !isAuthOrTokenError(overridesQ.error) ? overridesQ.error : null;
+
   if ((summariesQ.loading && !summaries.length) || (allAssignmentsQ.loading && !allAssignments.length && summaries.length > 0)) {
     return <Loading label="Loading grade tools..." />;
   }
 
-  if (summariesQ.error && !summaries.length) return <ErrorBox error={summariesQ.error} />;
-  if (allAssignmentsQ.error && !allAssignments.length && summaries.length > 0) return <ErrorBox error={allAssignmentsQ.error} />;
+  if (summariesErrorDisplay && !summaries.length) return <ErrorBox error={summariesErrorDisplay} />;
+  if (allAssignmentsErrorDisplay && !allAssignments.length && summaries.length > 0) return <ErrorBox error={allAssignmentsErrorDisplay} />;
 
   return (
     <div className="stack">
@@ -1039,53 +1047,6 @@ export function GradePerformance() {
           <div className="muted gradeCalcBasis">
             Calculation basis: {stats.gradedCount} submitted and scored items ({fmtPoints(stats.gradedPossible)} effective pts), {stats.predictedCount} predicted items ({fmtPoints(stats.predictedPossible)} effective pts), {stats.excludedCount} ungraded or unsubmitted items excluded, {stats.pendingScoreCount} score-bearing but unsubmitted items excluded, {stats.overrideCount} custom weight overrides active in this class.
           </div>
-        </div>
-      </div>
-
-      <div className="card gradeCalcCard">
-        <div className="cardBody stack">
-          <div className="gradeCalcSectionHeading">
-            <div className="h3">Weighted Final Exam Calculator</div>
-            <InfoTip
-              label="Weighted final help"
-              text="Use this when your syllabus has a specific final-exam weight. This block uses the selected class's Canvas current score plus your manual final-exam prediction."
-            />
-          </div>
-
-          <div className="gradeCalcControls">
-            <label className="gradeCalcField">
-              <span className="muted">Final exam weight (%)</span>
-              <input type="number" min="1" max="99" value={finalWeight} onChange={(e) => setFinalWeight(e.target.value)} />
-            </label>
-
-            <label className="gradeCalcField">
-              <span className="muted">Predicted final score (%)</span>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={predictedFinalExamScore}
-                onChange={(e) => setPredictedFinalExamScore(e.target.value)}
-              />
-            </label>
-          </div>
-
-          {weightedFinalCalc ? (
-            <>
-              <div className="rowWrap">
-                <span className="badge badgeSuccess">Projected overall: {displayGrade(fmtPct(weightedFinalCalc.projectedOverall))}</span>
-                <span className="badge badgeWarn">Minimum final score for target: {displayGrade(fmtPct(weightedFinalCalc.neededOnFinal))}</span>
-                <span className="badge badgeNeutral">Weight used: {fmtPct(weightedFinalCalc.weightPct)}</span>
-              </div>
-              <div className="muted gradeCalcBasis">
-                Calculation basis: Canvas current score for the selected class plus a manual final-exam weight of {fmtPct(weightedFinalCalc.weightPct)}. This block does not use assignment-level prediction rows.
-              </div>
-            </>
-          ) : (
-            <div className="muted">
-              Weighted final calculation needs a Canvas current course score and a final weight between 1% and 99%.
-            </div>
-          )}
         </div>
       </div>
 
@@ -1167,8 +1128,8 @@ export function GradePerformance() {
           </div>
 
           {weightMessage ? <div className="authHint">{weightMessage}</div> : null}
-          {overridesQ.error ? <ErrorBox error={overridesQ.error} /> : null}
-          {allAssignmentsQ.error && allAssignments.length > 0 ? <ErrorBox error={allAssignmentsQ.error} /> : null}
+          {overridesErrorDisplay ? <ErrorBox error={overridesErrorDisplay} /> : null}
+          {allAssignmentsErrorDisplay && allAssignments.length > 0 ? <ErrorBox error={allAssignmentsErrorDisplay} /> : null}
 
           {filteredAssignments.length === 0 ? (
             <div className="muted">No assignments matched your search.</div>
@@ -1428,6 +1389,53 @@ export function GradePerformance() {
               </label>
             </div>
           ) : null}
+        </div>
+      </div>
+
+      <div className="card gradeCalcCard">
+        <div className="cardBody stack">
+          <div className="gradeCalcSectionHeading">
+            <div className="h3">Weighted Final Exam Calculator</div>
+            <InfoTip
+              label="Weighted final help"
+              text="Use this when your syllabus has a specific final-exam weight. This block uses the selected class's Canvas current score plus your manual final-exam prediction."
+            />
+          </div>
+
+          <div className="gradeCalcControls">
+            <label className="gradeCalcField">
+              <span className="muted">Final exam weight (%)</span>
+              <input type="number" min="1" max="99" value={finalWeight} onChange={(e) => setFinalWeight(e.target.value)} />
+            </label>
+
+            <label className="gradeCalcField">
+              <span className="muted">Predicted final score (%)</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={predictedFinalExamScore}
+                onChange={(e) => setPredictedFinalExamScore(e.target.value)}
+              />
+            </label>
+          </div>
+
+          {weightedFinalCalc ? (
+            <>
+              <div className="rowWrap">
+                <span className="badge badgeSuccess">Projected overall: {displayGrade(fmtPct(weightedFinalCalc.projectedOverall))}</span>
+                <span className="badge badgeWarn">Minimum final score for target: {displayGrade(fmtPct(weightedFinalCalc.neededOnFinal))}</span>
+                <span className="badge badgeNeutral">Weight used: {fmtPct(weightedFinalCalc.weightPct)}</span>
+              </div>
+              <div className="muted gradeCalcBasis">
+                Calculation basis: Canvas current score for the selected class plus a manual final-exam weight of {fmtPct(weightedFinalCalc.weightPct)}. This block does not use assignment-level prediction rows.
+              </div>
+            </>
+          ) : (
+            <div className="muted">
+              Weighted final calculation needs a Canvas current course score and a final weight between 1% and 99%.
+            </div>
+          )}
         </div>
       </div>
 

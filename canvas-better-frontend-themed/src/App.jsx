@@ -277,7 +277,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           {active === "upcoming" ? <UpcomingAssignments /> : null}
           {active === "planner" ? <WeeklyPlanner /> : null}
           {active === "todo" ? <TodoPage /> : null}
-          {active === "grades" ? <GradePerformance /> : null}
+          {active === "grades" ? <GradePerformance demoMode={demoMode} /> : null}
         </main>
 
         <footer className="footer muted" style={demoMode ? { position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100 } : {}}>
