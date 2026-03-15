@@ -54,6 +54,8 @@ export const canvasApi = {
   getCourses: (opts) => request("/api/courses", opts),
   getCourseAssignments: (courseId, limit = 3, opts) =>
     request(`/api/courses/${courseId}/assignments?limit=${limit}`, opts),
+  getCourseAssignmentsIncludingHidden: (courseId, limit = 3, opts) =>
+    request(`/api/courses/${courseId}/assignments?limit=${limit}&include_hidden=true`, opts),
   getUpcoming: (arg1, arg2) => {
     let limit = 25;
     let opts = {};
@@ -128,6 +130,22 @@ export const canvasApi = {
         `/api/hidden-assignments/${courseId}/${assignmentId}`,
         { ...opts, method: "DELETE" }
       ),
+
+    getAssignmentWeightOverrides: (opts) =>
+      request("/api/assignment-weight-overrides", opts),
+
+    upsertAssignmentWeightOverride: (courseId, assignmentId, weight_points, opts) =>
+      request(`/api/assignment-weight-overrides/${courseId}/${assignmentId}`, {
+        ...opts,
+        method: "PUT",
+        body: { weight_points },
+      }),
+
+    deleteAssignmentWeightOverride: (courseId, assignmentId, opts) =>
+      request(`/api/assignment-weight-overrides/${courseId}/${assignmentId}`, {
+        ...opts,
+        method: "DELETE",
+      }),
 
     getCandidatesForHiding: (opts) => request("/api/candidates-for-hiding", opts),
 

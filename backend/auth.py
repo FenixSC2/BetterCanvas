@@ -255,6 +255,23 @@ class WorkloadEstimate(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
+class AssignmentWeightOverride(Base):
+    __tablename__ = "assignment_weight_overrides"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    assignment_id = Column(Integer)
+    weight_points = Column(Float, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_assignment_weight_override'),
+    )
+
 class TodoItem(Base):
     __tablename__ = "todo_items"
 
@@ -523,6 +540,76 @@ def delete_workload_estimate(
         WorkloadEstimate.user_id == user_id,
         WorkloadEstimate.course_id == course_id,
         WorkloadEstimate.assignment_id == assignment_id,
+    ).first()
+    if row:
+        db.delete(row)
+        db.commit()
+        return True
+    return False
+
+
+def get_assignment_weight_overrides(user_id: int, db: Session) -> list:
+    """Get all assignment weight overrides for a user."""
+    rows = (
+        db.query(AssignmentWeightOverride)
+        .filter(AssignmentWeightOverride.user_id == user_id)
+        .all()
+    )
+    return [
+        {
+            "course_id": row.course_id,
+            "assignment_id": row.assignment_id,
+            "weight_points": row.weight_points,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in rows
+    ]
+
+
+def upsert_assignment_weight_override(
+    user_id: int,
+    course_id: int,
+    assignment_id: int,
+    weight_points: float,
+    db: Session,
+) -> AssignmentWeightOverride:
+    """Create or update a user override for effective assignment weight/points."""
+    existing = db.query(AssignmentWeightOverride).filter(
+        AssignmentWeightOverride.user_id == user_id,
+        AssignmentWeightOverride.course_id == course_id,
+        AssignmentWeightOverride.assignment_id == assignment_id,
+    ).first()
+
+    if existing:
+        existing.weight_points = weight_points
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = AssignmentWeightOverride(
+        user_id=user_id,
+        course_id=course_id,
+        assignment_id=assignment_id,
+        weight_points=weight_points,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_assignment_weight_override(
+    user_id: int,
+    course_id: int,
+    assignment_id: int,
+    db: Session,
+) -> bool:
+    """Delete an assignment weight override for a user."""
+    row = db.query(AssignmentWeightOverride).filter(
+        AssignmentWeightOverride.user_id == user_id,
+        AssignmentWeightOverride.course_id == course_id,
+        AssignmentWeightOverride.assignment_id == assignment_id,
     ).first()
     if row:
         db.delete(row)

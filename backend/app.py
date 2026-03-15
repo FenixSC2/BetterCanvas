@@ -62,6 +62,9 @@ from auth import (
     delete_todo,
     upsert_workload_estimate,
     delete_workload_estimate,
+    get_assignment_weight_overrides,
+    upsert_assignment_weight_override,
+    delete_assignment_weight_override,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -305,6 +308,9 @@ class WorkloadEstimateRequest(BaseModel):
     estimate_hours: float = Field(default=0.0, ge=0.0, le=500.0)
     completed_hours: float = Field(default=0.0, ge=0.0, le=500.0)
     completed: bool = False
+
+class AssignmentWeightOverrideRequest(BaseModel):
+    weight_points: float = Field(default=0.0, ge=0.0, le=100000.0)
 
 # Annoucnement model
 class Announcement(BaseModel):
@@ -1154,16 +1160,23 @@ def get_courses(mode: CacheMode = CacheMode.auto, token: Optional[str] = None, u
     cache_set(key, courses)
     return courses
 
-def get_course_assignments_for(course_id: int, mode: CacheMode = CacheMode.auto, token: Optional[str] = None, user_id: int = 0, db: Optional[Session] = None) -> List[Assignment]:
-    key = f"assignments:{user_id}:{course_id}"
+def get_course_assignments_for(
+    course_id: int,
+    mode: CacheMode = CacheMode.auto,
+    token: Optional[str] = None,
+    user_id: int = 0,
+    db: Optional[Session] = None,
+    include_hidden: bool = False,
+) -> List[Assignment]:
+    key = f"assignments:{user_id}:{course_id}:include_hidden={int(include_hidden)}"
     if _use_cache(mode):
         v = cache_get(key)
         if v:
             return v
     asgs = get_course_assignments(course_id, include_submission=True, limit=None, token=token)
     
-    # Filter out hidden assignments
-    if user_id and db:
+    # Filter out hidden assignments unless explicitly requested.
+    if not include_hidden and user_id and db:
         hidden_set = set(get_hidden_assignments(user_id, db))
         asgs = [a for a in asgs if (a.course_id, a.id) not in hidden_set]
     
@@ -1430,6 +1443,7 @@ def api_courses(
 def api_course_assignments(
     course_id: int,
     limit: Optional[int] = None,
+    include_hidden: bool = Query(False),
     cache: CacheMode = Query(CacheMode.auto),
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
@@ -1451,7 +1465,14 @@ def api_course_assignments(
         except Exception:
             pass
 
-    asgs = get_course_assignments_for(course_id, mode=cache, token=token, user_id=user_id, db=db)
+    asgs = get_course_assignments_for(
+        course_id,
+        mode=cache,
+        token=token,
+        user_id=user_id,
+        db=db,
+        include_hidden=include_hidden,
+    )
     return asgs[:limit] if limit else asgs
 
 @app.get("/api/upcoming", response_model=List[Assignment])
@@ -2234,6 +2255,46 @@ def delete_workload_estimate_endpoint(
 ):
     """Delete the workload estimate for a specific assignment."""
     delete_workload_estimate(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
+
+
+@app.get("/api/assignment-weight-overrides")
+def get_assignment_weight_overrides_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all saved assignment weight overrides for the authenticated user."""
+    return {"overrides": get_assignment_weight_overrides(current_user.id, db)}
+
+
+@app.put("/api/assignment-weight-overrides/{course_id}/{assignment_id}")
+def upsert_assignment_weight_override_endpoint(
+    course_id: int,
+    assignment_id: int,
+    body: AssignmentWeightOverrideRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a saved effective weight/points override for one assignment."""
+    upsert_assignment_weight_override(
+        current_user.id,
+        course_id,
+        assignment_id,
+        body.weight_points,
+        db,
+    )
+    return {"success": True}
+
+
+@app.delete("/api/assignment-weight-overrides/{course_id}/{assignment_id}")
+def delete_assignment_weight_override_endpoint(
+    course_id: int,
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a saved effective weight/points override for one assignment."""
+    delete_assignment_weight_override(current_user.id, course_id, assignment_id, db)
     return {"success": True}
 
 

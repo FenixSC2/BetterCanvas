@@ -2424,6 +2424,335 @@ details.expandable > .cardBody,
   line-height: 1.6;
 }
 
+/* ===== Grade Performance ===== */
+.gradeCalcCard {
+  overflow: visible;
+}
+
+.gradeCalcHeaderRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gradeCalcTitleRow,
+.gradeCalcSectionHeading,
+.gradeCalcFieldLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gradeCalcTitleRow .h2 {
+  font-size: clamp(1.6rem, 2vw, 1.9rem);
+  line-height: 1.1;
+}
+
+.gradeCalcSectionHeading .h3 {
+  font-size: clamp(1.3rem, 1.6vw, 1.5rem);
+  line-height: 1.12;
+}
+
+.gradeCalcSectionHeading {
+  justify-content: space-between;
+}
+
+.gradeCalcHeaderToggle {
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+
+.gradeCalcControls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.gradeCalcSearchControls {
+  grid-template-columns: minmax(360px, 1.45fr) minmax(280px, 1fr);
+  column-gap: 18px;
+  row-gap: 12px;
+}
+
+.gradeCalcField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gradeCalcInlineControl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.gradeCalcInlineControlGroup {
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gradeCalcInlineHeading {
+  font-weight: 700;
+  flex-shrink: 0;
+  color: var(--text);
+  font-size: 1.02rem;
+}
+
+.gradeCalcInlineValue {
+  white-space: nowrap;
+}
+
+.gradeCalcScopeToggleRow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.gradeCalcScopeLabelActive {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.gradeCalcInlineInput {
+  width: 96px;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+.gradeCalcFieldTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.gradeCalcFieldWide {
+  grid-column: 1 / -1;
+}
+
+.gradeCalcField .select,
+.gradeCalcField input {
+  width: 100%;
+  min-width: 0;
+}
+
+.gradeCalcField .select {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.gradeCalcBasis {
+  line-height: 1.5;
+}
+
+.gradeScaleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.gradeCalcList {
+  display: grid;
+  gap: 8px;
+}
+
+.gradeCalcListScrollable {
+  max-height: min(56vh, 680px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.gradeCalcListItem {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  background: var(--surface2);
+  padding: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.gradeCalcListMain {
+  min-width: 0;
+  flex: 1;
+}
+
+.gradeCalcItemTitle {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.gradeCalcListControls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: end;
+  gap: 8px;
+  min-width: 320px;
+}
+
+.gradeCalcListMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gradeCalcPredictField {
+  display: grid;
+  gap: 4px;
+  width: 220px;
+}
+
+.gradeCalcPredictInputRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gradeCalcPredictInputRow input {
+  flex: 1 1 auto;
+}
+
+.gradeCalcApplyBtn {
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.gradeCalcLockBadge,
+.gradeCalcSavingBadge {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+  justify-content: center;
+  min-height: 30px;
+  max-width: 100%;
+}
+
+.gradeCalcLockedMeta {
+  display: grid;
+  gap: 8px;
+  width: 240px;
+}
+
+.gradeCalcAssignmentScoreBadge {
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding: 8px 12px;
+  min-height: 38px;
+  justify-content: center;
+  text-align: center;
+}
+
+.gradeCalcNoImpactBadge {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+  justify-content: center;
+  width: 100%;
+  min-height: 36px;
+  max-width: none;
+  font-weight: 700;
+  border-color: color-mix(in srgb, var(--accent, #4f8ef7) 55%, var(--border2));
+  background: color-mix(in srgb, var(--accent, #4f8ef7) 20%, var(--surface2));
+  color: color-mix(in srgb, var(--accent, #4f8ef7) 80%, var(--text));
+}
+
+.gradeCalcEditBtn {
+  margin-left: auto;
+  width: fit-content;
+  flex-shrink: 0;
+}
+
+.gradeCalcPopover {
+  width: min(420px, calc(100vw - 24px));
+}
+
+.gradeCalcPopoverActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1120px) {
+  .gradeCalcListControls {
+    min-width: 260px;
+  }
+
+  .gradeCalcPredictField {
+    width: 190px;
+  }
+}
+
+@media (max-width: 760px) {
+  .gradeCalcHeaderRow,
+  .gradeCalcSectionHeading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gradeCalcHeaderToggle {
+    justify-content: flex-start;
+  }
+
+  .gradeCalcSearchControls {
+    grid-template-columns: 1fr;
+  }
+
+  .gradeCalcInlineControl {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gradeCalcScopeToggleRow {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .gradeCalcInlineInput {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .gradeCalcPredictInputRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gradeCalcListItem {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gradeCalcListControls {
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .gradeCalcListMeta {
+    justify-content: flex-start;
+    flex: 1;
+  }
+
+  .gradeCalcPredictField {
+    width: 100%;
+  }
+}
+
 .authInstructions ol {
   margin: 0;
   padding-left: 22px;
@@ -2457,6 +2786,7 @@ details.expandable > .cardBody,
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 20px;
   width: 20px;
   height: 20px;
   border-radius: 999px;
@@ -2514,9 +2844,7 @@ details.expandable > .cardBody,
   pointer-events: none;
 }
 
-.authInfoBubble:hover .authInfoTooltip,
-.authInfoBubble:focus-within .authInfoTooltip,
-.authInfoBubble:focus .authInfoTooltip {
+.authInfoBubble.isOpen .authInfoTooltip {
   opacity: 1;
   visibility: visible;
   transform: translate(0, -50%);
@@ -2530,9 +2858,7 @@ details.expandable > .cardBody,
   transform: translate(-50%, -4px);
 }
 
-.authInfoBubble:hover .authInfoTooltipBelow,
-.authInfoBubble:focus-within .authInfoTooltipBelow,
-.authInfoBubble:focus .authInfoTooltipBelow {
+.authInfoBubble.isOpen .authInfoTooltipBelow {
   transform: translate(-50%, 0);
 }
 
@@ -2548,9 +2874,7 @@ details.expandable > .cardBody,
     transform: translateY(-4px);
   }
 
-  .authInfoBubble:hover .authInfoTooltip,
-  .authInfoBubble:focus-within .authInfoTooltip,
-  .authInfoBubble:focus .authInfoTooltip {
+  .authInfoBubble.isOpen .authInfoTooltip {
     transform: translateY(0);
   }
 }
