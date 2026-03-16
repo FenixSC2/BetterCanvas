@@ -37,12 +37,12 @@ export function Login({ onViewDemo }) {
           <h1 className="authTitle">CanvAssist</h1>
           <button
             type="button"
-            className="authInfoBubble authInfoBubbleAlert"
+            className="authInfoBubble authInfoBubbleHoverable authInfoBubbleAlert"
             aria-label="Service availability notice"
           >
             !
             <span className="authInfoTooltip" role="tooltip">
-              CanvAssist is currently available only for Northeastern students and is still in demo/beta.
+              CanvAssist is currently available only for Northeastern students and is still in demo/beta. CanvAssist is not affiliated with Canvas. Do not use your Canvas password here.
             </span>
           </button>
         </div>

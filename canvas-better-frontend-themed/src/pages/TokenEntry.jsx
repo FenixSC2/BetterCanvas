@@ -119,7 +119,7 @@ export function TokenEntry() {
           <h1 className="authTitle">Canvas Token</h1>
           <button
             type="button"
-            className="authInfoBubble authInfoBubbleNeutral"
+            className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
             aria-label="How we use your token"
           >
             ?
@@ -178,7 +178,7 @@ export function TokenEntry() {
                 <label>Canvas Access Token</label>
                 <button
                   type="button"
-                  className="authInfoBubble authInfoBubbleNeutral"
+                  className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
                   aria-label="Why token is requested"
                 >
                   ?
@@ -237,7 +237,7 @@ export function TokenEntry() {
                   <label>New Canvas Token (optional)</label>
                   <button
                     type="button"
-                    className="authInfoBubble authInfoBubbleNeutral"
+                    className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
                     aria-label="How replacement tokens are handled"
                   >
                     ?

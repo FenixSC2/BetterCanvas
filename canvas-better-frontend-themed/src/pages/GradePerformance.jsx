@@ -838,6 +838,10 @@ export function GradePerformance({ demoMode = false }) {
     return showGrades ? text : "Hidden";
   }
 
+  function gradeSensitiveBadgeClass(classWhenShown) {
+    return `badge ${showGrades ? classWhenShown : "badgeNeutral"}`;
+  }
+
   function computeDisplayedProjectedPercent(
     assignments,
     nextPredictedById,
@@ -1717,11 +1721,11 @@ export function GradePerformance({ demoMode = false }) {
           {weightedFinalCalc ? (
             <>
               <div className="rowWrap">
-                <span className="badge badgeSuccess">
+                <span className={gradeSensitiveBadgeClass("badgeSuccess")}>
                   Projected overall:{" "}
                   {displayGrade(fmtPct(weightedFinalCalc.projectedOverall))}
                 </span>
-                <span className="badge badgeWarn">
+                <span className={gradeSensitiveBadgeClass("badgeWarn")}>
                   Minimum final score for target:{" "}
                   {displayGrade(fmtPct(weightedFinalCalc.neededOnFinal))}
                 </span>
@@ -1819,12 +1823,20 @@ export function GradePerformance({ demoMode = false }) {
           </div>
 
           <div className="rowWrap">
-            <span className="badge badgeSuccess">
+            <span className={gradeSensitiveBadgeClass("badgeSuccess")}>
               Projected with predictions:{" "}
               {displayGrade(fmtPct(displayedProjectedPercent))}
             </span>
             <span
-              className={`badge ${lastProjectionDelta == null ? "badgeNeutral" : lastProjectionDelta >= 0 ? "badgeSuccess" : "badgeWarn"}`}
+              className={`badge ${
+                !showGrades
+                  ? "badgeNeutral"
+                  : lastProjectionDelta == null
+                    ? "badgeNeutral"
+                    : lastProjectionDelta >= 0
+                      ? "badgeSuccess"
+                      : "badgeWarn"
+              }`}
             >
               Last change:{" "}
               {displayGrade(
@@ -2000,7 +2012,9 @@ export function GradePerformance({ demoMode = false }) {
                                 : "Prediction locked by graded status"}
                             </span>
                             {row?.countedAsGraded ? (
-                              <span className="badge badgeSuccess gradeCalcAssignmentScoreBadge">
+                              <span
+                                className={`${gradeSensitiveBadgeClass("badgeSuccess")} gradeCalcAssignmentScoreBadge`}
+                              >
                                 Score:{" "}
                                 {displayGrade(
                                   fmtPct(
@@ -2099,7 +2113,7 @@ export function GradePerformance({ demoMode = false }) {
                     ? `${targetLetter} (${needCalculator.targetPercent.toFixed(0)}%)`
                     : fmtPct(needCalculator.targetPercent)}
                 </span>
-                <span className="badge badgeWarn">
+                <span className={gradeSensitiveBadgeClass("badgeWarn")}>
                   Needed on selected item:{" "}
                   {displayGrade(fmtPct(needCalculator.requiredPctOnSelected))}
                 </span>
@@ -2114,7 +2128,7 @@ export function GradePerformance({ demoMode = false }) {
                   {fmtPoints(needCalculator.totalPossible)}
                 </span>
                 {needCalculator.requiredPctOnSelected > 100 ? (
-                  <span className="badge badgeDanger">
+                  <span className={gradeSensitiveBadgeClass("badgeDanger")}>
                     Above 100% needed with current assumptions
                   </span>
                 ) : null}

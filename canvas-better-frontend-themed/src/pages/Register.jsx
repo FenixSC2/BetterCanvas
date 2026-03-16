@@ -53,7 +53,7 @@ export function Register() {
           <h1 className="authTitle">CanvAssist</h1>
           <button
             type="button"
-            className="authInfoBubble authInfoBubbleAlert"
+            className="authInfoBubble authInfoBubbleHoverable authInfoBubbleAlert"
             aria-label="Service availability notice"
           >
             !

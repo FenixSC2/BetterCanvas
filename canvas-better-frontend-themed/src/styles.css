@@ -2906,6 +2906,9 @@ details.expandable > .cardBody,
   pointer-events: none;
 }
 
+.authInfoBubbleHoverable:hover .authInfoTooltip,
+.authInfoBubbleHoverable:focus .authInfoTooltip,
+.authInfoBubbleHoverable:focus-visible .authInfoTooltip,
 .authInfoBubble.isOpen .authInfoTooltip {
   opacity: 1;
   visibility: visible;
@@ -2920,6 +2923,9 @@ details.expandable > .cardBody,
   transform: translate(-50%, -4px);
 }
 
+.authInfoBubbleHoverable:hover .authInfoTooltipBelow,
+.authInfoBubbleHoverable:focus .authInfoTooltipBelow,
+.authInfoBubbleHoverable:focus-visible .authInfoTooltipBelow,
 .authInfoBubble.isOpen .authInfoTooltipBelow {
   transform: translate(-50%, 0);
 }
@@ -2936,6 +2942,9 @@ details.expandable > .cardBody,
     transform: translateY(-4px);
   }
 
+  .authInfoBubbleHoverable:hover .authInfoTooltip,
+  .authInfoBubbleHoverable:focus .authInfoTooltip,
+  .authInfoBubbleHoverable:focus-visible .authInfoTooltip,
   .authInfoBubble.isOpen .authInfoTooltip {
     transform: translateY(0);
   }
