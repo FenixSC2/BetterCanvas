@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { canvasApi } from "../api/canvasApi";
-import { useCachedAsync, useHydratedStateFromCache } from "../hooks/useCachedAsync";
+import {
+  useCachedAsync,
+  useHydratedStateFromCache,
+} from "../hooks/useCachedAsync";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 
@@ -35,7 +38,8 @@ function clampPositive(raw, fallback = 0) {
 }
 
 function toPct(earned, possible) {
-  if (!Number.isFinite(earned) || !Number.isFinite(possible) || possible <= 0) return null;
+  if (!Number.isFinite(earned) || !Number.isFinite(possible) || possible <= 0)
+    return null;
   return (earned / possible) * 100;
 }
 
@@ -73,7 +77,10 @@ function getScaleConfig(courseId, scaleByCourse) {
   const mode = stored.mode || "standard";
 
   if (mode === "pass-fail") {
-    const passThreshold = clampPercent(stored.passThreshold, DEFAULT_PASS_THRESHOLD);
+    const passThreshold = clampPercent(
+      stored.passThreshold,
+      DEFAULT_PASS_THRESHOLD,
+    );
     return {
       mode,
       entries: [
@@ -87,10 +94,16 @@ function getScaleConfig(courseId, scaleByCourse) {
 
   if (mode === "custom") {
     const base = makeThresholdMap(STANDARD_SCALE);
-    const storedThresholds = stored.thresholds && typeof stored.thresholds === "object" ? stored.thresholds : {};
+    const storedThresholds =
+      stored.thresholds && typeof stored.thresholds === "object"
+        ? stored.thresholds
+        : {};
     const entries = STANDARD_SCALE.map((entry) => ({
       ...entry,
-      min: entry.value === "F" ? 0 : clampPercent(storedThresholds[entry.value], base[entry.value]),
+      min:
+        entry.value === "F"
+          ? 0
+          : clampPercent(storedThresholds[entry.value], base[entry.value]),
     }));
     return {
       mode,
@@ -118,8 +131,8 @@ function formatCourseLabel(assignment) {
   // Strip the CRN (bare number immediately after the course code) then
   // strip " SEC ..." and everything that follows (semester, location, etc.).
   let title = rawName
-    .replace(/^([A-Z]+\d+)\s+\d+\s+/i, "$1 ")  // remove CRN between course code and name
-    .replace(/\s+SEC(?:TION)?\s.*/i, "")         // remove " SEC XX ..." suffix
+    .replace(/^([A-Z]+\d+)\s+\d+\s+/i, "$1 ") // remove CRN between course code and name
+    .replace(/\s+SEC(?:TION)?\s.*/i, "") // remove " SEC XX ..." suffix
     .trim();
 
   if (!title) title = rawName || "Unknown course";
@@ -154,7 +167,12 @@ function normalizeScoreOverrides(raw) {
   return out;
 }
 
-function buildStats(assignments, predictedById, weightOverridesById, scoreOverridesById) {
+function buildStats(
+  assignments,
+  predictedById,
+  weightOverridesById,
+  scoreOverridesById,
+) {
   let gradedEarned = 0;
   let gradedPossible = 0;
   let predictedEarned = 0;
@@ -169,27 +187,39 @@ function buildStats(assignments, predictedById, weightOverridesById, scoreOverri
     const key = assignmentIdentity(assignment);
     const basePoints = Number(assignment?.points_possible);
     const savedOverride = Number(weightOverridesById?.[key]?.weight_points);
-    const effectivePoints = Number.isFinite(savedOverride) && savedOverride > 0
-      ? savedOverride
-      : Number.isFinite(basePoints) && basePoints > 0
-        ? basePoints
-        : null;
-    const hasEffectivePoints = Number.isFinite(effectivePoints) && effectivePoints > 0;
+    const effectivePoints =
+      Number.isFinite(savedOverride) && savedOverride > 0
+        ? savedOverride
+        : Number.isFinite(basePoints) && basePoints > 0
+          ? basePoints
+          : null;
+    const hasEffectivePoints =
+      Number.isFinite(effectivePoints) && effectivePoints > 0;
     const override = scoreOverridesById?.[key];
     const overrideEnabled = !!override?.enabled;
     const overrideScore = Number(override?.score);
-    const score = overrideEnabled && Number.isFinite(overrideScore)
-      ? overrideScore
-      : Number(assignment?.score);
+    const score =
+      overrideEnabled && Number.isFinite(overrideScore)
+        ? overrideScore
+        : Number(assignment?.score);
     const hasRawScore = Number.isFinite(score);
     const submitted = assignment?.submitted === true;
-    const countedAsGraded = hasEffectivePoints && hasRawScore && (submitted || overrideEnabled);
+    const countedAsGraded =
+      hasEffectivePoints && hasRawScore && (submitted || overrideEnabled);
     const pendingScore = hasEffectivePoints && hasRawScore && !submitted;
     const explicitPrediction = predictedById?.[key];
-    const predicted = hasEffectivePoints && !countedAsGraded && hasExplicitPrediction(explicitPrediction);
-    const predictionPct = predicted ? clampPercent(explicitPrediction, 0) : null;
-    const predictionEarned = predicted ? (predictionPct / 100) * effectivePoints : null;
-    const isWeightOverridden = Number.isFinite(savedOverride) && savedOverride > 0;
+    const predicted =
+      hasEffectivePoints &&
+      !countedAsGraded &&
+      hasExplicitPrediction(explicitPrediction);
+    const predictionPct = predicted
+      ? clampPercent(explicitPrediction, 0)
+      : null;
+    const predictionEarned = predicted
+      ? (predictionPct / 100) * effectivePoints
+      : null;
+    const isWeightOverridden =
+      Number.isFinite(savedOverride) && savedOverride > 0;
 
     if (countedAsGraded) {
       gradedEarned += score;
@@ -222,7 +252,10 @@ function buildStats(assignments, predictedById, weightOverridesById, scoreOverri
       predictionEarned,
       isWeightOverridden,
       overrideEnabled,
-      overrideScore: overrideEnabled && Number.isFinite(overrideScore) ? overrideScore : null,
+      overrideScore:
+        overrideEnabled && Number.isFinite(overrideScore)
+          ? overrideScore
+          : null,
     };
   });
 
@@ -231,7 +264,10 @@ function buildStats(assignments, predictedById, weightOverridesById, scoreOverri
     gradedPossible,
     predictedEarned,
     predictedPossible,
-    projectedPercent: toPct(gradedEarned + predictedEarned, gradedPossible + predictedPossible),
+    projectedPercent: toPct(
+      gradedEarned + predictedEarned,
+      gradedPossible + predictedPossible,
+    ),
     currentKnownPercent: toPct(gradedEarned, gradedPossible),
     gradedCount,
     predictedCount,
@@ -292,7 +328,14 @@ function Toggle({ checked, onChange, label, disabled = false }) {
   );
 }
 
-function AnchoredPopover({ open, onClose, anchorEl, children, width = 420, gap = 10 }) {
+function AnchoredPopover({
+  open,
+  onClose,
+  anchorEl,
+  children,
+  width = 420,
+  gap = 10,
+}) {
   const panelRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
@@ -308,7 +351,10 @@ function AnchoredPopover({ open, onClose, anchorEl, children, width = 420, gap =
       if (left + width + margin > window.innerWidth) {
         left = rect.left - gap - width;
       }
-      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+      left = Math.max(
+        margin,
+        Math.min(left, window.innerWidth - width - margin),
+      );
 
       let top = rect.top;
       top = Math.max(margin, Math.min(top, window.innerHeight - margin - 40));
@@ -356,7 +402,7 @@ function AnchoredPopover({ open, onClose, anchorEl, children, width = 420, gap =
     >
       {children}
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -371,15 +417,21 @@ export function GradePerformance({ demoMode = false }) {
   const [targetLetter, setTargetLetter] = useState("A-");
   const [selectedNeedAssignmentId, setSelectedNeedAssignmentId] = useState("");
   const [useLetterTarget, setUseLetterTarget] = useState(true);
-  const [finalWeight, setFinalWeight] = useState("25");
+  const [finalWeight, setFinalWeight] = useState("20");
   const [predictedFinalExamScore, setPredictedFinalExamScore] = useState("88");
-  const [showGrades, setShowGrades] = useHydratedStateFromCache("grade-performance:show-grades", true);
-  const [gradeScaleByCourse, setGradeScaleByCourse] = useHydratedStateFromCache("grade-performance:scale-by-course", {});
+  const [showGrades, setShowGrades] = useHydratedStateFromCache(
+    "grade-performance:show-grades",
+    true,
+  );
+  const [gradeScaleByCourse, setGradeScaleByCourse] = useHydratedStateFromCache(
+    "grade-performance:scale-by-course",
+    {},
+  );
   const [savingWeightKey, setSavingWeightKey] = useState("");
   const [weightMessage, setWeightMessage] = useState("");
   const [scoreOverridesById, setScoreOverridesById] = useHydratedStateFromCache(
     "grade-performance:score-overrides",
-    {}
+    {},
   );
   const [editingKey, setEditingKey] = useState("");
   const [editWeightInput, setEditWeightInput] = useState("");
@@ -391,22 +443,28 @@ export function GradePerformance({ demoMode = false }) {
   const summariesQ = useCachedAsync(
     "grade-performance:courses:summary",
     ({ signal }) => canvasApi.getCourseSummaries(3, 5, { signal }),
-    { ttlMs: 2 * 60 * 1000 }
+    { ttlMs: 2 * 60 * 1000 },
   );
 
   const summaries = Array.isArray(summariesQ.data) ? summariesQ.data : [];
 
   useEffect(() => {
     if (!summaries.length) return;
-    const currentSelected = summaries.some((course) => String(course.id) === String(selectedCourseId));
+    const currentSelected = summaries.some(
+      (course) => String(course.id) === String(selectedCourseId),
+    );
     if (!selectedCourseId || !currentSelected) {
       setSelectedCourseId(String(summaries[0].id));
     }
   }, [summaries, selectedCourseId]);
 
   const courseIdsKey = useMemo(
-    () => summaries.map((course) => course.id).sort((a, b) => a - b).join(","),
-    [summaries]
+    () =>
+      summaries
+        .map((course) => course.id)
+        .sort((a, b) => a - b)
+        .join(","),
+    [summaries],
   );
 
   const allAssignmentsQ = useCachedAsync(
@@ -415,25 +473,34 @@ export function GradePerformance({ demoMode = false }) {
       if (!summaries.length) return [];
       const responses = await Promise.all(
         summaries.map(async (course) => {
-          const items = await canvasApi.getCourseAssignmentsIncludingHidden(course.id, 200, { signal });
+          const items = await canvasApi.getCourseAssignmentsIncludingHidden(
+            course.id,
+            200,
+            { signal },
+          );
           return (Array.isArray(items) ? items : []).map((assignment) => ({
             ...assignment,
             course_name: assignment?.course_name || course.name,
             course_code: course.course_code || null,
           }));
-        })
+        }),
       );
       return responses.flat();
     },
-    { ttlMs: 60 * 1000 }
+    { ttlMs: 60 * 1000 },
   );
 
-  const allAssignments = Array.isArray(allAssignmentsQ.data) ? allAssignmentsQ.data : [];
+  const allAssignments = Array.isArray(allAssignmentsQ.data)
+    ? allAssignmentsQ.data
+    : [];
 
   const overridesQ = useCachedAsync(
     `grade-performance:assignment-weight-overrides:${demoMode ? "demo" : "live"}`,
-    ({ signal }) => (demoMode ? Promise.resolve({ overrides: [] }) : canvasApi.getAssignmentWeightOverrides({ signal })),
-    { ttlMs: 60 * 1000 }
+    ({ signal }) =>
+      demoMode
+        ? Promise.resolve({ overrides: [] })
+        : canvasApi.getAssignmentWeightOverrides({ signal }),
+    { ttlMs: 60 * 1000 },
   );
 
   const [weightOverridesById, setWeightOverridesById] = useState({});
@@ -447,18 +514,25 @@ export function GradePerformance({ demoMode = false }) {
   }, [setScoreOverridesById]);
 
   const selectedCourse = useMemo(
-    () => summaries.find((course) => String(course.id) === String(selectedCourseId)) ?? null,
-    [summaries, selectedCourseId]
+    () =>
+      summaries.find(
+        (course) => String(course.id) === String(selectedCourseId),
+      ) ?? null,
+    [summaries, selectedCourseId],
   );
 
   const selectedCourseAssignments = useMemo(
-    () => allAssignments.filter((assignment) => String(assignment.course_id) === String(selectedCourseId)),
-    [allAssignments, selectedCourseId]
+    () =>
+      allAssignments.filter(
+        (assignment) =>
+          String(assignment.course_id) === String(selectedCourseId),
+      ),
+    [allAssignments, selectedCourseId],
   );
 
   const scopedAssignments = useMemo(
     () => (searchScope === "all" ? allAssignments : selectedCourseAssignments),
-    [searchScope, allAssignments, selectedCourseAssignments]
+    [searchScope, allAssignments, selectedCourseAssignments],
   );
 
   const filteredAssignments = useMemo(() => {
@@ -468,18 +542,34 @@ export function GradePerformance({ demoMode = false }) {
       const name = String(assignment?.name || "").toLowerCase();
       const courseName = String(assignment?.course_name || "").toLowerCase();
       const courseCode = String(assignment?.course_code || "").toLowerCase();
-      return name.includes(q) || courseName.includes(q) || courseCode.includes(q);
+      return (
+        name.includes(q) || courseName.includes(q) || courseCode.includes(q)
+      );
     });
   }, [scopedAssignments, searchQuery]);
 
   const stats = useMemo(
-    () => buildStats(selectedCourseAssignments, predictedById, weightOverridesById, scoreOverridesById),
-    [selectedCourseAssignments, predictedById, weightOverridesById, scoreOverridesById]
+    () =>
+      buildStats(
+        selectedCourseAssignments,
+        predictedById,
+        weightOverridesById,
+        scoreOverridesById,
+      ),
+    [
+      selectedCourseAssignments,
+      predictedById,
+      weightOverridesById,
+      scoreOverridesById,
+    ],
   );
 
   const minNeededCandidates = useMemo(
-    () => stats.rows.filter((row) => row.hasEffectivePoints && !row.countedAsGraded),
-    [stats.rows]
+    () =>
+      stats.rows.filter(
+        (row) => row.hasEffectivePoints && !row.countedAsGraded,
+      ),
+    [stats.rows],
   );
 
   useEffect(() => {
@@ -487,7 +577,9 @@ export function GradePerformance({ demoMode = false }) {
       setSelectedNeedAssignmentId("");
       return;
     }
-    const hasSelected = minNeededCandidates.some((row) => String(row.assignment.id) === String(selectedNeedAssignmentId));
+    const hasSelected = minNeededCandidates.some(
+      (row) => String(row.assignment.id) === String(selectedNeedAssignmentId),
+    );
     if (!selectedNeedAssignmentId || !hasSelected) {
       setSelectedNeedAssignmentId(String(minNeededCandidates[0].assignment.id));
     }
@@ -495,23 +587,28 @@ export function GradePerformance({ demoMode = false }) {
 
   const scaleConfig = useMemo(
     () => getScaleConfig(selectedCourseId, gradeScaleByCourse),
-    [selectedCourseId, gradeScaleByCourse]
+    [selectedCourseId, gradeScaleByCourse],
   );
 
   useEffect(() => {
     if (!scaleConfig.entries.length) return;
-    const hasSelected = scaleConfig.entries.some((entry) => entry.value === targetLetter);
+    const hasSelected = scaleConfig.entries.some(
+      (entry) => entry.value === targetLetter,
+    );
     if (!hasSelected) {
       setTargetLetter(scaleConfig.entries[0].value);
     }
   }, [scaleConfig, targetLetter]);
 
   const needCalculator = useMemo(() => {
-    const selected = minNeededCandidates.find((row) => String(row.assignment.id) === String(selectedNeedAssignmentId));
+    const selected = minNeededCandidates.find(
+      (row) => String(row.assignment.id) === String(selectedNeedAssignmentId),
+    );
     if (!selected) return null;
 
     const targetValue = useLetterTarget
-      ? scaleConfig.entries.find((entry) => entry.value === targetLetter)?.min ?? 0
+      ? (scaleConfig.entries.find((entry) => entry.value === targetLetter)
+          ?.min ?? 0)
       : clampPercent(targetPercent, 0);
 
     const selectedKey = assignmentIdentity(selected.assignment);
@@ -520,18 +617,27 @@ export function GradePerformance({ demoMode = false }) {
     let otherPredictedCount = 0;
 
     for (const row of stats.rows) {
-      if (!row.hasEffectivePoints || row.countedAsGraded || !row.predicted || row.key === selectedKey) continue;
+      if (
+        !row.hasEffectivePoints ||
+        row.countedAsGraded ||
+        !row.predicted ||
+        row.key === selectedKey
+      )
+        continue;
       otherPredictedEarned += row.predictionEarned || 0;
       otherPredictedPossible += row.effectivePoints;
       otherPredictedCount += 1;
     }
 
-    const totalPossible = stats.gradedPossible + selected.effectivePoints + otherPredictedPossible;
+    const totalPossible =
+      stats.gradedPossible + selected.effectivePoints + otherPredictedPossible;
     if (!Number.isFinite(totalPossible) || totalPossible <= 0) return null;
 
     const requiredTotalEarned = (targetValue / 100) * totalPossible;
-    const requiredOnSelected = requiredTotalEarned - stats.gradedEarned - otherPredictedEarned;
-    const requiredPctOnSelected = (requiredOnSelected / selected.effectivePoints) * 100;
+    const requiredOnSelected =
+      requiredTotalEarned - stats.gradedEarned - otherPredictedEarned;
+    const requiredPctOnSelected =
+      (requiredOnSelected / selected.effectivePoints) * 100;
 
     return {
       targetPercent: targetValue,
@@ -541,7 +647,15 @@ export function GradePerformance({ demoMode = false }) {
       selected,
       otherPredictedCount,
     };
-  }, [minNeededCandidates, selectedNeedAssignmentId, stats, useLetterTarget, targetLetter, targetPercent, scaleConfig]);
+  }, [
+    minNeededCandidates,
+    selectedNeedAssignmentId,
+    stats,
+    useLetterTarget,
+    targetLetter,
+    targetPercent,
+    scaleConfig,
+  ]);
 
   const weightedFinalCalc = useMemo(() => {
     const current = Number(selectedCourse?.current_score);
@@ -554,7 +668,8 @@ export function GradePerformance({ demoMode = false }) {
     const projectedOverall = current * (1 - w) + predictedFinal * w;
 
     const targetForWeight = useLetterTarget
-      ? scaleConfig.entries.find((entry) => entry.value === targetLetter)?.min ?? 0
+      ? (scaleConfig.entries.find((entry) => entry.value === targetLetter)
+          ?.min ?? 0)
       : clampPercent(targetPercent, 0);
 
     const neededOnFinal = (targetForWeight - current * (1 - w)) / w;
@@ -565,37 +680,73 @@ export function GradePerformance({ demoMode = false }) {
       weightPct: w * 100,
       targetForWeight,
     };
-  }, [selectedCourse, finalWeight, predictedFinalExamScore, useLetterTarget, targetLetter, targetPercent, scaleConfig]);
+  }, [
+    selectedCourse,
+    finalWeight,
+    predictedFinalExamScore,
+    useLetterTarget,
+    targetLetter,
+    targetPercent,
+    scaleConfig,
+  ]);
 
   const filteredOverrideCount = useMemo(
-    () => filteredAssignments.filter((assignment) => Number.isFinite(Number(weightOverridesById?.[assignmentIdentity(assignment)]?.weight_points))).length,
-    [filteredAssignments, weightOverridesById]
+    () =>
+      filteredAssignments.filter((assignment) =>
+        Number.isFinite(
+          Number(
+            weightOverridesById?.[assignmentIdentity(assignment)]
+              ?.weight_points,
+          ),
+        ),
+      ).length,
+    [filteredAssignments, weightOverridesById],
   );
 
   const scoreOverrideCount = useMemo(
     () => Object.keys(normalizeScoreOverrides(scoreOverridesById)).length,
-    [scoreOverridesById]
+    [scoreOverridesById],
   );
 
   const editingAssignment = useMemo(
-    () => allAssignments.find((assignment) => assignmentIdentity(assignment) === editingKey) || null,
-    [allAssignments, editingKey]
+    () =>
+      allAssignments.find(
+        (assignment) => assignmentIdentity(assignment) === editingKey,
+      ) || null,
+    [allAssignments, editingKey],
   );
 
   const editingRow = useMemo(() => {
     if (!editingAssignment) return null;
     return (
-      stats.rows.find((row) => row.key === editingKey)
-      || buildStats([editingAssignment], predictedById, weightOverridesById, scoreOverridesById).rows[0]
-      || null
+      stats.rows.find((row) => row.key === editingKey) ||
+      buildStats(
+        [editingAssignment],
+        predictedById,
+        weightOverridesById,
+        scoreOverridesById,
+      ).rows[0] ||
+      null
     );
-  }, [editingAssignment, editingKey, stats.rows, predictedById, weightOverridesById, scoreOverridesById]);
+  }, [
+    editingAssignment,
+    editingKey,
+    stats.rows,
+    predictedById,
+    weightOverridesById,
+    scoreOverridesById,
+  ]);
 
-  const canEditUnlockScore = !!editingRow?.countedAsGraded || !!scoreOverridesById?.[editingKey]?.enabled;
+  const canEditUnlockScore =
+    !!editingRow?.countedAsGraded ||
+    !!scoreOverridesById?.[editingKey]?.enabled;
 
-  const editingAnchorEl = editingKey ? editAnchorRefs.current[editingKey] || null : null;
+  const editingAnchorEl = editingKey
+    ? editAnchorRefs.current[editingKey] || null
+    : null;
 
-  const displayedProjectedPercent = stats.projectedPercent ?? stats.currentKnownPercent;
+  const displayedProjectedPercent =
+    stats.projectedPercent ?? stats.currentKnownPercent;
 
   useEffect(() => {
     setLastProjectionDelta(null);
@@ -605,23 +756,37 @@ export function GradePerformance({ demoMode = false }) {
     return showGrades ? text : "Hidden";
   }
 
-  function computeDisplayedProjectedPercent(assignments, nextPredictedById, nextWeightOverridesById, nextScoreOverridesById) {
-    const nextStats = buildStats(assignments, nextPredictedById, nextWeightOverridesById, nextScoreOverridesById);
+  function computeDisplayedProjectedPercent(
+    assignments,
+    nextPredictedById,
+    nextWeightOverridesById,
+    nextScoreOverridesById,
+  ) {
+    const nextStats = buildStats(
+      assignments,
+      nextPredictedById,
+      nextWeightOverridesById,
+      nextScoreOverridesById,
+    );
     return nextStats.projectedPercent ?? nextStats.currentKnownPercent;
   }
 
-  function recordProjectionDelta(nextPredictedById, nextWeightOverridesById = weightOverridesById, nextScoreOverridesById = scoreOverridesById) {
+  function recordProjectionDelta(
+    nextPredictedById,
+    nextWeightOverridesById = weightOverridesById,
+    nextScoreOverridesById = scoreOverridesById,
+  ) {
     const before = computeDisplayedProjectedPercent(
       selectedCourseAssignments,
       predictedById,
       weightOverridesById,
-      scoreOverridesById
+      scoreOverridesById,
     );
     const after = computeDisplayedProjectedPercent(
       selectedCourseAssignments,
       nextPredictedById,
       nextWeightOverridesById,
-      nextScoreOverridesById
+      nextScoreOverridesById,
     );
 
     if (!Number.isFinite(before) || !Number.isFinite(after)) {
@@ -664,7 +829,8 @@ export function GradePerformance({ demoMode = false }) {
     if (!selectedCourseId) return;
     setGradeScaleByCourse((prev) => {
       const current = prev?.[String(selectedCourseId)] || { mode: "standard" };
-      const nextConfig = typeof updater === "function" ? updater(current) : updater;
+      const nextConfig =
+        typeof updater === "function" ? updater(current) : updater;
       return {
         ...(prev || {}),
         [String(selectedCourseId)]: nextConfig,
@@ -677,15 +843,19 @@ export function GradePerformance({ demoMode = false }) {
       if (mode === "pass-fail") {
         return {
           mode,
-          passThreshold: clampPercent(current?.passThreshold, DEFAULT_PASS_THRESHOLD),
+          passThreshold: clampPercent(
+            current?.passThreshold,
+            DEFAULT_PASS_THRESHOLD,
+          ),
         };
       }
       if (mode === "custom") {
         return {
           mode,
-          thresholds: current?.thresholds && typeof current.thresholds === "object"
-            ? current.thresholds
-            : makeThresholdMap(STANDARD_SCALE),
+          thresholds:
+            current?.thresholds && typeof current.thresholds === "object"
+              ? current.thresholds
+              : makeThresholdMap(STANDARD_SCALE),
         };
       }
       return { mode: "standard" };
@@ -697,7 +867,10 @@ export function GradePerformance({ demoMode = false }) {
       mode: "custom",
       thresholds: {
         ...(current?.thresholds || makeThresholdMap(STANDARD_SCALE)),
-        [label]: clampPercent(value, makeThresholdMap(STANDARD_SCALE)[label] ?? 0),
+        [label]: clampPercent(
+          value,
+          makeThresholdMap(STANDARD_SCALE)[label] ?? 0,
+        ),
       },
     }));
   }
@@ -705,7 +878,10 @@ export function GradePerformance({ demoMode = false }) {
   function updatePassThreshold(value) {
     updateSelectedCourseScale((current) => ({
       mode: "pass-fail",
-      passThreshold: clampPercent(value, current?.passThreshold ?? DEFAULT_PASS_THRESHOLD),
+      passThreshold: clampPercent(
+        value,
+        current?.passThreshold ?? DEFAULT_PASS_THRESHOLD,
+      ),
     }));
   }
 
@@ -717,8 +893,9 @@ export function GradePerformance({ demoMode = false }) {
       const key = assignmentIdentity(assignment);
       const effectiveWeight = Number(weightOverridesById?.[key]?.weight_points);
       const basePoints = Number(assignment?.points_possible);
-      const hasEffectivePoints = (Number.isFinite(effectiveWeight) && effectiveWeight > 0)
-        || (Number.isFinite(basePoints) && basePoints > 0);
+      const hasEffectivePoints =
+        (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
+        (Number.isFinite(basePoints) && basePoints > 0);
       const submitted = assignment?.submitted === true;
       const hasScore = Number.isFinite(Number(assignment?.score));
       if (!hasEffectivePoints || (submitted && hasScore)) continue;
@@ -755,7 +932,11 @@ export function GradePerformance({ demoMode = false }) {
     return "";
   }
 
-  function getNextWeightOverridesForInput(assignment, rawInput, source = weightOverridesById) {
+  function getNextWeightOverridesForInput(
+    assignment,
+    rawInput,
+    source = weightOverridesById,
+  ) {
     const key = assignmentIdentity(assignment);
     const nextWeightOverrides = { ...(source || {}) };
     const trimmed = String(rawInput || "").trim();
@@ -783,8 +964,13 @@ export function GradePerformance({ demoMode = false }) {
   function openEditPopup(assignment) {
     const key = assignmentIdentity(assignment);
     const row =
-      stats.rows.find((item) => item.key === key)
-      || buildStats([assignment], predictedById, weightOverridesById, scoreOverridesById).rows[0];
+      stats.rows.find((item) => item.key === key) ||
+      buildStats(
+        [assignment],
+        predictedById,
+        weightOverridesById,
+        scoreOverridesById,
+      ).rows[0];
     const scoreOverride = scoreOverridesById?.[key];
     const canUnlockScore = !!row?.countedAsGraded || !!scoreOverride?.enabled;
     setEditingKey(key);
@@ -797,7 +983,7 @@ export function GradePerformance({ demoMode = false }) {
           ? String(row.score)
           : Number.isFinite(Number(assignment?.score))
             ? String(assignment.score)
-            : ""
+            : "",
     );
   }
 
@@ -812,11 +998,18 @@ export function GradePerformance({ demoMode = false }) {
     const key = assignmentIdentity(assignment);
     setSavingWeightKey(key);
     try {
-      await canvasApi.deleteAssignmentWeightOverride(assignment.course_id, assignment.id);
+      await canvasApi.deleteAssignmentWeightOverride(
+        assignment.course_id,
+        assignment.id,
+      );
       const nextWeightOverridesById = { ...weightOverridesById };
       delete nextWeightOverridesById[key];
       setWeightOverridesById(nextWeightOverridesById);
-      recordProjectionDelta(predictedById, nextWeightOverridesById, scoreOverridesById);
+      recordProjectionDelta(
+        predictedById,
+        nextWeightOverridesById,
+        scoreOverridesById,
+      );
       setWeightMessage(`Reset ${assignment.name} to Canvas weight.`);
     } catch (error) {
       setWeightMessage(error?.message || "Failed to reset weight override.");
@@ -852,13 +1045,21 @@ export function GradePerformance({ demoMode = false }) {
       return;
     }
 
-    if (Number.isFinite(saved) && saved > 0 && Math.abs(saved - nextWeight) < 1e-9) {
+    if (
+      Number.isFinite(saved) &&
+      saved > 0 &&
+      Math.abs(saved - nextWeight) < 1e-9
+    ) {
       return;
     }
 
     setSavingWeightKey(key);
     try {
-      await canvasApi.upsertAssignmentWeightOverride(assignment.course_id, assignment.id, nextWeight);
+      await canvasApi.upsertAssignmentWeightOverride(
+        assignment.course_id,
+        assignment.id,
+        nextWeight,
+      );
       const nextWeightOverridesById = {
         ...weightOverridesById,
         [key]: {
@@ -867,7 +1068,11 @@ export function GradePerformance({ demoMode = false }) {
         },
       };
       setWeightOverridesById(nextWeightOverridesById);
-      recordProjectionDelta(predictedById, nextWeightOverridesById, scoreOverridesById);
+      recordProjectionDelta(
+        predictedById,
+        nextWeightOverridesById,
+        scoreOverridesById,
+      );
       setWeightMessage(`Saved custom weight for ${assignment.name}.`);
     } catch (error) {
       setWeightMessage(error?.message || "Failed to save weight override.");
@@ -881,16 +1086,22 @@ export function GradePerformance({ demoMode = false }) {
     const assignment = editingAssignment;
     if (!assignment) return;
     if (editUnlockScore && !canEditUnlockScore) {
-      setWeightMessage("Score override can only be enabled for assignments that already have a graded score.");
+      setWeightMessage(
+        "Score override can only be enabled for assignments that already have a graded score.",
+      );
       return;
     }
     const before = computeDisplayedProjectedPercent(
       selectedCourseAssignments,
       predictedById,
       weightOverridesById,
-      scoreOverridesById
+      scoreOverridesById,
     );
-    const nextWeightOverrides = getNextWeightOverridesForInput(assignment, editWeightInput, weightOverridesById);
+    const nextWeightOverrides = getNextWeightOverridesForInput(
+      assignment,
+      editWeightInput,
+      weightOverridesById,
+    );
 
     setWeightMessage("");
     await applyWeightValue(assignment, editWeightInput);
@@ -910,9 +1121,13 @@ export function GradePerformance({ demoMode = false }) {
           selectedCourseAssignments,
           predictedById,
           nextWeightOverrides,
-          nextScoreOverrides
+          nextScoreOverrides,
         );
-        setLastProjectionDelta(Number.isFinite(before) && Number.isFinite(after) ? after - before : null);
+        setLastProjectionDelta(
+          Number.isFinite(before) && Number.isFinite(after)
+            ? after - before
+            : null,
+        );
       } else {
         setWeightMessage("Unlock score is enabled, but score must be numeric.");
         return;
@@ -925,9 +1140,13 @@ export function GradePerformance({ demoMode = false }) {
         selectedCourseAssignments,
         predictedById,
         nextWeightOverrides,
-        nextScoreOverrides
+        nextScoreOverrides,
       );
-      setLastProjectionDelta(Number.isFinite(before) && Number.isFinite(after) ? after - before : null);
+      setLastProjectionDelta(
+        Number.isFinite(before) && Number.isFinite(after)
+          ? after - before
+          : null,
+      );
     }
 
     closeEditPopup();
@@ -941,7 +1160,7 @@ export function GradePerformance({ demoMode = false }) {
       selectedCourseAssignments,
       predictedById,
       weightOverridesById,
-      scoreOverridesById
+      scoreOverridesById,
     );
 
     await removeWeightOverride(assignment);
@@ -958,33 +1177,60 @@ export function GradePerformance({ demoMode = false }) {
       delete next[editingKey];
       return next;
     });
-    const nextWeightOverrides = getNextWeightOverridesForInput(assignment, "", weightOverridesById);
+    const nextWeightOverrides = getNextWeightOverridesForInput(
+      assignment,
+      "",
+      weightOverridesById,
+    );
     const after = computeDisplayedProjectedPercent(
       selectedCourseAssignments,
       nextPredicted,
       nextWeightOverrides,
-      nextScoreOverrides
+      nextScoreOverrides,
     );
-    setLastProjectionDelta(Number.isFinite(before) && Number.isFinite(after) ? after - before : null);
+    setLastProjectionDelta(
+      Number.isFinite(before) && Number.isFinite(after) ? after - before : null,
+    );
 
     setWeightMessage(`Restored defaults for ${assignment.name}.`);
     closeEditPopup();
   }
 
   function isAuthOrTokenError(error) {
-    return !!(error && (error.status === 401 || error.status === 403 || error.needsToken));
+    return !!(
+      error &&
+      (error.status === 401 || error.status === 403 || error.needsToken)
+    );
   }
 
-  const summariesErrorDisplay = summariesQ.error && !isAuthOrTokenError(summariesQ.error) ? summariesQ.error : null;
-  const allAssignmentsErrorDisplay = allAssignmentsQ.error && !isAuthOrTokenError(allAssignmentsQ.error) ? allAssignmentsQ.error : null;
-  const overridesErrorDisplay = overridesQ.error && !isAuthOrTokenError(overridesQ.error) ? overridesQ.error : null;
+  const summariesErrorDisplay =
+    summariesQ.error && !isAuthOrTokenError(summariesQ.error)
+      ? summariesQ.error
+      : null;
+  const allAssignmentsErrorDisplay =
+    allAssignmentsQ.error && !isAuthOrTokenError(allAssignmentsQ.error)
+      ? allAssignmentsQ.error
+      : null;
+  const overridesErrorDisplay =
+    overridesQ.error && !isAuthOrTokenError(overridesQ.error)
+      ? overridesQ.error
+      : null;
 
-  if ((summariesQ.loading && !summaries.length) || (allAssignmentsQ.loading && !allAssignments.length && summaries.length > 0)) {
+  if (
+    (summariesQ.loading && !summaries.length) ||
+    (allAssignmentsQ.loading && !allAssignments.length && summaries.length > 0)
+  ) {
     return <Loading label="Loading grade tools..." />;
   }
 
-  if (summariesErrorDisplay && !summaries.length) return <ErrorBox error={summariesErrorDisplay} />;
-  if (allAssignmentsErrorDisplay && !allAssignments.length && summaries.length > 0) return <ErrorBox error={allAssignmentsErrorDisplay} />;
+  if (summariesErrorDisplay && !summaries.length)
+    return <ErrorBox error={summariesErrorDisplay} />;
+  if (
+    allAssignmentsErrorDisplay &&
+    !allAssignments.length &&
+    summaries.length > 0
+  )
+    return <ErrorBox error={allAssignmentsErrorDisplay} />;
 
   return (
     <div className="stack">
@@ -1000,7 +1246,8 @@ export function GradePerformance({ demoMode = false }) {
                 />
               </div>
               <div className="muted">
-                Select a class for course-specific calculators. Search can be scoped to that class or expanded across all classes.
+                Select a class for course-specific calculators. Search can be
+                scoped to that class or expanded across all classes.
               </div>
             </div>
 
@@ -1039,14 +1286,296 @@ export function GradePerformance({ demoMode = false }) {
           </div>
 
           <div className="rowWrap">
-            <span className="badge badgeNeutral">Canvas current score: {displayGrade(fmtPct(Number(selectedCourse?.current_score)))}</span>
-            <span className="badge badgeNeutral">Canvas current letter: {displayGrade(selectedCourse?.current_grade || "-")}</span>
-            <span className="badge badgeNeutral">Known graded avg: {displayGrade(fmtPct(stats.currentKnownPercent))}</span>
+            <span className="badge badgeNeutral">
+              Canvas current score:{" "}
+              {displayGrade(fmtPct(Number(selectedCourse?.current_score)))}
+            </span>
+            <span className="badge badgeNeutral">
+              Canvas current letter:{" "}
+              {displayGrade(selectedCourse?.current_grade || "-")}
+            </span>
+            <span className="badge badgeNeutral">
+              Known graded avg:{" "}
+              {displayGrade(fmtPct(stats.currentKnownPercent))}
+            </span>
           </div>
 
           <div className="muted gradeCalcBasis">
-            Calculation basis: {stats.gradedCount} submitted and scored items ({fmtPoints(stats.gradedPossible)} effective pts), {stats.predictedCount} predicted items ({fmtPoints(stats.predictedPossible)} effective pts), {stats.excludedCount} ungraded or unsubmitted items excluded, {stats.pendingScoreCount} score-bearing but unsubmitted items excluded, {stats.overrideCount} custom weight overrides active in this class.
+            Calculation basis: {stats.gradedCount} submitted and scored items (
+            {fmtPoints(stats.gradedPossible)} effective pts),{" "}
+            {stats.predictedCount} predicted items (
+            {fmtPoints(stats.predictedPossible)} effective pts),{" "}
+            {stats.excludedCount} ungraded or unsubmitted items excluded,{" "}
+            {stats.pendingScoreCount} score-bearing but unsubmitted items
+            excluded, {stats.overrideCount} custom weight overrides active in
+            this class.
           </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="h3" style={{ margin: 0 }}>
+              Target Settings
+            </div>
+            <InfoTip
+              label="Target settings help"
+              text="Choose a letter-grade or numeric target, then adjust the grade scale if this class uses non-standard thresholds or pass/fail grading."
+            />
+          </div>
+
+          <div className="gradeCalcControls">
+            <label className="gradeCalcField">
+              <span className="muted">Target type</span>
+              <select
+                className="select"
+                value={useLetterTarget ? "letter" : "percent"}
+                onChange={(e) =>
+                  setUseLetterTarget(e.target.value === "letter")
+                }
+              >
+                <option value="letter">Letter grade</option>
+                <option value="percent">Percent score</option>
+              </select>
+            </label>
+
+            <label className="gradeCalcField">
+              <span className="muted">Grade scale</span>
+              <select
+                className="select"
+                value={scaleConfig.mode}
+                onChange={(e) => setScaleMode(e.target.value)}
+              >
+                <option value="standard">Standard +/- scale</option>
+                <option value="custom">Custom thresholds</option>
+                <option value="pass-fail">Pass / Fail</option>
+              </select>
+            </label>
+
+            {useLetterTarget ? (
+              <label className="gradeCalcField">
+                <span className="muted">Target grade</span>
+                <select
+                  className="select"
+                  value={targetLetter}
+                  onChange={(e) => setTargetLetter(e.target.value)}
+                >
+                  {scaleConfig.entries.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label} ({entry.min}%)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="gradeCalcField">
+                <span className="muted">Target percent</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={targetPercent}
+                  onChange={(e) => setTargetPercent(e.target.value)}
+                />
+              </label>
+            )}
+          </div>
+
+          {scaleConfig.mode === "custom" ? (
+            <div className="gradeScaleGrid">
+              {STANDARD_SCALE.filter((entry) => entry.value !== "F").map(
+                (entry) => (
+                  <label key={entry.value} className="gradeCalcField">
+                    <span className="muted">{entry.label} min %</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={scaleConfig.thresholds[entry.value] ?? entry.min}
+                      onChange={(e) =>
+                        updateCustomThreshold(entry.value, e.target.value)
+                      }
+                    />
+                  </label>
+                ),
+              )}
+            </div>
+          ) : null}
+
+          {scaleConfig.mode === "pass-fail" ? (
+            <div className="gradeCalcControls">
+              <label className="gradeCalcField">
+                <span className="muted">Pass threshold (%)</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={scaleConfig.passThreshold}
+                  onChange={(e) => updatePassThreshold(e.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <AnchoredPopover
+        open={!!editingKey && !!editingAnchorEl}
+        onClose={closeEditPopup}
+        anchorEl={editingAnchorEl}
+      >
+        <div className="effortPopover gradeCalcPopover">
+          <div className="effortPopoverHeader">
+            <div>
+              <div className="h3" style={{ margin: 0 }}>
+                Edit Assignment
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                {editingAssignment?.name || "Assignment"}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="effortCloseBtn"
+              onClick={closeEditPopup}
+              aria-label="Close edit popup"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="effortPopoverBody">
+            <label className="gradeCalcField">
+              <span className="muted">Weight / pts override</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editWeightInput}
+                onChange={(e) => setEditWeightInput(e.target.value)}
+                placeholder="Use Canvas default"
+              />
+              <div className="muted">
+                Leave blank or use the Canvas value to clear override.
+              </div>
+            </label>
+
+            <div className="toggleRow">
+              <span className="muted">Modify locked score</span>
+              <Toggle
+                checked={editUnlockScore}
+                onChange={setEditUnlockScore}
+                label={
+                  editUnlockScore
+                    ? "Disable score override"
+                    : "Enable score override"
+                }
+                disabled={!canEditUnlockScore}
+              />
+            </div>
+
+            {!canEditUnlockScore ? (
+              <div className="muted">
+                Score override is only available for assignments that already
+                have a graded score.
+              </div>
+            ) : null}
+
+            {editUnlockScore ? (
+              <label className="gradeCalcField">
+                <span className="muted">Override score</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editScoreInput}
+                  onChange={(e) => setEditScoreInput(e.target.value)}
+                  placeholder="Enter adjusted score"
+                />
+                <div className="muted">
+                  This score is local to this tab and updates grade
+                  bubbles/calculations.
+                </div>
+              </label>
+            ) : null}
+
+            <div className="gradeCalcPopoverActions">
+              <button type="button" className="btn" onClick={saveEditPopup}>
+                Save
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={restoreEditDefaults}
+              >
+                Restore Defaults
+              </button>
+              <button type="button" className="btn" onClick={closeEditPopup}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </AnchoredPopover>
+
+      <div className="card gradeCalcCard">
+        <div className="cardBody stack">
+          <div className="gradeCalcSectionHeading">
+            <div className="h3">Weighted Final Exam Calculator</div>
+            <InfoTip
+              label="Weighted final help"
+              text="Use this when your syllabus has a specific final-exam weight. This block uses the selected class's Canvas current score plus your manual final-exam prediction."
+            />
+          </div>
+
+          <div className="gradeCalcControls">
+            <label className="gradeCalcField">
+              <span className="muted">Final exam weight (%)</span>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                value={finalWeight}
+                onChange={(e) => setFinalWeight(e.target.value)}
+              />
+            </label>
+
+            <label className="gradeCalcField">
+              <span className="muted">Predicted final score (%)</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={predictedFinalExamScore}
+                onChange={(e) => setPredictedFinalExamScore(e.target.value)}
+              />
+            </label>
+          </div>
+
+          {weightedFinalCalc ? (
+            <>
+              <div className="rowWrap">
+                <span className="badge badgeSuccess">
+                  Projected overall:{" "}
+                  {displayGrade(fmtPct(weightedFinalCalc.projectedOverall))}
+                </span>
+                <span className="badge badgeWarn">
+                  Minimum final score for target:{" "}
+                  {displayGrade(fmtPct(weightedFinalCalc.neededOnFinal))}
+                </span>
+                <span className="badge badgeNeutral">
+                  Weight used: {fmtPct(weightedFinalCalc.weightPct)}
+                </span>
+              </div>
+              <div className="muted gradeCalcBasis">
+                Calculation basis: Canvas current score for the selected class
+                plus a manual final-exam weight of{" "}
+                {fmtPct(weightedFinalCalc.weightPct)}. This block does not use
+                assignment-level prediction rows.
+              </div>
+            </>
+          ) : (
+            <div className="muted">
+              Weighted final calculation needs a Canvas current course score and
+              a final weight between 1% and 99%.
+            </div>
+          )}
         </div>
       </div>
 
@@ -1064,15 +1593,25 @@ export function GradePerformance({ demoMode = false }) {
             <div className="gradeCalcInlineControl gradeCalcInlineControlGroup">
               <span className="muted gradeCalcInlineHeading">Search scope</span>
               <div className="gradeCalcScopeToggleRow">
-                <span className={`muted gradeCalcInlineValue ${searchScope === "course" ? "gradeCalcScopeLabelActive" : ""}`}>
+                <span
+                  className={`muted gradeCalcInlineValue ${searchScope === "course" ? "gradeCalcScopeLabelActive" : ""}`}
+                >
                   Selected class
                 </span>
                 <Toggle
                   checked={searchScope === "all"}
-                  onChange={(checked) => setSearchScope(checked ? "all" : "course")}
-                  label={searchScope === "all" ? "Searching all classes" : "Searching selected class only"}
+                  onChange={(checked) =>
+                    setSearchScope(checked ? "all" : "course")
+                  }
+                  label={
+                    searchScope === "all"
+                      ? "Searching all classes"
+                      : "Searching selected class only"
+                  }
                 />
-                <span className={`muted gradeCalcInlineValue ${searchScope === "all" ? "gradeCalcScopeLabelActive" : ""}`}>
+                <span
+                  className={`muted gradeCalcInlineValue ${searchScope === "all" ? "gradeCalcScopeLabelActive" : ""}`}
+                >
                   All classes
                 </span>
               </div>
@@ -1097,10 +1636,16 @@ export function GradePerformance({ demoMode = false }) {
             </label>
 
             <label className="gradeCalcField gradeCalcFieldWide">
-              <span className="muted gradeCalcFieldTitle">Search assignment</span>
+              <span className="muted gradeCalcFieldTitle">
+                Search assignment
+              </span>
               <input
                 type="text"
-                placeholder={searchScope === "all" ? "Search assignment or class name..." : "Quiz, midterm, lab..."}
+                placeholder={
+                  searchScope === "all"
+                    ? "Search assignment or class name..."
+                    : "Quiz, midterm, lab..."
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -1108,28 +1653,58 @@ export function GradePerformance({ demoMode = false }) {
           </div>
 
           <div className="rowWrap">
-            <span className="badge badgeSuccess">Projected with predictions: {displayGrade(fmtPct(displayedProjectedPercent))}</span>
-            <span className={`badge ${lastProjectionDelta == null ? "badgeNeutral" : lastProjectionDelta >= 0 ? "badgeSuccess" : "badgeWarn"}`}>
-              Last change: {displayGrade(lastProjectionDelta == null ? "-" : `${lastProjectionDelta >= 0 ? "+" : ""}${lastProjectionDelta.toFixed(2)} pts`)}
+            <span className="badge badgeSuccess">
+              Projected with predictions:{" "}
+              {displayGrade(fmtPct(displayedProjectedPercent))}
+            </span>
+            <span
+              className={`badge ${lastProjectionDelta == null ? "badgeNeutral" : lastProjectionDelta >= 0 ? "badgeSuccess" : "badgeWarn"}`}
+            >
+              Last change:{" "}
+              {displayGrade(
+                lastProjectionDelta == null
+                  ? "-"
+                  : `${lastProjectionDelta >= 0 ? "+" : ""}${lastProjectionDelta.toFixed(2)} pts`,
+              )}
             </span>
           </div>
 
           <div className="rowWrap">
-            <button type="button" className="btn" onClick={applyDefaultPredictionToVisible}>
+            <button
+              type="button"
+              className="btn"
+              onClick={applyDefaultPredictionToVisible}
+            >
               Apply Default To Visible Ungraded
             </button>
-            <button type="button" className="btn" onClick={clearVisiblePredictions}>
+            <button
+              type="button"
+              className="btn"
+              onClick={clearVisiblePredictions}
+            >
               Clear Visible Predictions
             </button>
           </div>
 
           <div className="muted gradeCalcBasis">
-            Calculation basis: showing {filteredAssignments.length} matching assignments from {searchScope === "all" ? `${summaries.length} classes` : "the selected class"}; {filteredOverrideCount} custom weight overrides and {scoreOverrideCount} score unlock overrides are active.
+            Calculation basis: showing {filteredAssignments.length} matching
+            assignments from{" "}
+            {searchScope === "all"
+              ? `${summaries.length} classes`
+              : "the selected class"}
+            ; {filteredOverrideCount} custom weight overrides and{" "}
+            {scoreOverrideCount} score unlock overrides are active.
           </div>
 
-          {weightMessage ? <div className="authHint">{weightMessage}</div> : null}
-          {overridesErrorDisplay ? <ErrorBox error={overridesErrorDisplay} /> : null}
-          {allAssignmentsErrorDisplay && allAssignments.length > 0 ? <ErrorBox error={allAssignmentsErrorDisplay} /> : null}
+          {weightMessage ? (
+            <div className="authHint">{weightMessage}</div>
+          ) : null}
+          {overridesErrorDisplay ? (
+            <ErrorBox error={overridesErrorDisplay} />
+          ) : null}
+          {allAssignmentsErrorDisplay && allAssignments.length > 0 ? (
+            <ErrorBox error={allAssignmentsErrorDisplay} />
+          ) : null}
 
           {filteredAssignments.length === 0 ? (
             <div className="muted">No assignments matched your search.</div>
@@ -1137,11 +1712,20 @@ export function GradePerformance({ demoMode = false }) {
             <ul className="gradeCalcList gradeCalcListScrollable">
               {filteredAssignments.map((assignment) => {
                 const key = assignmentIdentity(assignment);
-                const row = stats.rows.find((item) => item.key === key) || buildStats([assignment], predictedById, weightOverridesById, scoreOverridesById).rows[0];
-                const courseLabel = searchScope === "all" ? formatCourseLabel(assignment) : null;
+                const row =
+                  stats.rows.find((item) => item.key === key) ||
+                  buildStats(
+                    [assignment],
+                    predictedById,
+                    weightOverridesById,
+                    scoreOverridesById,
+                  ).rows[0];
+                const courseLabel =
+                  searchScope === "all" ? formatCourseLabel(assignment) : null;
                 const predictValue = predictedById[key] ?? "";
                 const draftPredictValue = getPredictionDraftValue(key);
-                const hasPendingPredictionDraft = String(draftPredictValue) !== String(predictValue);
+                const hasPendingPredictionDraft =
+                  String(draftPredictValue) !== String(predictValue);
                 const effectivePoints = row?.effectivePoints;
                 const basePoints = row?.basePoints;
                 const saving = savingWeightKey === key;
@@ -1155,7 +1739,8 @@ export function GradePerformance({ demoMode = false }) {
                     statusText = `Score unlocked override applied: ${displayGrade(`${fmtPoints(row.score)} (${fmtPct(toPct(row.score, row.effectivePoints))})`)}`;
                   }
                 } else if (row?.pendingScore) {
-                  statusText = "Score exists but submission is not marked submitted, so it is excluded from graded calculations";
+                  statusText =
+                    "Score exists but submission is not marked submitted, so it is excluded from graded calculations";
                 } else if (assignment?.submitted === true) {
                   statusText = "Submitted but no score yet";
                 }
@@ -1163,19 +1748,34 @@ export function GradePerformance({ demoMode = false }) {
                 return (
                   <li key={key} className="gradeCalcListItem">
                     <div className="gradeCalcListMain">
-                      <div className="gradeCalcItemTitle">{assignment.name}</div>
-                      {courseLabel ? <div className="muted">{courseLabel}</div> : null}
+                      <div className="gradeCalcItemTitle">
+                        {assignment.name}
+                      </div>
+                      {courseLabel ? (
+                        <div className="muted">{courseLabel}</div>
+                      ) : null}
                       <div className="muted">
-                        Effective weight: {Number.isFinite(effectivePoints) ? `${fmtPoints(effectivePoints)} pts` : "Not set"}
-                        {Number.isFinite(basePoints) ? ` • Canvas weight: ${fmtPoints(basePoints)} pts` : ""}
-                        {row?.isWeightOverridden ? " • Custom override saved" : ""}
+                        Effective weight:{" "}
+                        {Number.isFinite(effectivePoints)
+                          ? `${fmtPoints(effectivePoints)} pts`
+                          : "Not set"}
+                        {Number.isFinite(basePoints)
+                          ? ` • Canvas weight: ${fmtPoints(basePoints)} pts`
+                          : ""}
+                        {row?.isWeightOverridden
+                          ? " • Custom override saved"
+                          : ""}
                       </div>
                       <div className="muted">{statusText}</div>
                     </div>
 
                     <div className="gradeCalcListControls">
                       <div className="gradeCalcListMeta">
-                        {row?.isWeightOverridden ? <span className="badge badgeNeutral">Custom weight</span> : null}
+                        {row?.isWeightOverridden ? (
+                          <span className="badge badgeNeutral">
+                            Custom weight
+                          </span>
+                        ) : null}
 
                         {!row?.hasEffectivePoints ? (
                           <div className="gradeCalcLockedMeta">
@@ -1192,22 +1792,32 @@ export function GradePerformance({ demoMode = false }) {
                                 min="0"
                                 max="100"
                                 value={draftPredictValue}
-                                placeholder={String(clampPercent(defaultPrediction, 85))}
+                                placeholder={String(
+                                  clampPercent(defaultPrediction, 85),
+                                )}
                                 onChange={(e) => {
                                   const next = e.target.value;
-                                  setPredictionDraftById((prev) => ({ ...(prev || {}), [key]: next }));
+                                  setPredictionDraftById((prev) => ({
+                                    ...(prev || {}),
+                                    [key]: next,
+                                  }));
                                 }}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    commitPredictionDraft(key, e.currentTarget.value);
+                                    commitPredictionDraft(
+                                      key,
+                                      e.currentTarget.value,
+                                    );
                                   }
                                 }}
                               />
                               <button
                                 type="button"
                                 className="btn gradeCalcApplyBtn"
-                                onClick={() => commitPredictionDraft(key, draftPredictValue)}
+                                onClick={() =>
+                                  commitPredictionDraft(key, draftPredictValue)
+                                }
                                 disabled={!hasPendingPredictionDraft}
                               >
                                 Apply
@@ -1216,18 +1826,31 @@ export function GradePerformance({ demoMode = false }) {
                           </label>
                         ) : (
                           <div className="gradeCalcLockedMeta">
-                            <span className={`badge ${hasScoreOverride ? "badgeWarn" : "badgeNeutral"} gradeCalcLockBadge`}>
-                              {hasScoreOverride ? "Score modified from original" : "Prediction locked by graded status"}
+                            <span
+                              className={`badge ${hasScoreOverride ? "badgeWarn" : "badgeNeutral"} gradeCalcLockBadge`}
+                            >
+                              {hasScoreOverride
+                                ? "Score modified from original"
+                                : "Prediction locked by graded status"}
                             </span>
                             {row?.countedAsGraded ? (
                               <span className="badge badgeSuccess gradeCalcAssignmentScoreBadge">
-                                Score: {displayGrade(fmtPct(toPct(row?.score, row?.effectivePoints)))}
+                                Score:{" "}
+                                {displayGrade(
+                                  fmtPct(
+                                    toPct(row?.score, row?.effectivePoints),
+                                  ),
+                                )}
                               </span>
                             ) : null}
                           </div>
                         )}
 
-                        {saving ? <span className="badge badgeNeutral gradeCalcSavingBadge">Saving weight...</span> : null}
+                        {saving ? (
+                          <span className="badge badgeNeutral gradeCalcSavingBadge">
+                            Saving weight...
+                          </span>
+                        ) : null}
                       </div>
 
                       <button
@@ -1237,13 +1860,27 @@ export function GradePerformance({ demoMode = false }) {
                           else delete editAnchorRefs.current[key];
                         }}
                         className="effortGearBtn gradeCalcEditBtn"
-                        onClick={() => (isEditingThis ? closeEditPopup() : openEditPopup(assignment))}
+                        onClick={() =>
+                          isEditingThis
+                            ? closeEditPopup()
+                            : openEditPopup(assignment)
+                        }
                         title="Edit assignment assumptions"
                         aria-label="Edit assignment assumptions"
                         aria-expanded={isEditingThis}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-.95-.55a7.9 7.9 0 0 0-.17-1.03l.78-.8a1 1 0 0 0 .16-1.2l-1.1-1.9a1 1 0 0 0-1.14-.46l-1.03.32a8.23 8.23 0 0 0-.89-.52l-.16-1.07a1 1 0 0 0-.99-.84h-2.2a1 1 0 0 0-.99.84l-.16 1.07c-.31.14-.61.31-.89.52l-1.03-.32a1 1 0 0 0-1.14.46l-1.1 1.9a1 1 0 0 0 .16 1.2l.78.8c-.08.34-.13.68-.17 1.03L3 12a1 1 0 0 0-.5.86v2.28a1 1 0 0 0 .5.86l.95.55c.04.35.1.69.17 1.03l-.78.8a1 1 0 0 0-.16 1.2l1.1 1.9a1 1 0 0 0 1.14.46l1.03-.32c.28.2.58.37.89.52l.16 1.07a1 1 0 0 0 .99.84h2.2a1 1 0 0 0 .99-.84l.16-1.07c.31-.14.61-.31.89-.52l1.03.32a1 1 0 0 0 1.14-.46l1.1-1.9a1 1 0 0 0-.16-1.2l-.78-.8c.08-.34.13-.68.17-1.03l.95-.55a1 1 0 0 0 .5-.86v-2.28A1 1 0 0 0 21 12Z" stroke="currentColor" strokeWidth="1.3"/>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-.95-.55a7.9 7.9 0 0 0-.17-1.03l.78-.8a1 1 0 0 0 .16-1.2l-1.1-1.9a1 1 0 0 0-1.14-.46l-1.03.32a8.23 8.23 0 0 0-.89-.52l-.16-1.07a1 1 0 0 0-.99-.84h-2.2a1 1 0 0 0-.99.84l-.16 1.07c-.31.14-.61.31-.89.52l-1.03-.32a1 1 0 0 0-1.14.46l-1.1 1.9a1 1 0 0 0 .16 1.2l.78.8c-.08.34-.13.68-.17 1.03L3 12a1 1 0 0 0-.5.86v2.28a1 1 0 0 0 .5.86l.95.55c.04.35.1.69.17 1.03l-.78.8a1 1 0 0 0-.16 1.2l1.1 1.9a1 1 0 0 0 1.14.46l1.03-.32c.28.2.58.37.89.52l.16 1.07a1 1 0 0 0 .99.84h2.2a1 1 0 0 0 .99-.84l.16-1.07c.31-.14.61-.31.89-.52l1.03.32a1 1 0 0 0 1.14-.46l1.1-1.9a1 1 0 0 0-.16-1.2l-.78-.8c.08-.34.13-.68.17-1.03l.95-.55a1 1 0 0 0 .5-.86v-2.28A1 1 0 0 0 21 12Z"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                          />
                         </svg>
                         Edit
                       </button>
@@ -1252,189 +1889,6 @@ export function GradePerformance({ demoMode = false }) {
                 );
               })}
             </ul>
-          )}
-        </div>
-      </div>
-
-      <AnchoredPopover open={!!editingKey && !!editingAnchorEl} onClose={closeEditPopup} anchorEl={editingAnchorEl}>
-        <div className="effortPopover gradeCalcPopover">
-          <div className="effortPopoverHeader">
-            <div>
-              <div className="h3" style={{ margin: 0 }}>Edit Assignment</div>
-              <div className="muted" style={{ marginTop: 4 }}>{editingAssignment?.name || "Assignment"}</div>
-            </div>
-            <button type="button" className="effortCloseBtn" onClick={closeEditPopup} aria-label="Close edit popup">×</button>
-          </div>
-
-          <div className="effortPopoverBody">
-            <label className="gradeCalcField">
-              <span className="muted">Weight / pts override</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editWeightInput}
-                onChange={(e) => setEditWeightInput(e.target.value)}
-                placeholder="Use Canvas default"
-              />
-              <div className="muted">Leave blank or use the Canvas value to clear override.</div>
-            </label>
-
-            <div className="toggleRow">
-              <span className="muted">Modify locked score</span>
-              <Toggle
-                checked={editUnlockScore}
-                onChange={setEditUnlockScore}
-                label={editUnlockScore ? "Disable score override" : "Enable score override"}
-                disabled={!canEditUnlockScore}
-              />
-            </div>
-
-            {!canEditUnlockScore ? (
-              <div className="muted">Score override is only available for assignments that already have a graded score.</div>
-            ) : null}
-
-            {editUnlockScore ? (
-              <label className="gradeCalcField">
-                <span className="muted">Override score</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editScoreInput}
-                  onChange={(e) => setEditScoreInput(e.target.value)}
-                  placeholder="Enter adjusted score"
-                />
-                <div className="muted">This score is local to this tab and updates grade bubbles/calculations.</div>
-              </label>
-            ) : null}
-
-            <div className="gradeCalcPopoverActions">
-              <button type="button" className="btn" onClick={saveEditPopup}>Save</button>
-              <button type="button" className="btn" onClick={restoreEditDefaults}>Restore Defaults</button>
-              <button type="button" className="btn" onClick={closeEditPopup}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      </AnchoredPopover>
-
-      <div className="card gradeCalcCard">
-        <div className="cardBody stack">
-          <div className="gradeCalcSectionHeading">
-            <div className="h3">Target Settings</div>
-            <InfoTip
-              label="Target settings help"
-              text="Choose a letter-grade or numeric target, then adjust the grade scale if this class uses non-standard thresholds or pass/fail grading."
-            />
-          </div>
-
-          <div className="gradeCalcControls">
-            <label className="gradeCalcField">
-              <span className="muted">Target type</span>
-              <select className="select" value={useLetterTarget ? "letter" : "percent"} onChange={(e) => setUseLetterTarget(e.target.value === "letter")}>
-                <option value="letter">Letter grade</option>
-                <option value="percent">Percent score</option>
-              </select>
-            </label>
-
-            <label className="gradeCalcField">
-              <span className="muted">Grade scale</span>
-              <select className="select" value={scaleConfig.mode} onChange={(e) => setScaleMode(e.target.value)}>
-                <option value="standard">Standard +/- scale</option>
-                <option value="custom">Custom thresholds</option>
-                <option value="pass-fail">Pass / Fail</option>
-              </select>
-            </label>
-
-            {useLetterTarget ? (
-              <label className="gradeCalcField">
-                <span className="muted">Target grade</span>
-                <select className="select" value={targetLetter} onChange={(e) => setTargetLetter(e.target.value)}>
-                  {scaleConfig.entries.map((entry) => (
-                    <option key={entry.value} value={entry.value}>
-                      {entry.label} ({entry.min}%)
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className="gradeCalcField">
-                <span className="muted">Target percent</span>
-                <input type="number" min="0" max="100" value={targetPercent} onChange={(e) => setTargetPercent(e.target.value)} />
-              </label>
-            )}
-          </div>
-
-          {scaleConfig.mode === "custom" ? (
-            <div className="gradeScaleGrid">
-              {STANDARD_SCALE.filter((entry) => entry.value !== "F").map((entry) => (
-                <label key={entry.value} className="gradeCalcField">
-                  <span className="muted">{entry.label} min %</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={scaleConfig.thresholds[entry.value] ?? entry.min}
-                    onChange={(e) => updateCustomThreshold(entry.value, e.target.value)}
-                  />
-                </label>
-              ))}
-            </div>
-          ) : null}
-
-          {scaleConfig.mode === "pass-fail" ? (
-            <div className="gradeCalcControls">
-              <label className="gradeCalcField">
-                <span className="muted">Pass threshold (%)</span>
-                <input type="number" min="0" max="100" value={scaleConfig.passThreshold} onChange={(e) => updatePassThreshold(e.target.value)} />
-              </label>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="card gradeCalcCard">
-        <div className="cardBody stack">
-          <div className="gradeCalcSectionHeading">
-            <div className="h3">Weighted Final Exam Calculator</div>
-            <InfoTip
-              label="Weighted final help"
-              text="Use this when your syllabus has a specific final-exam weight. This block uses the selected class's Canvas current score plus your manual final-exam prediction."
-            />
-          </div>
-
-          <div className="gradeCalcControls">
-            <label className="gradeCalcField">
-              <span className="muted">Final exam weight (%)</span>
-              <input type="number" min="1" max="99" value={finalWeight} onChange={(e) => setFinalWeight(e.target.value)} />
-            </label>
-
-            <label className="gradeCalcField">
-              <span className="muted">Predicted final score (%)</span>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={predictedFinalExamScore}
-                onChange={(e) => setPredictedFinalExamScore(e.target.value)}
-              />
-            </label>
-          </div>
-
-          {weightedFinalCalc ? (
-            <>
-              <div className="rowWrap">
-                <span className="badge badgeSuccess">Projected overall: {displayGrade(fmtPct(weightedFinalCalc.projectedOverall))}</span>
-                <span className="badge badgeWarn">Minimum final score for target: {displayGrade(fmtPct(weightedFinalCalc.neededOnFinal))}</span>
-                <span className="badge badgeNeutral">Weight used: {fmtPct(weightedFinalCalc.weightPct)}</span>
-              </div>
-              <div className="muted gradeCalcBasis">
-                Calculation basis: Canvas current score for the selected class plus a manual final-exam weight of {fmtPct(weightedFinalCalc.weightPct)}. This block does not use assignment-level prediction rows.
-              </div>
-            </>
-          ) : (
-            <div className="muted">
-              Weighted final calculation needs a Canvas current course score and a final weight between 1% and 99%.
-            </div>
           )}
         </div>
       </div>
@@ -1459,7 +1913,10 @@ export function GradePerformance({ demoMode = false }) {
                 disabled={minNeededCandidates.length === 0}
               >
                 {minNeededCandidates.map((row) => (
-                  <option key={row.assignment.id} value={String(row.assignment.id)}>
+                  <option
+                    key={row.assignment.id}
+                    value={String(row.assignment.id)}
+                  >
                     {row.assignment.name}
                   </option>
                 ))}
@@ -1470,18 +1927,49 @@ export function GradePerformance({ demoMode = false }) {
           {needCalculator ? (
             <>
               <div className="rowWrap">
-                <span className="badge badgeNeutral">Target overall: {useLetterTarget ? `${targetLetter} (${needCalculator.targetPercent.toFixed(0)}%)` : fmtPct(needCalculator.targetPercent)}</span>
-                <span className="badge badgeWarn">Needed on selected item: {displayGrade(fmtPct(needCalculator.requiredPctOnSelected))}</span>
-                <span className="badge badgeNeutral">Needed points: {displayGrade(`${Number.isFinite(needCalculator.requiredOnSelected) ? needCalculator.requiredOnSelected.toFixed(2) : "-"} / ${needCalculator.selected.effectivePoints.toFixed(2)}`)}</span>
-                <span className="badge badgeNeutral">Modeled total points: {fmtPoints(needCalculator.totalPossible)}</span>
-                {needCalculator.requiredPctOnSelected > 100 ? <span className="badge badgeDanger">Above 100% needed with current assumptions</span> : null}
+                <span className="badge badgeNeutral">
+                  Target overall:{" "}
+                  {useLetterTarget
+                    ? `${targetLetter} (${needCalculator.targetPercent.toFixed(0)}%)`
+                    : fmtPct(needCalculator.targetPercent)}
+                </span>
+                <span className="badge badgeWarn">
+                  Needed on selected item:{" "}
+                  {displayGrade(fmtPct(needCalculator.requiredPctOnSelected))}
+                </span>
+                <span className="badge badgeNeutral">
+                  Needed points:{" "}
+                  {displayGrade(
+                    `${Number.isFinite(needCalculator.requiredOnSelected) ? needCalculator.requiredOnSelected.toFixed(2) : "-"} / ${needCalculator.selected.effectivePoints.toFixed(2)}`,
+                  )}
+                </span>
+                <span className="badge badgeNeutral">
+                  Modeled total points:{" "}
+                  {fmtPoints(needCalculator.totalPossible)}
+                </span>
+                {needCalculator.requiredPctOnSelected > 100 ? (
+                  <span className="badge badgeDanger">
+                    Above 100% needed with current assumptions
+                  </span>
+                ) : null}
               </div>
               <div className="muted gradeCalcBasis">
-                Calculation basis: {stats.gradedCount} graded items, selected item weight {fmtPoints(needCalculator.selected.effectivePoints)} pts, {needCalculator.otherPredictedCount} other predicted items in the selected class, and {Math.max(0, stats.excludedCount - needCalculator.otherPredictedCount - 1)} remaining excluded items without predictions.
+                Calculation basis: {stats.gradedCount} graded items, selected
+                item weight {fmtPoints(needCalculator.selected.effectivePoints)}{" "}
+                pts, {needCalculator.otherPredictedCount} other predicted items
+                in the selected class, and{" "}
+                {Math.max(
+                  0,
+                  stats.excludedCount - needCalculator.otherPredictedCount - 1,
+                )}{" "}
+                remaining excluded items without predictions.
               </div>
             </>
           ) : (
-            <div className="muted">No point-based ungraded assignments are available in the selected class right now.</div>
+            <div className="muted">
+              No point-based ungraded assignments are available in the selected
+              class right now.
+            </div>
           )}
         </div>
       </div>
