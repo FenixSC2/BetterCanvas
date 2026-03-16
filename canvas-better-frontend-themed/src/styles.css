@@ -2669,6 +2669,55 @@ details.expandable > .cardBody,
   color: color-mix(in srgb, var(--accent, #4f8ef7) 80%, var(--text));
 }
 
+.recentGradeList {
+  gap: 10px;
+}
+
+.recentGradeItem {
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radiusLg);
+  background: color-mix(in srgb, var(--surface2) 78%, var(--surface));
+}
+
+.recentGradeMain {
+  display: grid;
+  gap: 6px;
+}
+
+.recentGradeCourse {
+  overflow-wrap: anywhere;
+}
+
+.recentGradeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.recentGradeMeta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recentGradeMeta > span::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #4f8ef7) 60%, var(--border2));
+  opacity: 0.85;
+}
+
+.recentGradeActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
 .gradeCalcEditBtn {
   margin-left: auto;
   width: fit-content;
@@ -2697,6 +2746,19 @@ details.expandable > .cardBody,
 }
 
 @media (max-width: 760px) {
+  .recentGradeItem {
+    align-items: flex-start;
+  }
+
+  .recentGradeActions {
+    width: 100%;
+  }
+
+  .recentGradeActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .gradeCalcHeaderRow,
   .gradeCalcSectionHeading {
     flex-direction: column;

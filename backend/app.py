@@ -65,6 +65,8 @@ from auth import (
     get_assignment_weight_overrides,
     upsert_assignment_weight_override,
     delete_assignment_weight_override,
+    get_grade_scale_preferences,
+    upsert_grade_scale_preference,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -245,6 +247,7 @@ class Assignment(BaseModel):
     html_url: Optional[str] = None
     submitted: Optional[bool] = None
     score: Optional[float] = None
+    graded_at: Optional[datetime] = None
 
 # === Grade aggregation and missing detection models ===
 class MissingItem(BaseModel):
@@ -311,6 +314,12 @@ class WorkloadEstimateRequest(BaseModel):
 
 class AssignmentWeightOverrideRequest(BaseModel):
     weight_points: float = Field(default=0.0, ge=0.0, le=100000.0)
+
+
+class GradeScalePreferenceRequest(BaseModel):
+    mode: str = Field(default="standard")
+    thresholds: Optional[Dict[str, float]] = None
+    pass_threshold: Optional[float] = Field(default=None, ge=0.0, le=100.0)
 
 # Annoucnement model
 class Announcement(BaseModel):
@@ -764,6 +773,19 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             score=None,
         ),
         Assignment(
+            id=6 + course_id * 1000,
+            course_id=course_id,
+            name="Practice Set Review",
+            due_at=now - timedelta(days=6, hours=(course_id % 3) + 2),
+            points_possible=20,
+            description="<p>A previously graded practice set so the demo includes recent grade history.</p>",
+            submission_types=["online_upload"],
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{6 + course_id * 1000}",
+            submitted=True,
+            score=16.0 + float(course_id % 3),
+            graded_at=now - timedelta(days=5, hours=(course_id % 4) + 1),
+        ),
+        Assignment(
             id=3 + course_id * 1000,
             course_id=course_id,
             name="Quiz 1",
@@ -774,6 +796,7 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
             html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{3 + course_id * 1000}",
             submitted=True,
             score=9.0,
+            graded_at=now - timedelta(hours=(course_id % 5) + 6),
         ),
     ]
     base.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
@@ -951,9 +974,11 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
         desc = ra.get("description") or ra.get("html_url")
         html_url = ra.get("html_url") or f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{ra.get('id')}"
 
-        sub = ra.get("submission", {}) if isinstance(ra.get("submission", {}), dict) else {}
+        sub_raw = ra.get("submission")
+        sub = sub_raw if isinstance(sub_raw, dict) else {}
         submitted = bool(sub.get("submitted_at"))
         score = sub.get("score")
+        graded_at = parse_iso(sub.get("graded_at"))
 
         parsed.append(
             Assignment(
@@ -967,6 +992,7 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
                 html_url=html_url,
                 submitted=submitted,
                 score=score,
+                graded_at=graded_at,
             )
         )
 
@@ -1036,9 +1062,11 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
             
         d = get_assignment_detail(cid, aid, mode=mode, token=token, user_id=user_id)
 
-        sub = d.get("submission") if isinstance(d.get("submission"), dict) else {}
+        sub_raw = d.get("submission")
+        sub = sub_raw if isinstance(sub_raw, dict) else {}
         submitted = bool(sub.get("submitted_at"))
         score = sub.get("score")
+        graded_at = parse_iso(sub.get("graded_at"))
 
         c = course_map.get(cid)
         out.append(
@@ -1054,6 +1082,7 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
                 html_url=d.get("html_url") or f"{CANVAS_BASE_URL}/courses/{cid}/assignments/{aid}",
                 submitted=submitted,
                 score=score,
+                graded_at=graded_at,
             )
         )
 
@@ -2295,6 +2324,34 @@ def delete_assignment_weight_override_endpoint(
 ):
     """Delete a saved effective weight/points override for one assignment."""
     delete_assignment_weight_override(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
+
+
+@app.get("/api/grade-scale-preferences")
+def get_grade_scale_preferences_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all per-course grade scale preferences for the authenticated user."""
+    return {"scales": get_grade_scale_preferences(current_user.id, db)}
+
+
+@app.put("/api/grade-scale-preferences/{course_id}")
+def upsert_grade_scale_preference_endpoint(
+    course_id: int,
+    body: GradeScalePreferenceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update grade scale preference for one course."""
+    upsert_grade_scale_preference(
+        current_user.id,
+        course_id,
+        body.mode,
+        body.thresholds,
+        body.pass_threshold,
+        db,
+    )
     return {"success": True}
 
 

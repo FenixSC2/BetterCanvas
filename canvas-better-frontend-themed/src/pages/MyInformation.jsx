@@ -5,6 +5,7 @@ import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
+import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 import { useAuth } from "../hooks/useAuth";
@@ -566,16 +567,33 @@ export function MyInformation() {
                 </span>
               );
 
-              const right = a.html_url ? (
-                <a
-                  className="btn"
-                  href={a.html_url}
-                  target="_blank"
-                  rel="noreferrer"
+              const right = (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    justifyContent: "flex-end",
+                  }}
                 >
-                  Open in Canvas
-                </a>
-              ) : null;
+                  {a.html_url ? (
+                    <a
+                      className="btn"
+                      href={a.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open in Canvas
+                    </a>
+                  ) : null}
+                  <WorkloadEstimateControl
+                    courseId={a.course_id}
+                    assignmentId={a.assignment_id}
+                    compactLabels={true}
+                  />
+                </div>
+              );
 
               return (
                 <li
@@ -643,16 +661,33 @@ export function MyInformation() {
                 </span>
               );
 
-              const right = m.html_url ? (
-                <a
-                  className="btn"
-                  href={m.html_url}
-                  target="_blank"
-                  rel="noreferrer"
+              const right = (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    justifyContent: "flex-end",
+                  }}
                 >
-                  Open in Canvas
-                </a>
-              ) : null;
+                  {m.html_url ? (
+                    <a
+                      className="btn"
+                      href={m.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open in Canvas
+                    </a>
+                  ) : null}
+                  <WorkloadEstimateControl
+                    courseId={m.course_id}
+                    assignmentId={m.assignment_id}
+                    compactLabels={true}
+                  />
+                </div>
+              );
 
               return (
                 <li

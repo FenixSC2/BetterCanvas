@@ -2,9 +2,18 @@
 // Server-backed storage for personal to-do items with a local cache for fast reads.
 
 import { canvasApi } from "../api/canvasApi";
+import {
+  getMockTodosKey,
+  isDemoMode,
+  readLocalJson,
+  readSessionJson,
+  writeLocalJson,
+  writeSessionJson,
+} from "./storagePolicy";
 
 const STORAGE_KEY = "canvassist:todos";
 const CHANGE_EVENT = "canvassist:todos:changed";
+const MOCK_STORAGE_KEY = getMockTodosKey();
 
 export function makeTodoId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -40,21 +49,18 @@ function notifyTodosChanged() {
 }
 
 function writeCache(todos) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
-  } catch {
-    // ignore write errors (e.g. private mode quota)
+  if (isDemoMode()) {
+    writeSessionJson(MOCK_STORAGE_KEY, todos);
+    return;
   }
+  writeLocalJson(STORAGE_KEY, todos);
 }
 
 export function loadTodos() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return normalizeTodos(JSON.parse(raw));
-  } catch {
-    return [];
-  }
+  const raw = isDemoMode()
+    ? readSessionJson(MOCK_STORAGE_KEY, [])
+    : readLocalJson(STORAGE_KEY, []);
+  return normalizeTodos(raw);
 }
 
 export function saveTodos(todos) {
@@ -93,6 +99,12 @@ async function migrateLocalTodos(localTodos, serverTodos, opts = {}) {
 
 export async function syncTodos(opts = {}) {
   const localTodos = loadTodos();
+  if (isDemoMode()) {
+    // Explicitly avoid backend sync in mock mode.
+    writeCache(localTodos);
+    notifyTodosChanged();
+    return localTodos;
+  }
   try {
     let serverTodos = await fetchServerTodos(opts);
     serverTodos = await migrateLocalTodos(localTodos, serverTodos, opts);
@@ -106,6 +118,13 @@ export async function syncTodos(opts = {}) {
 
 export async function createTodoItem(todo, opts = {}) {
   const payload = normalizeTodo(todo);
+  if (isDemoMode()) {
+    const created = normalizeTodo(payload);
+    const next = [...loadTodos().filter((item) => item.id !== created.id), created];
+    writeCache(next);
+    notifyTodosChanged();
+    return created;
+  }
   const res = await canvasApi.createTodo(
     {
       id: payload.id,
@@ -125,6 +144,15 @@ export async function createTodoItem(todo, opts = {}) {
 
 export async function updateTodoItem(todoId, todo, opts = {}) {
   const payload = normalizeTodo({ ...todo, id: todoId });
+  if (isDemoMode()) {
+    const updated = normalizeTodo(payload);
+    const next = loadTodos().map((item) =>
+      item.id === updated.id ? updated : item,
+    );
+    writeCache(next);
+    notifyTodosChanged();
+    return updated;
+  }
   const res = await canvasApi.updateTodo(
     todoId,
     {
@@ -146,6 +174,12 @@ export async function updateTodoItem(todoId, todo, opts = {}) {
 }
 
 export async function deleteTodoItem(todoId, opts = {}) {
+  if (isDemoMode()) {
+    const next = loadTodos().filter((item) => item.id !== todoId);
+    writeCache(next);
+    notifyTodosChanged();
+    return;
+  }
   await canvasApi.deleteTodo(todoId, opts);
   const next = loadTodos().filter((item) => item.id !== todoId);
   writeCache(next);

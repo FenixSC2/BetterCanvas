@@ -17,12 +17,13 @@ import { SettingsButton } from "./components/SettingsButton";
 import { SettingsModal } from "./components/SettingsModal";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { AuthProvider, useAuth } from "./hooks/useAuth.jsx";
+import { clearDemoMode, isDemoMode, setDemoMode } from "./lib/storagePolicy";
 import "./styles.css";
 
 function DashboardApp() {
   const { user, loading, hasToken } = useAuth();
   const [authPage, setAuthPage] = useState("login"); // "login" | "register" | "forgot-password" | "reset-password"
-  const [demoMode, setDemoMode] = useState(() => localStorage.getItem("demoMode") === "true");
+  const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const API_BASE =
     import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://api.canvassist.com");
   const ANNOUNCEMENT_SEEN_KEYS = ["announcements:seenIds", "announcements:lastSeenId"];
@@ -42,13 +43,13 @@ function DashboardApp() {
       localStorage.removeItem(key);
     }
 
+    setDemoModeState(true);
     setDemoMode(true);
-    localStorage.setItem("demoMode", "true");
   }
 
   function exitDemoMode() {
-    setDemoMode(false);
-    localStorage.removeItem("demoMode");
+    setDemoModeState(false);
+    clearDemoMode();
     window.location.hash = "#";
   }
   
@@ -134,11 +135,11 @@ function DashboardApp() {
 function DashboardContent({ demoMode = false, onExitDemo = null }) {
   const tabs = useMemo(
     () => [
-      { key: "info", label: "My information" },
-      { key: "courses", label: "My courses" },
-      { key: "upcoming", label: "Upcoming assignments" },
-      { key: "planner", label: "Weekly planner" },
-      { key: "todo", label: "TO-DO's" },
+      { key: "info", label: "My Information" },
+      { key: "courses", label: "My Courses" },
+      { key: "upcoming", label: "Upcoming Assignments" },
+      { key: "planner", label: "Weekly Planner" },
+      { key: "todo", label: "To-Do's" },
       { key: "grades", label: "Grades" },
     ],
     []

@@ -7,6 +7,7 @@ import {
 } from "../hooks/useCachedAsync";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
+import { Expandable } from "../components/Expandable";
 
 const STANDARD_SCALE = [
   { label: "A", value: "A", min: 93 },
@@ -139,6 +140,18 @@ function formatCourseLabel(assignment) {
   return section ? `${title} • ${section}` : title;
 }
 
+function parseTimestampMs(raw) {
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function fmtDateTime(raw) {
+  const ms = parseTimestampMs(raw);
+  if (!Number.isFinite(ms)) return "Unknown";
+  return new Date(ms).toLocaleString();
+}
+
 function normalizeWeightOverrides(data) {
   const list = Array.isArray(data?.overrides) ? data.overrides : [];
   const out = {};
@@ -163,6 +176,39 @@ function normalizeScoreOverrides(raw) {
     const score = Number(value.score);
     if (!enabled || !Number.isFinite(score)) continue;
     out[key] = { enabled: true, score };
+  }
+  return out;
+}
+
+function normalizeGradeScaleByCourse(raw) {
+  const list = Array.isArray(raw?.scales) ? raw.scales : [];
+  const out = {};
+  for (const row of list) {
+    const courseKey = String(row?.course_id || "").trim();
+    if (!courseKey) continue;
+    const mode =
+      row?.mode === "custom" || row?.mode === "pass-fail"
+        ? row.mode
+        : "standard";
+    if (mode === "pass-fail") {
+      out[courseKey] = {
+        mode,
+        passThreshold: clampPercent(row?.pass_threshold, DEFAULT_PASS_THRESHOLD),
+      };
+      continue;
+    }
+    if (mode === "custom") {
+      const thresholds =
+        row?.thresholds && typeof row.thresholds === "object"
+          ? row.thresholds
+          : {};
+      out[courseKey] = {
+        mode,
+        thresholds,
+      };
+      continue;
+    }
+    out[courseKey] = { mode: "standard" };
   }
   return out;
 }
@@ -423,10 +469,12 @@ export function GradePerformance({ demoMode = false }) {
     "grade-performance:show-grades",
     true,
   );
-  const [gradeScaleByCourse, setGradeScaleByCourse] = useHydratedStateFromCache(
+  const [gradeScaleByCourseLocal, setGradeScaleByCourseLocal] = useHydratedStateFromCache(
     "grade-performance:scale-by-course",
     {},
   );
+  const [gradeScaleByCourse, setGradeScaleByCourse] = useState({});
+  const [scaleMessage, setScaleMessage] = useState("");
   const [savingWeightKey, setSavingWeightKey] = useState("");
   const [weightMessage, setWeightMessage] = useState("");
   const [scoreOverridesById, setScoreOverridesById] = useHydratedStateFromCache(
@@ -503,11 +551,28 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 60 * 1000 },
   );
 
+  const scalePrefsQ = useCachedAsync(
+    `grade-performance:scale-preferences:${demoMode ? "demo" : "live"}`,
+    ({ signal }) =>
+      demoMode
+        ? Promise.resolve({ scales: [] })
+        : canvasApi.getGradeScalePreferences({ signal }),
+    { ttlMs: 60 * 1000 },
+  );
+
   const [weightOverridesById, setWeightOverridesById] = useState({});
 
   useEffect(() => {
     setWeightOverridesById(normalizeWeightOverrides(overridesQ.data));
   }, [overridesQ.data]);
+
+  useEffect(() => {
+    if (demoMode) {
+      setGradeScaleByCourse(gradeScaleByCourseLocal || {});
+      return;
+    }
+    setGradeScaleByCourse(normalizeGradeScaleByCourse(scalePrefsQ.data));
+  }, [demoMode, gradeScaleByCourseLocal, scalePrefsQ.data]);
 
   useEffect(() => {
     setScoreOverridesById((prev) => normalizeScoreOverrides(prev));
@@ -547,6 +612,23 @@ export function GradePerformance({ demoMode = false }) {
       );
     });
   }, [scopedAssignments, searchQuery]);
+
+  const recentGradedRows = useMemo(() => {
+    return allAssignments
+      .map((assignment) => {
+        const gradedMs = parseTimestampMs(assignment?.graded_at);
+        const score = Number(assignment?.score);
+        if (!Number.isFinite(gradedMs) || !Number.isFinite(score)) return null;
+        return {
+          assignment,
+          gradedMs,
+          score,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.gradedMs - a.gradedMs)
+      .slice(0, 5);
+  }, [allAssignments]);
 
   const stats = useMemo(
     () =>
@@ -827,15 +909,40 @@ export function GradePerformance({ demoMode = false }) {
 
   function updateSelectedCourseScale(updater) {
     if (!selectedCourseId) return;
-    setGradeScaleByCourse((prev) => {
-      const current = prev?.[String(selectedCourseId)] || { mode: "standard" };
-      const nextConfig =
-        typeof updater === "function" ? updater(current) : updater;
-      return {
+    const courseKey = String(selectedCourseId);
+    const current = gradeScaleByCourse?.[courseKey] || { mode: "standard" };
+    const nextConfig =
+      typeof updater === "function" ? updater(current) : updater;
+
+    setGradeScaleByCourse((prev) => ({
+      ...(prev || {}),
+      [courseKey]: nextConfig,
+    }));
+
+    if (demoMode) {
+      setGradeScaleByCourseLocal((prev) => ({
         ...(prev || {}),
-        [String(selectedCourseId)]: nextConfig,
-      };
-    });
+        [courseKey]: nextConfig,
+      }));
+      return;
+    }
+
+    setScaleMessage("");
+    canvasApi
+      .upsertGradeScalePreference(selectedCourseId, {
+        mode: nextConfig?.mode || "standard",
+        thresholds:
+          nextConfig?.mode === "custom" ? nextConfig?.thresholds || {} : null,
+        pass_threshold:
+          nextConfig?.mode === "pass-fail"
+            ? clampPercent(nextConfig?.passThreshold, DEFAULT_PASS_THRESHOLD)
+            : null,
+      })
+      .catch((error) => {
+        setScaleMessage(
+          error?.message || "Failed to save grade scale preference.",
+        );
+      });
   }
 
   function setScaleMode(mode) {
@@ -1215,6 +1322,10 @@ export function GradePerformance({ demoMode = false }) {
     overridesQ.error && !isAuthOrTokenError(overridesQ.error)
       ? overridesQ.error
       : null;
+  const scalePrefsErrorDisplay =
+    scalePrefsQ.error && !isAuthOrTokenError(scalePrefsQ.error)
+      ? scalePrefsQ.error
+      : null;
 
   if (
     (summariesQ.loading && !summaries.length) ||
@@ -1413,6 +1524,61 @@ export function GradePerformance({ demoMode = false }) {
               </label>
             </div>
           ) : null}
+
+          <Expandable
+            title="Recently Graded (Last 5)"
+            subtitle={
+              recentGradedRows.length
+                ? `${recentGradedRows.length} recently graded assignment${recentGradedRows.length === 1 ? "" : "s"}`
+                : "No graded assignments found yet"
+            }
+          >
+            {recentGradedRows.length === 0 ? (
+              <div className="muted">
+                No graded assignments were found yet.
+              </div>
+            ) : (
+              <ul className="gradeCalcList recentGradeList">
+                {recentGradedRows.map(({ assignment, gradedMs, score }) => (
+                  <li
+                    key={`${assignmentIdentity(assignment)}:${gradedMs}`}
+                    className="gradeCalcListItem recentGradeItem"
+                  >
+                    <div className="gradeCalcListMain recentGradeMain">
+                      <div className="gradeCalcItemTitle">{assignment.name}</div>
+                      <div className="muted recentGradeCourse">
+                        {formatCourseLabel(assignment)}
+                      </div>
+                      <div className="recentGradeMeta muted">
+                        <span>Graded {fmtDateTime(assignment?.graded_at)}</span>
+                        <span>
+                          Score {displayGrade(fmtPoints(score))}
+                          {Number.isFinite(Number(assignment?.points_possible))
+                            ? ` / ${displayGrade(fmtPoints(Number(assignment.points_possible)))}`
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                    {assignment?.html_url ? (
+                      <div className="recentGradeActions">
+                        <a
+                          className="btn"
+                          href={assignment.html_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View in Canvas
+                        </a>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Expandable>
+
+          {scaleMessage ? <div className="authHint">{scaleMessage}</div> : null}
+          {scalePrefsErrorDisplay ? <ErrorBox error={scalePrefsErrorDisplay} /> : null}
         </div>
       </div>
 

@@ -386,6 +386,10 @@ export function WorkloadEstimateControl({
     ? checklistProgress.total > 0 && checklistProgress.done >= checklistProgress.total
     : !!st?.completed;
   const compactComplete = compactLabels && isComplete;
+  const hasHourProgress = estimate > 0 || completed > 0;
+  const hasChecklistProgress = checklistProgress.total > 0;
+  const isPristineState = !hasHourProgress && !hasChecklistProgress;
+  const showPreInputModeActions = !compactLabels && isPristineState;
 
   // Helper fn: gives a checkbox next to completed badge on assignments in weekly planner (or other uses of the shortened "compact" mode) to quickly mark complete/incomplete by toggling between 0% and 100% completed.
   function setCompletedChecked(checked) {
@@ -551,21 +555,48 @@ export function WorkloadEstimateControl({
       <div className="effortTopRow">
         <div className="effortNumbers">
           {isChecklistMode ? (
-            <>
-              {!compactLabels ? (
-                <span className="effortPill">
-                  <span className="muted">Checklist:</span>{" "}
-                  <span className="mono">{Math.round(displayPct)}%</span>
-                </span>
-              ) : null}
+            showPreInputModeActions ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="effortCta"
+                  onClick={openPopover}
+                >
+                  Start Task List
+                </button>
 
-              <span className="effortPill">
-                <span className="muted">Done:</span>{" "}
-                <span className="mono">
-                  {checklistProgress.done}/{checklistProgress.total}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => applyMode("hours")}
+                >
+                  Switch to Hour Estimate
+                </button>
+              </div>
+            ) : (
+              <>
+                {!compactLabels ? (
+                  <span className="effortPill">
+                    <span className="muted">Checklist:</span>{" "}
+                    <span className="mono">{Math.round(displayPct)}%</span>
+                  </span>
+                ) : null}
+
+                <span className="effortPill">
+                  <span className="muted">Done:</span>{" "}
+                  <span className="mono">
+                    {checklistProgress.done}/{checklistProgress.total}
+                  </span>
                 </span>
-              </span>
-            </>
+              </>
+            )
           ) : estimate > 0 ? (
             <>
               <span className="effortPill">
@@ -641,20 +672,53 @@ export function WorkloadEstimateControl({
               ) : null}
             </div>
           ) : estimate <= 0 && !showInlineEstimate ? (
-            <button
-              type="button"
-              className="effortCta"
-              onClick={() => {
-                setOpen(false);
-                setAnchorEl(null);
-                setErr("");
-                setInlineEstimateDraft("");
-                setShowInlineEstimate(true);
-              }}
-              style={{ margin: "0 auto" }}
-            >
-              {compactLabels ? "Set estimated hours" : "Set estimated hours"}
-            </button>
+            showPreInputModeActions ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="effortCta"
+                  onClick={() => {
+                    setOpen(false);
+                    setAnchorEl(null);
+                    setErr("");
+                    setInlineEstimateDraft("");
+                    setShowInlineEstimate(true);
+                  }}
+                >
+                  Set Estimated Hours
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => applyMode(CHECKLIST_MODE)}
+                >
+                  Switch to Task List
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="effortCta"
+                onClick={() => {
+                  setOpen(false);
+                  setAnchorEl(null);
+                  setErr("");
+                  setInlineEstimateDraft("");
+                  setShowInlineEstimate(true);
+                }}
+                style={{ margin: "0 auto" }}
+              >
+                Set estimated hours
+              </button>
+            )
           ) : null}
 
           {!compactComplete && isComplete ? (
@@ -762,6 +826,10 @@ export function WorkloadEstimateControl({
                 {checklistExpanded ? "▾" : "▸"}
               </button>
             </>
+          ) : showPreInputModeActions ? (
+            <div className="muted" style={{ marginTop: 8 }}>
+              Start a checklist step or switch back to hour estimate.
+            </div>
           ) : (
             <div className="muted" style={{ marginTop: 8 }}>
               No checklist items yet. Open settings to add steps.

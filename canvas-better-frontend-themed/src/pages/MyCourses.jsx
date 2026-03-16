@@ -4,6 +4,7 @@ import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
+import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 
 function fmtDue(dt) {
@@ -424,16 +425,34 @@ export function MyCourses() {
                         </span>
                       );
 
-                      const right = a.html_url ? (
-                        <a
-                          className="btn"
-                          href={a.html_url}
-                          target="_blank"
-                          rel="noreferrer"
+                      const assignmentCourseId = a?.course_id ?? c.id;
+                      const right = (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            justifyContent: "flex-end",
+                          }}
                         >
-                          Open in Canvas
-                        </a>
-                      ) : null;
+                          {a.html_url ? (
+                            <a
+                              className="btn"
+                              href={a.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open in Canvas
+                            </a>
+                          ) : null}
+                          <WorkloadEstimateControl
+                            courseId={assignmentCourseId}
+                            assignmentId={a.id}
+                            compactLabels={true}
+                          />
+                        </div>
+                      );
 
                       return (
                         <li key={a.id} className="listItem">
@@ -514,16 +533,33 @@ export function MyCourses() {
                         </span>
                       );
 
-                      const right = m.html_url ? (
-                        <a
-                          className="btn"
-                          href={m.html_url}
-                          target="_blank"
-                          rel="noreferrer"
+                      const right = (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            justifyContent: "flex-end",
+                          }}
                         >
-                          Open in Canvas
-                        </a>
-                      ) : null;
+                          {m.html_url ? (
+                            <a
+                              className="btn"
+                              href={m.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open in Canvas
+                            </a>
+                          ) : null}
+                          <WorkloadEstimateControl
+                            courseId={m.course_id}
+                            assignmentId={m.assignment_id}
+                            compactLabels={true}
+                          />
+                        </div>
+                      );
 
                       return (
                         <li

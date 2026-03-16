@@ -9,6 +9,8 @@ import {
 } from "../lib/workloadEstimates";
 import { useAuth } from "../hooks/useAuth";
 import { canvasApi } from "../api/canvasApi";
+import { WorkloadEstimateControl } from "./WorkloadEstimateControl";
+import { clearDemoMode } from "../lib/storagePolicy";
 
 const THEME_OPTIONS = [
   { key: "classic", label: "Classic", desc: "Clean light theme" },
@@ -243,7 +245,7 @@ export function SettingsModal({
         if (onExitDemo) {
           onExitDemo();
         } else {
-          localStorage.removeItem("demoMode");
+          clearDemoMode();
           window.location.hash = "#";
         }
       } finally {
@@ -663,17 +665,32 @@ export function SettingsModal({
                                             {a.course_name}
                                           </div>
                                         </div>
-                                        {!isHidden && (
-                                          <button
-                                            type="button"
-                                            className="btn"
-                                            onClick={() => handleHideAssignment(a.course_id, a.id)}
-                                            disabled={isLoading}
-                                            style={{ marginTop: "4px", whiteSpace: "nowrap", flexShrink: 0 }}
-                                          >
-                                            {isLoading ? "Hiding..." : "Hide"}
-                                          </button>
-                                        )}
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "flex-end",
+                                            gap: 8,
+                                            flexWrap: "wrap",
+                                            justifyContent: "flex-end",
+                                          }}
+                                        >
+                                          <WorkloadEstimateControl
+                                            courseId={a.course_id}
+                                            assignmentId={a.id}
+                                            compactLabels={true}
+                                          />
+                                          {!isHidden && (
+                                            <button
+                                              type="button"
+                                              className="btn"
+                                              onClick={() => handleHideAssignment(a.course_id, a.id)}
+                                              disabled={isLoading}
+                                              style={{ marginTop: "4px", whiteSpace: "nowrap", flexShrink: 0 }}
+                                            >
+                                              {isLoading ? "Hiding..." : "Hide"}
+                                            </button>
+                                          )}
+                                        </div>
                                       </li>
                                     );
                                   })}
@@ -724,24 +741,39 @@ export function SettingsModal({
                                           {h.course_name}
                                         </div>
                                       </div>
-                                      <button
-                                        type="button"
-                                        className="btn"
-                                        onClick={() =>
-                                          handleUnhideAssignment(h.course_id, assignmentId)
-                                        }
-                                        disabled={isLoading}
+                                      <div
                                         style={{
-                                          marginTop: "4px",
-                                          whiteSpace: "nowrap",
-                                          flexShrink: 0,
-                                          background: "var(--badge-success-bg)",
-                                          color: "var(--badge-success-text)",
-                                          border: "1px solid var(--badge-success-border)",
+                                          display: "flex",
+                                          alignItems: "flex-end",
+                                          gap: 8,
+                                          flexWrap: "wrap",
+                                          justifyContent: "flex-end",
                                         }}
                                       >
-                                        {isLoading ? "Unhiding..." : "Unhide"}
-                                      </button>
+                                        <WorkloadEstimateControl
+                                          courseId={h.course_id}
+                                          assignmentId={assignmentId}
+                                          compactLabels={true}
+                                        />
+                                        <button
+                                          type="button"
+                                          className="btn"
+                                          onClick={() =>
+                                            handleUnhideAssignment(h.course_id, assignmentId)
+                                          }
+                                          disabled={isLoading}
+                                          style={{
+                                            marginTop: "4px",
+                                            whiteSpace: "nowrap",
+                                            flexShrink: 0,
+                                            background: "var(--badge-success-bg)",
+                                            color: "var(--badge-success-text)",
+                                            border: "1px solid var(--badge-success-border)",
+                                          }}
+                                        >
+                                          {isLoading ? "Unhiding..." : "Unhide"}
+                                        </button>
+                                      </div>
                                     </li>
                                   );
                                 })}

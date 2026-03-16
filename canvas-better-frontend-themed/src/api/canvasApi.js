@@ -147,6 +147,16 @@ export const canvasApi = {
         method: "DELETE",
       }),
 
+    getGradeScalePreferences: (opts) =>
+      request("/api/grade-scale-preferences", opts),
+
+    upsertGradeScalePreference: (courseId, payload, opts) =>
+      request(`/api/grade-scale-preferences/${courseId}`, {
+        ...opts,
+        method: "PUT",
+        body: payload,
+      }),
+
     getCandidatesForHiding: (opts) => request("/api/candidates-for-hiding", opts),
 
     getTodos: (opts) => request("/api/todos", opts),

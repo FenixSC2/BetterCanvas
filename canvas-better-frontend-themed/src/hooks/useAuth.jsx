@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useCallback, useContext } from "react";
 import { clearCachedAsync } from "./useCachedAsync";
+import { clearDemoMode, clearMockSessionData } from "../lib/storagePolicy";
 
 const AuthContext = createContext(null);
 
@@ -89,8 +90,9 @@ export function AuthProvider({ children }) {
 
       const data = await res.json();
 
-      // Clear any demo mode state before setting user
-      localStorage.removeItem("demoMode");
+      // Clear demo-mode and mock-session state before moving into a real account session.
+      clearDemoMode();
+      clearMockSessionData();
 
       setUser(data.user);
       setHasToken(false);
@@ -177,6 +179,8 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null);
       setHasToken(false);
+      clearDemoMode();
+      clearMockSessionData();
       // Clear cached data on logout
       clearCachedAsync();
       // Emit auth change event so all data fetches re-run

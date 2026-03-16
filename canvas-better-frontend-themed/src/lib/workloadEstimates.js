@@ -1,27 +1,24 @@
 // src/lib/workloadEstimates.js
 
+import {
+  isDemoMode,
+  readLocalJson,
+  readSessionJson,
+  writeLocalJson,
+  writeSessionJson,
+} from "./storagePolicy";
+
 const NS = "canvassist:workload:v1";
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://api.canvassist.com");
 const HOURS_MODE = "hours";
 const CHECKLIST_MODE = "checklist";
 
-// In-memory store used exclusively in demo/mock mode — nothing is persisted
+// In-memory fallback for environments where storage is unavailable.
 const _mockStore = new Map();
 
 // Pending debounce timers for backend sync (one per assignment)
 const _pendingSync = new Map();
-
-// -----------------------------
-// Mode detection
-// -----------------------------
-function isDemoMode() {
-  try {
-    return localStorage.getItem("demoMode") === "true";
-  } catch {
-    return false;
-  }
-}
 
 // -----------------------------
 // Keys / helpers
@@ -155,30 +152,22 @@ function emitChanged({ courseId, assignmentId }) {
 function _readState({ courseId, assignmentId }) {
   const key = makeKey({ courseId, assignmentId });
   if (isDemoMode()) {
+    const sessionState = readSessionJson(key, null);
+    if (sessionState) return sessionState;
     return _mockStore.get(key) ?? null;
   }
-  const raw = (() => {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  })();
-  return safeParse(raw);
+  return readLocalJson(key, null);
 }
 
 function _writeState({ courseId, assignmentId }, state) {
   const key = makeKey({ courseId, assignmentId });
   if (isDemoMode()) {
-    // Demo mode: keep only in memory, never persist or sync
+    // Demo mode: browser-session scoped only, never persisted to DB.
+    writeSessionJson(key, state);
     _mockStore.set(key, state);
     return;
   }
-  try {
-    localStorage.setItem(key, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
+  writeLocalJson(key, state);
   // Skip backend sync for personal to-do items (non-positive-integer courseId).
   // Canvas course IDs are always positive integers; "todo" triggers no network request.
   const cidNum = Number(courseId);
@@ -200,14 +189,7 @@ function _scheduleSyncToBackend(courseId, assignmentId) {
       _pendingSync.delete(syncKey);
       // Re-read from localStorage at fire time to get the most current value
       const lsKey = makeKey({ courseId, assignmentId });
-      const raw = (() => {
-        try {
-          return localStorage.getItem(lsKey);
-        } catch {
-          return null;
-        }
-      })();
-      const state = safeParse(raw);
+      const state = readLocalJson(lsKey, null);
       if (state) _doSyncToBackend(courseId, assignmentId, state);
     }, 800)
   );
@@ -250,32 +232,17 @@ export async function hydrateWorkloadFromBackend() {
         courseId: est.course_id,
         assignmentId: est.assignment_id,
       });
-      const existing = safeParse(
-        (() => {
-          try {
-            return localStorage.getItem(key);
-          } catch {
-            return null;
-          }
-        })()
-      );
+      const existing = readLocalJson(key, null);
       const normalizedExisting = normalizeState(existing, getDefaultEffortMode());
-      try {
-        localStorage.setItem(
-          key,
-          JSON.stringify({
-            estimateHours: est.estimate_hours,
-            completedHours: est.completed_hours,
-            completed: !!est.completed,
-            updatedAt: est.updated_at,
-            mode: normalizedExisting.mode,
-            favorite: normalizedExisting.favorite,
-            checklistItems: normalizedExisting.checklistItems,
-          })
-        );
-      } catch {
-        // ignore
-      }
+      writeLocalJson(key, {
+        estimateHours: est.estimate_hours,
+        completedHours: est.completed_hours,
+        completed: !!est.completed,
+        updatedAt: est.updated_at,
+        mode: normalizedExisting.mode,
+        favorite: normalizedExisting.favorite,
+        checklistItems: normalizedExisting.checklistItems,
+      });
     }
     // Notify all WorkloadEstimateControl components to re-render
     window.dispatchEvent(new CustomEvent("canvassist:workload:changed"));
@@ -485,41 +452,29 @@ export function formatHours(h) {
 const SETTINGS_KEY = `${NS}:settings`;
 
 function readSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) {
-      return { snapMinutes: 10, defaultMode: HOURS_MODE };
-    }
-
-    const parsed = JSON.parse(raw);
-    const snapMinutes = Number(parsed?.snapMinutes);
-
-    return {
-      snapMinutes: Number.isFinite(snapMinutes)
-        ? Math.max(1, Math.round(snapMinutes))
-        : 10,
-      defaultMode: sanitizeMode(parsed?.defaultMode),
-    };
-  } catch {
+  const parsed = readLocalJson(SETTINGS_KEY, null);
+  if (!parsed) {
     return { snapMinutes: 10, defaultMode: HOURS_MODE };
   }
+
+  const snapMinutes = Number(parsed?.snapMinutes);
+
+  return {
+    snapMinutes: Number.isFinite(snapMinutes)
+      ? Math.max(1, Math.round(snapMinutes))
+      : 10,
+    defaultMode: sanitizeMode(parsed?.defaultMode),
+  };
 }
 
 function writeSettings(partial) {
   const current = readSettings();
-  try {
-    localStorage.setItem(
-      SETTINGS_KEY,
-      JSON.stringify({
-        ...current,
-        ...partial,
-        defaultMode: sanitizeMode(partial?.defaultMode ?? current.defaultMode),
-        updatedAt: Date.now(),
-      })
-    );
-  } catch {
-    // ignore
-  }
+  writeLocalJson(SETTINGS_KEY, {
+    ...current,
+    ...partial,
+    defaultMode: sanitizeMode(partial?.defaultMode ?? current.defaultMode),
+    updatedAt: Date.now(),
+  });
 
   try {
     window.dispatchEvent(

@@ -272,6 +272,25 @@ class AssignmentWeightOverride(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_assignment_weight_override'),
     )
 
+
+class GradeScalePreference(Base):
+    __tablename__ = "grade_scale_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    mode = Column(String, nullable=False, default="standard")
+    thresholds_json = Column(String, nullable=True)
+    pass_threshold = Column(Float, nullable=True)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint("user_id", "course_id", name="uq_grade_scale_preference"),
+    )
+
 class TodoItem(Base):
     __tablename__ = "todo_items"
 
@@ -616,6 +635,100 @@ def delete_assignment_weight_override(
         db.commit()
         return True
     return False
+
+
+def _normalize_grade_scale_mode(mode: Optional[str]) -> str:
+    value = str(mode or "standard").strip().lower()
+    if value in {"standard", "custom", "pass-fail"}:
+        return value
+    return "standard"
+
+
+def _normalize_thresholds(thresholds: Optional[dict]) -> dict:
+    if not isinstance(thresholds, dict):
+        return {}
+    out = {}
+    for key, value in thresholds.items():
+        n = float(value) if isinstance(value, (int, float, str)) and str(value).strip() else None
+        if n is None:
+            continue
+        out[str(key)] = max(0.0, min(100.0, n))
+    return out
+
+
+def get_grade_scale_preferences(user_id: int, db: Session) -> list:
+    rows = (
+        db.query(GradeScalePreference)
+        .filter(GradeScalePreference.user_id == user_id)
+        .all()
+    )
+
+    out = []
+    for row in rows:
+        thresholds = {}
+        if row.thresholds_json:
+            try:
+                parsed = json.loads(row.thresholds_json)
+                thresholds = _normalize_thresholds(parsed)
+            except json.JSONDecodeError:
+                thresholds = {}
+        out.append(
+            {
+                "course_id": row.course_id,
+                "mode": _normalize_grade_scale_mode(row.mode),
+                "thresholds": thresholds,
+                "pass_threshold": row.pass_threshold,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+        )
+    return out
+
+
+def upsert_grade_scale_preference(
+    user_id: int,
+    course_id: int,
+    mode: str,
+    thresholds: Optional[dict],
+    pass_threshold: Optional[float],
+    db: Session,
+) -> GradeScalePreference:
+    safe_mode = _normalize_grade_scale_mode(mode)
+    safe_thresholds = _normalize_thresholds(thresholds)
+    safe_pass_threshold = None
+    if pass_threshold is not None:
+        safe_pass_threshold = max(0.0, min(100.0, float(pass_threshold)))
+
+    existing = (
+        db.query(GradeScalePreference)
+        .filter(
+            GradeScalePreference.user_id == user_id,
+            GradeScalePreference.course_id == course_id,
+        )
+        .first()
+    )
+
+    payload_json = json.dumps(safe_thresholds) if safe_thresholds else None
+
+    if existing:
+        existing.mode = safe_mode
+        existing.thresholds_json = payload_json
+        existing.pass_threshold = safe_pass_threshold
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = GradeScalePreference(
+        user_id=user_id,
+        course_id=course_id,
+        mode=safe_mode,
+        thresholds_json=payload_json,
+        pass_threshold=safe_pass_threshold,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 # === Personal todo CRUD ===
