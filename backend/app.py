@@ -58,7 +58,7 @@ from auth import (
     get_workload_estimates,
     get_todos,
     create_todo,
-    update_todo,
+    update_todo_with_recurrence,
     delete_todo,
     upsert_workload_estimate,
     delete_workload_estimate,
@@ -2382,6 +2382,10 @@ def create_todo_endpoint(
             body.due_at,
             body.completed,
             db,
+            recurrence=body.recurrence,
+            series_id=body.series_id,
+            occurrence_index=body.occurrence_index,
+            anchor_due_at=body.anchor_due_at,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -2393,6 +2397,10 @@ def create_todo_endpoint(
             "notes": row.notes or "",
             "due_at": row.due_at,
             "completed": bool(row.completed),
+            "recurrence": row.recurrence or "none",
+            "series_id": row.series_id,
+            "occurrence_index": int(row.occurrence_index or 0),
+            "anchor_due_at": row.anchor_due_at,
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
@@ -2407,7 +2415,7 @@ def update_todo_endpoint(
     db: Session = Depends(get_db),
 ):
     """Update one personal todo item for the authenticated user."""
-    row = update_todo(
+    row, generated_row = update_todo_with_recurrence(
         current_user.id,
         todo_id,
         body.title,
@@ -2415,6 +2423,11 @@ def update_todo_endpoint(
         body.due_at,
         body.completed,
         db,
+        recurrence=body.recurrence,
+        series_id=body.series_id,
+        occurrence_index=body.occurrence_index,
+        anchor_due_at=body.anchor_due_at,
+        edit_scope=body.edit_scope,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Todo item not found")
@@ -2426,9 +2439,26 @@ def update_todo_endpoint(
             "notes": row.notes or "",
             "due_at": row.due_at,
             "completed": bool(row.completed),
+            "recurrence": row.recurrence or "none",
+            "series_id": row.series_id,
+            "occurrence_index": int(row.occurrence_index or 0),
+            "anchor_due_at": row.anchor_due_at,
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
+        "generated_todo": {
+            "id": generated_row.todo_id,
+            "title": generated_row.title,
+            "notes": generated_row.notes or "",
+            "due_at": generated_row.due_at,
+            "completed": bool(generated_row.completed),
+            "recurrence": generated_row.recurrence or "none",
+            "series_id": generated_row.series_id,
+            "occurrence_index": int(generated_row.occurrence_index or 0),
+            "anchor_due_at": generated_row.anchor_due_at,
+            "createdAt": generated_row.created_at.isoformat() if generated_row.created_at else None,
+            "updatedAt": generated_row.updated_at.isoformat() if generated_row.updated_at else None,
+        } if generated_row else None,
     }
 
 

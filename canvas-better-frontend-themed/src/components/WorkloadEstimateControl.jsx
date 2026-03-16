@@ -62,7 +62,8 @@ function AnchoredPopover({
 
       // Align top with anchor, clamp
       let top = rect.top;
-      const maxTop = window.innerHeight - margin;
+      const panelHeight = panelRef.current?.offsetHeight || 440;
+      const maxTop = window.innerHeight - panelHeight - margin;
       top = Math.max(margin, Math.min(top, maxTop));
 
       setPos({ top, left });

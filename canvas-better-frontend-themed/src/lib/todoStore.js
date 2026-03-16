@@ -22,12 +22,25 @@ export function makeTodoId() {
 }
 
 function normalizeTodo(raw) {
+  const recurrence = String(raw?.recurrence || "none").trim().toLowerCase();
   return {
     id: String(raw?.id || ""),
     title: String(raw?.title || ""),
     notes: String(raw?.notes || ""),
     due_at: raw?.due_at ? String(raw.due_at) : null,
     completed: !!raw?.completed,
+    recurrence:
+      recurrence === "daily" ||
+      recurrence === "weekly" ||
+      recurrence === "monthly" ||
+      recurrence === "yearly"
+        ? recurrence
+        : "none",
+    series_id: raw?.series_id ? String(raw.series_id) : null,
+    occurrence_index: Number.isFinite(Number(raw?.occurrence_index))
+      ? Math.max(0, Number(raw.occurrence_index))
+      : 0,
+    anchor_due_at: raw?.anchor_due_at ? String(raw.anchor_due_at) : null,
     createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw?.updatedAt ? String(raw.updatedAt) : null,
   };
@@ -88,6 +101,10 @@ async function migrateLocalTodos(localTodos, serverTodos, opts = {}) {
           notes: todo.notes,
           due_at: todo.due_at,
           completed: todo.completed,
+          recurrence: todo.recurrence,
+          series_id: todo.series_id,
+          occurrence_index: todo.occurrence_index,
+          anchor_due_at: todo.anchor_due_at,
         },
         opts,
       ),
@@ -132,6 +149,10 @@ export async function createTodoItem(todo, opts = {}) {
       notes: payload.notes,
       due_at: payload.due_at,
       completed: payload.completed,
+      recurrence: payload.recurrence,
+      series_id: payload.series_id,
+      occurrence_index: payload.occurrence_index,
+      anchor_due_at: payload.anchor_due_at,
     },
     opts,
   );
@@ -161,13 +182,23 @@ export async function updateTodoItem(todoId, todo, opts = {}) {
       notes: payload.notes,
       due_at: payload.due_at,
       completed: payload.completed,
+      recurrence: payload.recurrence,
+      series_id: payload.series_id,
+      occurrence_index: payload.occurrence_index,
+      anchor_due_at: payload.anchor_due_at,
+      edit_scope:
+        todo?.edit_scope === "this-and-future"
+          ? "this-and-future"
+          : "this-occurrence",
     },
     opts,
   );
   const updated = normalizeTodo(res?.todo || payload);
-  const next = loadTodos().map((item) =>
-    item.id === updated.id ? updated : item,
-  );
+  const maybeGenerated = res?.generated_todo ? normalizeTodo(res.generated_todo) : null;
+  const next = loadTodos()
+    .map((item) => (item.id === updated.id ? updated : item))
+    .filter((item) => (maybeGenerated ? item.id !== maybeGenerated.id : true));
+  if (maybeGenerated) next.push(maybeGenerated);
   writeCache(next);
   notifyTodosChanged();
   return updated;

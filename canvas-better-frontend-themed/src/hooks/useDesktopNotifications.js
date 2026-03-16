@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { canvasApi } from "../api/canvasApi";
 import { getNotificationPermission, notifyOnce, notificationsSupported } from "../lib/notifications";
 import { dueWithinHours, isMissing } from "../lib/urgency";
+import { loadTodos, syncTodos } from "../lib/todoStore";
 
 export function useDesktopNotifications(hasToken = false) {
   const supported = notificationsSupported();
@@ -35,6 +36,7 @@ export function useDesktopNotifications(hasToken = false) {
       try {
         // Pull a reasonable window of assignments
         const items = await canvasApi.getUpcoming(80);
+        const todos = await syncTodos().catch(() => loadTodos());
 
         // 1) Overdue (missing) — very important, short cooldown
         for (const a of items) {
@@ -78,6 +80,34 @@ export function useDesktopNotifications(hasToken = false) {
             body: `${a.course_name || "Course"} • ${a.name} • ${pts} points`,
             url: a.html_url,
             cooldownMs: 12 * 60 * 60 * 1000, // 12h
+          });
+        }
+
+        // 4) Personal TODO overdue notifications
+        for (const todo of todos || []) {
+          if (todo?.completed) continue;
+          if (!isMissing(todo)) continue;
+
+          const occurrenceKey = `${todo.series_id || todo.id}:${todo.occurrence_index || 0}`;
+          notifyOnce({
+            dedupeKey: `todo:overdue:${occurrenceKey}`,
+            title: "Overdue personal to-do",
+            body: todo.title || "Untitled to-do",
+            cooldownMs: 2 * 60 * 60 * 1000,
+          });
+        }
+
+        // 5) Personal TODO due soon notifications
+        for (const todo of todos || []) {
+          if (todo?.completed) continue;
+          if (!dueWithinHours(todo, 12)) continue;
+
+          const occurrenceKey = `${todo.series_id || todo.id}:${todo.occurrence_index || 0}`;
+          notifyOnce({
+            dedupeKey: `todo:due12h:${occurrenceKey}`,
+            title: "Personal to-do due soon",
+            body: `${todo.title || "Untitled to-do"} • Due ${new Date(todo.due_at).toLocaleTimeString()}`,
+            cooldownMs: 6 * 60 * 60 * 1000,
           });
         }
       } catch {

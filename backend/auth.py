@@ -11,15 +11,15 @@ import logging
 import json
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 logger = logging.getLogger("canvas_backend")
@@ -301,6 +301,10 @@ class TodoItem(Base):
     notes = Column(String, default="")
     due_at = Column(String, nullable=True)
     completed = Column(Boolean, default=False)
+    recurrence = Column(String, nullable=False, default="none")
+    series_id = Column(String, nullable=True, index=True)
+    occurrence_index = Column(Integer, nullable=False, default=0)
+    anchor_due_at = Column(String, nullable=True)
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -344,6 +348,7 @@ def _initialize_database() -> None:
     for attempt in range(1, attempts + 1):
         try:
             Base.metadata.create_all(bind=engine)
+            _ensure_todo_item_recurrence_columns()
             if attempt > 1:
                 logger.info("Database initialization succeeded on retry %s/%s", attempt, attempts)
             return
@@ -367,6 +372,51 @@ def _initialize_database() -> None:
                     "Verify DATABASE_URL, RDS connectivity/security groups, and SSL requirements."
                 ) from exc
             time.sleep(delay_seconds)
+
+
+def _ensure_todo_item_recurrence_columns() -> None:
+    """Best-effort runtime migration for new recurrence columns on existing todo_items tables."""
+    statements = [
+        "ALTER TABLE todo_items ADD COLUMN recurrence VARCHAR",
+        "ALTER TABLE todo_items ADD COLUMN series_id VARCHAR",
+        "ALTER TABLE todo_items ADD COLUMN occurrence_index INTEGER",
+        "ALTER TABLE todo_items ADD COLUMN anchor_due_at VARCHAR",
+    ]
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        try:
+            existing = {col["name"] for col in inspector.get_columns("todo_items")}
+        except Exception:
+            return
+
+        for stmt in statements:
+            col_name = stmt.split("ADD COLUMN", 1)[1].strip().split()[0]
+            if col_name in existing:
+                continue
+            try:
+                conn.execute(text(stmt))
+                existing.add(col_name)
+            except Exception:
+                # Ignore add-column failures for portability; backfill below still runs.
+                pass
+
+        if "recurrence" in existing:
+            conn.execute(
+                text("UPDATE todo_items SET recurrence = 'none' WHERE recurrence IS NULL OR TRIM(recurrence) = ''")
+            )
+        if "occurrence_index" in existing:
+            conn.execute(
+                text("UPDATE todo_items SET occurrence_index = 0 WHERE occurrence_index IS NULL")
+            )
+        if "series_id" in existing:
+            conn.execute(
+                text("UPDATE todo_items SET series_id = todo_id WHERE series_id IS NULL OR TRIM(series_id) = ''")
+            )
+        if "anchor_due_at" in existing:
+            conn.execute(
+                text("UPDATE todo_items SET anchor_due_at = due_at WHERE anchor_due_at IS NULL OR TRIM(anchor_due_at) = ''")
+            )
 
 # === Password hashing ===
 def hash_password(password: str) -> str:
@@ -740,13 +790,259 @@ def _todo_to_dict(row: TodoItem) -> dict:
         "notes": row.notes or "",
         "due_at": row.due_at,
         "completed": bool(row.completed),
+        "recurrence": (row.recurrence or "none"),
+        "series_id": row.series_id,
+        "occurrence_index": int(row.occurrence_index or 0),
+        "anchor_due_at": row.anchor_due_at,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
     }
 
 
+def _normalize_recurrence(raw: Optional[str]) -> str:
+    value = str(raw or "none").strip().lower()
+    return value if value in {"none", "daily", "weekly", "monthly", "yearly"} else "none"
+
+
+def _parse_due_local(raw: Optional[str]) -> Optional[datetime]:
+    text_value = str(raw or "").strip()
+    if not text_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text_value)
+    except ValueError:
+        return None
+
+    # Normalize to naive local-like datetime; frontend stores local ISO strings.
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _fmt_due_local(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _last_day_of_month(year: int, month: int) -> int:
+    if month == 2:
+        leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+        return 29 if leap else 28
+    if month in {4, 6, 9, 11}:
+        return 30
+    return 31
+
+
+def _add_months_local(dt: datetime, months: int) -> datetime:
+    total_month = (dt.month - 1) + months
+    year = dt.year + (total_month // 12)
+    month = (total_month % 12) + 1
+    day = min(dt.day, _last_day_of_month(year, month))
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _add_years_local(dt: datetime, years: int) -> datetime:
+    target_year = dt.year + years
+    day = dt.day
+    if dt.month == 2 and dt.day == 29 and _last_day_of_month(target_year, 2) == 28:
+        day = 28
+    return dt.replace(year=target_year, day=day)
+
+
+def _next_due_from(current_due_at: Optional[str], recurrence: str) -> Optional[str]:
+    dt = _parse_due_local(current_due_at)
+    if not dt:
+        return None
+
+    if recurrence == "daily":
+        next_dt = dt + timedelta(days=1)
+    elif recurrence == "weekly":
+        next_dt = dt + timedelta(days=7)
+    elif recurrence == "monthly":
+        next_dt = _add_months_local(dt, 1)
+    elif recurrence == "yearly":
+        next_dt = _add_years_local(dt, 1)
+    else:
+        return None
+
+    return _fmt_due_local(next_dt)
+
+
+def _shift_due_by_occurrences(
+    base_due_at: Optional[str],
+    recurrence: str,
+    occurrence_count: int,
+) -> Optional[str]:
+    if occurrence_count <= 0:
+        return base_due_at
+
+    candidate = base_due_at
+    for _ in range(occurrence_count):
+        candidate = _next_due_from(candidate, recurrence)
+        if not candidate:
+            return None
+    return candidate
+
+
+def _next_upcoming_due_from(current_due_at: Optional[str], recurrence: str) -> Optional[str]:
+    """Advance recurrence to the next upcoming slot; generates exactly one next occurrence."""
+    recurrence = _normalize_recurrence(recurrence)
+    if recurrence == "none":
+        return None
+
+    now_local = datetime.now()
+    candidate = current_due_at
+    for _ in range(2000):
+        candidate = _next_due_from(candidate, recurrence)
+        if not candidate:
+            return None
+        parsed = _parse_due_local(candidate)
+        if parsed and parsed >= now_local:
+            return candidate
+    return candidate
+
+
+def _generate_next_recurring_occurrence(
+    source_row: TodoItem,
+    db: Session,
+) -> Optional[TodoItem]:
+    recurrence = _normalize_recurrence(source_row.recurrence)
+    if recurrence == "none":
+        return None
+
+    base_due = source_row.due_at or source_row.anchor_due_at
+    next_due_at = _next_upcoming_due_from(base_due, recurrence)
+    if not next_due_at:
+        return None
+
+    series_id = (source_row.series_id or source_row.todo_id or "").strip()
+    if not series_id:
+        return None
+
+    existing = (
+        db.query(TodoItem)
+        .filter(
+            TodoItem.user_id == source_row.user_id,
+            TodoItem.series_id == series_id,
+            TodoItem.due_at == next_due_at,
+            TodoItem.completed == False,  # noqa: E712
+        )
+        .first()
+    )
+    if existing:
+        return None
+
+    max_index = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == source_row.user_id, TodoItem.series_id == series_id)
+        .order_by(TodoItem.occurrence_index.desc(), TodoItem.id.desc())
+        .first()
+    )
+    next_index = int(max_index.occurrence_index or 0) + 1 if max_index else 1
+
+    next_todo_id = f"{series_id}__r{next_index}"
+    while (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == source_row.user_id, TodoItem.todo_id == next_todo_id)
+        .first()
+    ):
+        next_index += 1
+        next_todo_id = f"{series_id}__r{next_index}"
+
+    created = TodoItem(
+        user_id=source_row.user_id,
+        todo_id=next_todo_id,
+        title=source_row.title,
+        notes=source_row.notes or "",
+        due_at=next_due_at,
+        completed=False,
+        recurrence=recurrence,
+        series_id=series_id,
+        occurrence_index=next_index,
+        anchor_due_at=source_row.anchor_due_at or source_row.due_at,
+    )
+    db.add(created)
+    return created
+
+
+def _ensure_recurring_next_occurrences(user_id: int, db: Session) -> None:
+    """On reads, heal missing next occurrences for completed recurring series."""
+    latest_by_series = {}
+    rows = (
+        db.query(TodoItem)
+        .filter(TodoItem.user_id == user_id, TodoItem.recurrence.isnot(None), TodoItem.series_id.isnot(None))
+        .order_by(TodoItem.series_id.asc(), TodoItem.occurrence_index.desc(), TodoItem.id.desc())
+        .all()
+    )
+    for row in rows:
+        sid = (row.series_id or "").strip()
+        if not sid or sid in latest_by_series:
+            continue
+        latest_by_series[sid] = row
+
+    created_any = False
+    for row in latest_by_series.values():
+        recurrence = _normalize_recurrence(row.recurrence)
+        if recurrence == "none" or not row.completed:
+            continue
+        created = _generate_next_recurring_occurrence(row, db)
+        if created is not None:
+            created_any = True
+
+    if created_any:
+        db.commit()
+
+
+def _normalize_edit_scope(raw: Optional[str]) -> str:
+    value = str(raw or "this-occurrence").strip().lower()
+    return value if value in {"this-occurrence", "this-and-future"} else "this-occurrence"
+
+
+def _apply_future_series_updates(
+    current_row: TodoItem,
+    db: Session,
+    title: str,
+    notes: str,
+    due_at: Optional[str],
+    recurrence: str,
+) -> None:
+    series_id = str(current_row.series_id or current_row.todo_id or "").strip()
+    if not series_id:
+        return
+
+    current_index = int(current_row.occurrence_index or 0)
+
+    future_rows = (
+        db.query(TodoItem)
+        .filter(
+            TodoItem.user_id == current_row.user_id,
+            TodoItem.series_id == series_id,
+            TodoItem.occurrence_index > current_index,
+        )
+        .order_by(TodoItem.occurrence_index.asc(), TodoItem.id.asc())
+        .all()
+    )
+
+    if recurrence == "none":
+        for future_row in future_rows:
+            db.delete(future_row)
+        return
+
+    for future_row in future_rows:
+        offset = max(0, int(future_row.occurrence_index or 0) - current_index)
+        shifted_due = _shift_due_by_occurrences(due_at, recurrence, offset)
+        future_row.title = title
+        future_row.notes = notes
+        future_row.recurrence = recurrence
+        future_row.series_id = series_id
+        if shifted_due:
+            future_row.due_at = shifted_due
+            future_row.anchor_due_at = shifted_due
+        future_row.updated_at = datetime.now(timezone.utc)
+
+
 def get_todos(user_id: int, db: Session) -> list:
     """Get all personal todo items for a user."""
+    _ensure_recurring_next_occurrences(user_id, db)
     rows = (
         db.query(TodoItem)
         .filter(TodoItem.user_id == user_id)
@@ -764,6 +1060,10 @@ def create_todo(
     due_at: Optional[str],
     completed: bool,
     db: Session,
+    recurrence: str = "none",
+    series_id: Optional[str] = None,
+    occurrence_index: int = 0,
+    anchor_due_at: Optional[str] = None,
 ) -> TodoItem:
     existing = (
         db.query(TodoItem)
@@ -773,6 +1073,11 @@ def create_todo(
     if existing:
         raise ValueError("Todo item already exists")
 
+    normalized_recurrence = _normalize_recurrence(recurrence)
+    normalized_series_id = str(series_id or "").strip() or todo_id
+    normalized_index = max(0, int(occurrence_index or 0))
+    normalized_anchor = (str(anchor_due_at).strip() if anchor_due_at is not None else None) or due_at
+
     row = TodoItem(
         user_id=user_id,
         todo_id=todo_id,
@@ -780,6 +1085,10 @@ def create_todo(
         notes=notes,
         due_at=due_at,
         completed=completed,
+        recurrence=normalized_recurrence,
+        series_id=normalized_series_id,
+        occurrence_index=normalized_index,
+        anchor_due_at=normalized_anchor,
     )
     db.add(row)
     db.commit()
@@ -795,23 +1104,85 @@ def update_todo(
     due_at: Optional[str],
     completed: bool,
     db: Session,
+    recurrence: str = "none",
+    series_id: Optional[str] = None,
+    occurrence_index: int = 0,
+    anchor_due_at: Optional[str] = None,
 ) -> Optional[TodoItem]:
+    row, _ = update_todo_with_recurrence(
+        user_id,
+        todo_id,
+        title,
+        notes,
+        due_at,
+        completed,
+        db,
+        recurrence=recurrence,
+        series_id=series_id,
+        occurrence_index=occurrence_index,
+        anchor_due_at=anchor_due_at,
+    )
+    return row
+
+
+def update_todo_with_recurrence(
+    user_id: int,
+    todo_id: str,
+    title: str,
+    notes: str,
+    due_at: Optional[str],
+    completed: bool,
+    db: Session,
+    recurrence: str = "none",
+    series_id: Optional[str] = None,
+    occurrence_index: int = 0,
+    anchor_due_at: Optional[str] = None,
+    edit_scope: str = "this-occurrence",
+) -> Tuple[Optional[TodoItem], Optional[TodoItem]]:
     row = (
         db.query(TodoItem)
         .filter(TodoItem.user_id == user_id, TodoItem.todo_id == todo_id)
         .first()
     )
     if not row:
-        return None
+        return None, None
+
+    was_completed = bool(row.completed)
+    normalized_recurrence = _normalize_recurrence(recurrence)
+    normalized_series_id = str(series_id or "").strip() or row.series_id or row.todo_id
+    normalized_index = max(0, int(occurrence_index or 0))
+    normalized_anchor = (str(anchor_due_at).strip() if anchor_due_at is not None else None) or row.anchor_due_at or due_at
+    normalized_edit_scope = _normalize_edit_scope(edit_scope)
 
     row.title = title
     row.notes = notes
     row.due_at = due_at
     row.completed = completed
+    row.recurrence = normalized_recurrence
+    row.series_id = normalized_series_id
+    row.occurrence_index = normalized_index
+    row.anchor_due_at = normalized_anchor
     row.updated_at = datetime.now(timezone.utc)
+
+    if normalized_edit_scope == "this-and-future":
+        _apply_future_series_updates(
+            row,
+            db,
+            title=title,
+            notes=notes,
+            due_at=due_at,
+            recurrence=normalized_recurrence,
+        )
+
+    generated_row = None
+    if normalized_recurrence != "none" and (not was_completed and completed):
+        generated_row = _generate_next_recurring_occurrence(row, db)
+
     db.commit()
     db.refresh(row)
-    return row
+    if generated_row is not None:
+        db.refresh(generated_row)
+    return row, generated_row
 
 
 def delete_todo(user_id: int, todo_id: str, db: Session) -> bool:
@@ -995,6 +1366,11 @@ class TodoItemPayload(BaseModel):
     notes: str = ""
     due_at: Optional[str] = None
     completed: bool = False
+    recurrence: str = "none"
+    series_id: Optional[str] = None
+    occurrence_index: int = 0
+    anchor_due_at: Optional[str] = None
+    edit_scope: str = "this-occurrence"
 
     @field_validator("id", "title")
     @classmethod
@@ -1014,3 +1390,35 @@ class TodoItemPayload(BaseModel):
     def normalize_due_at(cls, v: Optional[str]) -> Optional[str]:
         text = str(v).strip() if v is not None else None
         return text or None
+
+    @field_validator("anchor_due_at")
+    @classmethod
+    def normalize_anchor_due_at(cls, v: Optional[str]) -> Optional[str]:
+        text = str(v).strip() if v is not None else None
+        return text or None
+
+    @field_validator("recurrence")
+    @classmethod
+    def normalize_recurrence(cls, v: str) -> str:
+        return _normalize_recurrence(v)
+
+    @field_validator("occurrence_index")
+    @classmethod
+    def normalize_occurrence_index(cls, v: int) -> int:
+        n = int(v or 0)
+        return max(0, n)
+
+    @field_validator("edit_scope")
+    @classmethod
+    def normalize_edit_scope(cls, v: str) -> str:
+        return _normalize_edit_scope(v)
+
+    @model_validator(mode="after")
+    def validate_recurrence_requires_due(self):
+        if self.recurrence != "none" and not (self.due_at or self.anchor_due_at):
+            raise ValueError("Recurring todos require due_at or anchor_due_at")
+        if not self.series_id:
+            self.series_id = self.id
+        if not self.anchor_due_at:
+            self.anchor_due_at = self.due_at
+        return self

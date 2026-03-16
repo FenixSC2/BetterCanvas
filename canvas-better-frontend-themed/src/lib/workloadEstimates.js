@@ -544,6 +544,75 @@ export function setChecklistItems({ courseId, assignmentId }, checklistItems) {
   emitChanged({ courseId, assignmentId });
 }
 
+function normalizeChecklistTextForMatch(text) {
+  return String(text || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function toChecklistItemText(text) {
+  return String(text || "").trim().replace(/\s+/g, " ");
+}
+
+function createImportedChecklistItem(text) {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    completed: false,
+  };
+}
+
+// Import task rows from Todo create/edit into workload checklist state.
+// - Always dedupes by normalized text.
+// - If a duplicate matches an existing completed item, it is reopened.
+export function importChecklistFromTodo(
+  { courseId, assignmentId },
+  taskItems,
+  opts = {},
+) {
+  const strategy = opts?.strategy === "replace" ? "replace" : "append";
+  const incoming = Array.isArray(taskItems) ? taskItems : [];
+  const incomingTexts = incoming
+    .map((item) => toChecklistItemText(item))
+    .filter(Boolean);
+
+  if (incomingTexts.length === 0) return;
+
+  const prev = getEffortState({ courseId, assignmentId });
+  const baseItems = strategy === "replace" ? [] : [...(prev.checklistItems || [])];
+  const nextItems = baseItems.map((item) => ({ ...item }));
+  const firstIndexByText = new Map();
+
+  for (let i = 0; i < nextItems.length; i += 1) {
+    const key = normalizeChecklistTextForMatch(nextItems[i]?.text);
+    if (!key || firstIndexByText.has(key)) continue;
+    firstIndexByText.set(key, i);
+  }
+
+  for (const text of incomingTexts) {
+    const key = normalizeChecklistTextForMatch(text);
+    if (!key) continue;
+
+    const existingIndex = firstIndexByText.get(key);
+    if (existingIndex != null) {
+      if (nextItems[existingIndex]?.completed) {
+        nextItems[existingIndex] = {
+          ...nextItems[existingIndex],
+          completed: false,
+        };
+      }
+      continue;
+    }
+
+    nextItems.push(createImportedChecklistItem(text));
+    firstIndexByText.set(key, nextItems.length - 1);
+  }
+
+  setChecklistItems({ courseId, assignmentId }, nextItems);
+  setEffortMode({ courseId, assignmentId }, CHECKLIST_MODE);
+}
+
 export function addChecklistItem({ courseId, assignmentId }, text) {
   const item = createChecklistItem(text);
   if (!item.text) return;

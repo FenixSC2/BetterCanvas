@@ -9,7 +9,10 @@ import {
   syncTodos,
   updateTodoItem,
 } from "../lib/todoStore";
-import { isAssignmentFavorited } from "../lib/workloadEstimates";
+import {
+  importChecklistFromTodo,
+  isAssignmentFavorited,
+} from "../lib/workloadEstimates";
 
 // WorkloadEstimateControl uses courseId/assignmentId to namespace localStorage keys.
 // We use the special courseId "todo" to keep personal items isolated from Canvas data.
@@ -108,16 +111,65 @@ function FavoriteMarker() {
   );
 }
 
+function sanitizeTaskRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  const out = [];
+  for (const row of rows) {
+    const text = String(row || "").trim();
+    if (!text) continue;
+    out.push(text);
+  }
+  return out;
+}
+
+function normalizeRecurrence(value) {
+  const raw = String(value || "none").trim().toLowerCase();
+  return ["daily", "weekly", "monthly", "yearly"].includes(raw)
+    ? raw
+    : "none";
+}
+
+function recurrenceLabel(value) {
+  const recurrence = normalizeRecurrence(value);
+  if (recurrence === "daily") return "Repeats daily";
+  if (recurrence === "weekly") return "Repeats weekly";
+  if (recurrence === "monthly") return "Repeats monthly";
+  if (recurrence === "yearly") return "Repeats yearly";
+  return "No repeat";
+}
+
 /* ---------- TodoItemForm ---------- */
 // Renders a create or edit form inline in a card body.
 // onSubmit({ title, notes, due_at })
 // onCancel()
 
-function TodoItemForm({ initial = {}, onSubmit, onCancel, submitLabel = "Save" }) {
+function TodoItemForm({
+  initial = {},
+  onSubmit,
+  onCancel,
+  submitLabel = "Save",
+  showImportStrategy = false,
+  showEditScope = false,
+}) {
   const [title, setTitle] = useState(initial.title ?? "");
   const [notes, setNotes] = useState(initial.notes ?? "");
   const [dueInput, setDueInput] = useState(() =>
     storageDatetimeToInput(initial.due_at ?? "")
+  );
+  const [recurrence, setRecurrence] = useState(() =>
+    normalizeRecurrence(initial.recurrence),
+  );
+  const [taskRows, setTaskRows] = useState(() => {
+    const incoming = sanitizeTaskRows(initial.task_items || []);
+    return incoming.length ? incoming : [""];
+  });
+  const [appendToChecklist, setAppendToChecklist] = useState(
+    initial.import_strategy !== "replace",
+  );
+  const [editScope, setEditScope] = useState(
+    initial.edit_scope === "this-and-future"
+      ? "this-and-future"
+      : "this-occurrence",
   );
   const [err, setErr] = useState("");
   const titleRef = useRef(null);
@@ -133,11 +185,23 @@ function TodoItemForm({ initial = {}, onSubmit, onCancel, submitLabel = "Save" }
       setErr("Title is required.");
       return;
     }
+    if (recurrence !== "none" && !dueInput) {
+      setErr("Recurring to-dos require a due date and time.");
+      return;
+    }
     setErr("");
+    const dueAt = inputToStorageDatetime(dueInput);
     onSubmit({
       title: trimmed,
       notes: notes.trim(),
-      due_at: inputToStorageDatetime(dueInput),
+      due_at: dueAt,
+      recurrence,
+      series_id: String(initial.series_id || initial.id || "").trim() || null,
+      occurrence_index: Number(initial.occurrence_index || 0) || 0,
+      anchor_due_at: String(initial.anchor_due_at || "").trim() || dueAt,
+      edit_scope: editScope,
+      task_items: sanitizeTaskRows(taskRows),
+      import_strategy: appendToChecklist ? "append" : "replace",
     });
   }
 
@@ -175,10 +239,49 @@ function TodoItemForm({ initial = {}, onSubmit, onCancel, submitLabel = "Save" }
         <input
           type="datetime-local"
           value={dueInput}
-          onChange={(e) => setDueInput(e.target.value)}
+          onChange={(e) => {
+            setDueInput(e.target.value);
+            if (err) setErr("");
+          }}
           style={{ width: "auto", maxWidth: 260 }}
         />
       </div>
+
+      <div style={{ display: "grid", gap: 4 }}>
+        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+          Repeat
+        </label>
+        <select
+          value={recurrence}
+          onChange={(e) => {
+            setRecurrence(normalizeRecurrence(e.target.value));
+            if (err) setErr("");
+          }}
+          style={{ width: "auto", maxWidth: 260 }}
+        >
+          <option value="none">Does not repeat</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </div>
+
+      {showEditScope && recurrence !== "none" ? (
+        <div style={{ display: "grid", gap: 4 }}>
+          <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+            Apply edits to
+          </label>
+          <select
+            value={editScope}
+            onChange={(e) => setEditScope(e.target.value)}
+            style={{ width: "auto", maxWidth: 260 }}
+          >
+            <option value="this-occurrence">This occurrence only</option>
+            <option value="this-and-future">This and future occurrences</option>
+          </select>
+        </div>
+      ) : null}
 
       <div style={{ display: "grid", gap: 4 }}>
         <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
@@ -194,6 +297,93 @@ function TodoItemForm({ initial = {}, onSubmit, onCancel, submitLabel = "Save" }
           rows={3}
           style={{ width: "100%", resize: "vertical" }}
         />
+      </div>
+
+      <div style={{ display: "grid", gap: 8 }}>
+        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+          Task list items{" "}
+          <span className="muted" style={{ fontWeight: 400 }}>
+            (optional)
+          </span>
+        </label>
+
+        <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
+          Any tasks entered here will be added to Workload checklist mode.
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          {taskRows.map((row, idx) => (
+            <div
+              key={`task-row-${idx}`}
+              style={{ display: "flex", gap: 8, alignItems: "center" }}
+            >
+              <input
+                type="text"
+                value={row}
+                onChange={(e) => {
+                  const next = [...taskRows];
+                  next[idx] = e.target.value;
+                  setTaskRows(next);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  setTaskRows((prev) => {
+                    const next = [...prev];
+                    next.splice(idx + 1, 0, "");
+                    return next;
+                  });
+                }}
+                placeholder={`Task ${idx + 1}`}
+                style={{ width: "100%" }}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (taskRows.length === 1) {
+                    setTaskRows([""]);
+                    return;
+                  }
+                  setTaskRows(taskRows.filter((_, i) => i !== idx));
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setTaskRows((prev) => [...prev, ""])}
+          >
+            + Add task item
+          </button>
+        </div>
+
+        {showImportStrategy ? (
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 4,
+            }}
+          >
+            <input
+              type="checkbox"
+              className="themeCheckbox"
+              checked={appendToChecklist}
+              onChange={(e) => setAppendToChecklist(e.target.checked)}
+            />
+            <span className="muted" style={{ fontSize: "var(--fontSm)" }}>
+              Keep existing tasks and add new ones
+            </span>
+          </label>
+        ) : null}
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -234,7 +424,6 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
   const notesPreview = hasNotes
     ? todo.notes.replace(/\s+/g, " ").trim()
     : "";
-
   if (editing) {
     return (
       <div className="card">
@@ -259,6 +448,8 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
             }}
             onCancel={() => setEditing(false)}
             submitLabel="Save changes"
+            showImportStrategy={true}
+            showEditScope={true}
           />
         </div>
       </div>
@@ -313,6 +504,11 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
                 {todo.title}
               </span>
               <span className={`badge ${badgeClass}`}>{urgencyLabel}</span>
+              {todo?.recurrence && todo.recurrence !== "none" ? (
+                <span className="badge badgeNeutral">
+                  {recurrenceLabel(todo.recurrence)}
+                </span>
+              ) : null}
               <span className="muted" style={{ fontSize: "var(--fontSm)" }}>
                 {fmtDue(todo.due_at)}
               </span>
@@ -533,6 +729,7 @@ export function TodoPage() {
   /* ---------- helpers to mutate state + store ---------- */
 
   async function handleCreate(draft) {
+    const taskItems = sanitizeTaskRows(draft?.task_items || []);
     const now = new Date().toISOString();
     const newItem = {
       id: makeTodoId(),
@@ -540,9 +737,22 @@ export function TodoPage() {
       notes: draft.notes,
       due_at: draft.due_at,
       completed: false,
+      recurrence: normalizeRecurrence(draft?.recurrence),
+      series_id: draft?.series_id || null,
+      occurrence_index: Number(draft?.occurrence_index || 0) || 0,
+      anchor_due_at: draft?.anchor_due_at || draft?.due_at || null,
       createdAt: now,
     };
     await createTodoItem(newItem);
+
+    if (taskItems.length > 0) {
+      importChecklistFromTodo(
+        { courseId: TODO_COURSE_ID, assignmentId: newItem.id },
+        taskItems,
+        { strategy: "replace" },
+      );
+    }
+
     setShowNewForm(false);
     // Scroll to top so the new item is visible (it may land in any section)
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -551,7 +761,31 @@ export function TodoPage() {
   async function handleEdit(id, draft) {
     const existing = todos.find((t) => t.id === id);
     if (!existing) return;
-    await updateTodoItem(id, { ...existing, ...draft });
+
+    const nextTodo = {
+      ...existing,
+      title: draft.title,
+      notes: draft.notes,
+      due_at: draft.due_at,
+      recurrence: normalizeRecurrence(draft?.recurrence),
+      series_id: draft?.series_id || existing.series_id || existing.id,
+      occurrence_index: Number(draft?.occurrence_index ?? existing.occurrence_index ?? 0) || 0,
+      anchor_due_at: draft?.anchor_due_at || existing.anchor_due_at || draft?.due_at || null,
+      edit_scope:
+        draft?.edit_scope === "this-and-future"
+          ? "this-and-future"
+          : "this-occurrence",
+    };
+    await updateTodoItem(id, nextTodo);
+
+    const taskItems = sanitizeTaskRows(draft?.task_items || []);
+    if (taskItems.length > 0) {
+      importChecklistFromTodo(
+        { courseId: TODO_COURSE_ID, assignmentId: id },
+        taskItems,
+        { strategy: draft?.import_strategy === "replace" ? "replace" : "append" },
+      );
+    }
   }
 
   async function handleToggleComplete(id) {
@@ -667,12 +901,12 @@ export function TodoPage() {
                   letterSpacing: "0.04em",
                 }}
               >
-                New item
+                New to-do
               </div>
               <TodoItemForm
                 onSubmit={handleCreate}
                 onCancel={() => setShowNewForm(false)}
-                submitLabel="Add item"
+                submitLabel="Create to-do"
               />
             </div>
           ) : null}
