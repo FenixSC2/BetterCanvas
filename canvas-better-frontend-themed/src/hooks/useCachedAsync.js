@@ -3,6 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const _cache = new Map();
 
+function shouldSuppressAsyncError(error) {
+  return !!(error && (error.status === 401 || error.status === 403 || error.needsToken));
+}
+
 export function clearCachedAsync(keyPrefix) {
   if (!keyPrefix) {
     _cache.clear();
@@ -96,11 +100,11 @@ export function useCachedAsync(key, fetcher, opts = {}) {
       setError(null); // Clear any previous errors on success
     } catch (e) {
       if (e?.name !== "AbortError") {
-        // If error is 403 (needs token), silently set empty data instead of showing error
-        // This prevents error messages when user hasn't added their Canvas token yet
-        if (e?.status === 403 || e?.needsToken) {
+        // Auth and token errors should not render as page-level ErrorBoxes.
+        // AuthProvider and surrounding app state handle redirect/login/token flows.
+        if (shouldSuppressAsyncError(e)) {
           setData(null);
-          setError(null); // Don't show error for missing token
+          setError(null);
           // Don't cache null data - let it re-fetch when token is available
         } else {
           setError(e);
