@@ -14,6 +14,7 @@ import {
   toggleChecklistItem,
   updateChecklistItemText,
 } from "../lib/workloadEstimates";
+import { canvasApi } from "../api/canvasApi";
 
 const CHECKLIST_MODE = "checklist";
 
@@ -296,6 +297,8 @@ export function WorkloadEstimateControl({
   const [newChecklistItemDraft, setNewChecklistItemDraft] = useState("");
   const [err, setErr] = useState("");
   const [checklistExpanded, setChecklistExpanded] = useState(false);
+  const [hideLoading, setHideLoading] = useState(false);
+  const [isHiddenLocal, setIsHiddenLocal] = useState(false);
 
   // inline estimate UI (used when estimate <= 0)
   const [showInlineEstimate, setShowInlineEstimate] = useState(false);
@@ -1333,6 +1336,46 @@ export function WorkloadEstimateControl({
                     style={{ fontWeight: 400, marginLeft: 6 }}
                   >
                     — highlights it across pages
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="effortField">
+              <label
+                className="effortCheckboxRow"
+                style={{ cursor: "pointer", userSelect: "none" }}
+              >
+                <input
+                  type="checkbox"
+                  className="themeCheckbox"
+                  checked={isHiddenLocal}
+                  onChange={async (e) => {
+                    const want = !!e.target.checked;
+                    setHideLoading(true);
+                    try {
+                      if (want) {
+                        await canvasApi.addHiddenAssignment(courseId, assignmentId);
+                        window.dispatchEvent(new CustomEvent("canvassist:hidden:changed"));
+                        setIsHiddenLocal(true);
+                      } else {
+                        await canvasApi.removeHiddenAssignment(courseId, assignmentId);
+                        window.dispatchEvent(new CustomEvent("canvassist:hidden:changed"));
+                        setIsHiddenLocal(false);
+                      }
+                    } catch (err) {
+                      console.error("Failed to toggle hidden state:", err);
+                      alert("Failed to update hidden state. Please try again.");
+                    } finally {
+                      setHideLoading(false);
+                    }
+                  }}
+                  disabled={hideLoading}
+                />
+
+                <span>
+                  {isHiddenLocal ? "Hidden" : "Hide this assignment"}
+                  <span className="muted" style={{ fontWeight: 400, marginLeft: 6 }}>
+                    — remove from counts and missing flags
                   </span>
                 </span>
               </label>

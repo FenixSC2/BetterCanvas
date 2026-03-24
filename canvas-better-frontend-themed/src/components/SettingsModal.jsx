@@ -9,7 +9,6 @@ import {
 } from "../lib/workloadEstimates";
 import { useAuth } from "../hooks/useAuth";
 import { canvasApi } from "../api/canvasApi";
-import { WorkloadEstimateControl } from "./WorkloadEstimateControl";
 import { clearDemoMode } from "../lib/storagePolicy";
 
 const THEME_OPTIONS = [
@@ -658,7 +657,15 @@ export function SettingsModal({
                                       >
                                         <div style={{ flexGrow: 1 }}>
                                           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                                            <div style={{ fontWeight: 500 }}>{a.name}</div>
+                                            <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
+                                              <span>{a.name}</span>
+                                              {isHidden ? (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style={{ opacity: 0.85 }}>
+                                                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                  <path d="M15 9l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                              ) : null}
+                                            </div>
                                             <span className={`badge ${badgeClass}`}>{badge.label}</span>
                                           </div>
                                           <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
@@ -674,12 +681,7 @@ export function SettingsModal({
                                             justifyContent: "flex-end",
                                           }}
                                         >
-                                          <WorkloadEstimateControl
-                                            courseId={a.course_id}
-                                            assignmentId={a.id}
-                                            compactLabels={true}
-                                          />
-                                          {!isHidden && (
+                                          {!isHidden ? (
                                             <button
                                               type="button"
                                               className="btn"
@@ -688,6 +690,23 @@ export function SettingsModal({
                                               style={{ marginTop: "4px", whiteSpace: "nowrap", flexShrink: 0 }}
                                             >
                                               {isLoading ? "Hiding..." : "Hide"}
+                                            </button>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className="btn"
+                                              onClick={() => handleUnhideAssignment(a.course_id, a.id)}
+                                              disabled={isLoading}
+                                              style={{
+                                                marginTop: "4px",
+                                                whiteSpace: "nowrap",
+                                                flexShrink: 0,
+                                                background: "var(--badge-success-bg)",
+                                                color: "var(--badge-success-text)",
+                                                border: "1px solid var(--badge-success-border)",
+                                              }}
+                                            >
+                                              {isLoading ? "Unhiding..." : "Unhide"}
                                             </button>
                                           )}
                                         </div>
@@ -750,11 +769,6 @@ export function SettingsModal({
                                           justifyContent: "flex-end",
                                         }}
                                       >
-                                        <WorkloadEstimateControl
-                                          courseId={h.course_id}
-                                          assignmentId={assignmentId}
-                                          compactLabels={true}
-                                        />
                                         <button
                                           type="button"
                                           className="btn"
