@@ -8,7 +8,11 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import {
   addCompletedHours,
+  adoptRecurringPreviewStates,
+  computeCurrentOccurrenceDueAt,
   getEffortState,
+  makeRecurringPreviewAssignmentId,
+  seedRecurringPreviewState,
   setCompletedHours,
 } from "../lib/workloadEstimates";
 import { loadTodos, syncTodos } from "../lib/todoStore";
@@ -82,6 +86,146 @@ function fmtShortDate(dt) {
   const d = new Date(dt);
   if (!Number.isFinite(d.getTime())) return "";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function normalizeTodoRecurrence(value) {
+  const recurrence = String(value || "none").trim().toLowerCase();
+  return ["daily", "weekly", "monthly", "yearly"].includes(recurrence)
+    ? recurrence
+    : "none";
+}
+
+function plannerTodoRecurrenceLabel(value) {
+  const recurrence = normalizeTodoRecurrence(value);
+  if (recurrence === "daily") return "Repeats daily";
+  if (recurrence === "weekly") return "Repeats weekly";
+  if (recurrence === "monthly") return "Repeats monthly";
+  if (recurrence === "yearly") return "Repeats yearly";
+  return "Does not repeat";
+}
+
+function lastDayOfMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function addMonthsLocal(date, months) {
+  const next = new Date(date.getTime());
+  const currentDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  next.setDate(Math.min(currentDay, lastDayOfMonth(next.getFullYear(), next.getMonth())));
+  return next;
+}
+
+function addYearsLocal(date, years) {
+  const next = new Date(date.getTime());
+  const month = next.getMonth();
+  const day = next.getDate();
+  next.setFullYear(next.getFullYear() + years, month, 1);
+  next.setDate(Math.min(day, lastDayOfMonth(next.getFullYear(), month)));
+  return next;
+}
+
+function nextRecurringTodoDate(date, recurrence) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
+  if (recurrence === "daily") return addDays(date, 1);
+  if (recurrence === "weekly") return addDays(date, 7);
+  if (recurrence === "monthly") return addMonthsLocal(date, 1);
+  if (recurrence === "yearly") return addYearsLocal(date, 1);
+  return null;
+}
+
+function formatTodoOccurrenceKeyPart(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
+function makeTodoOccurrenceKey(seriesId, date) {
+  return `${String(seriesId || "")}:${formatTodoOccurrenceKeyPart(date)}`;
+}
+
+function buildRecurringTodoPlaceholders(todo, start, end, actualOccurrenceKeys, placeholderKeys) {
+  const recurrence = normalizeTodoRecurrence(todo?.recurrence);
+  if (recurrence === "none") return [];
+
+  const seed = new Date(todo?.due_at || todo?.anchor_due_at || "");
+  if (!Number.isFinite(seed.getTime())) return [];
+
+  const seriesId = String(todo?.series_id || todo?.id || "").trim() || String(todo?.id || "");
+  const placeholders = [];
+  let cursor = new Date(seed.getTime());
+  let guard = 0;
+
+  // The "current occurrence" is the one that shares its storage slot with the
+  // actual todo record (todo.id).  Any occurrence earlier than or equal to now
+  // that doesn't yet have its own real DB record is the current one.
+  const currentOccurrenceDueAt = computeCurrentOccurrenceDueAt(todo);
+
+  while (cursor < start && guard < 2000) {
+    const next = nextRecurringTodoDate(cursor, recurrence);
+    if (!next) return placeholders;
+    cursor = next;
+    guard += 1;
+  }
+
+  while (cursor < end && guard < 2200) {
+    const occurrenceKey = makeTodoOccurrenceKey(seriesId, cursor);
+    if (!actualOccurrenceKeys.has(occurrenceKey) && !placeholderKeys.has(occurrenceKey)) {
+      placeholderKeys.add(occurrenceKey);
+      const dueAt = formatTodoOccurrenceKeyPart(cursor);
+      // If this placeholder represents the current active occurrence, use
+      // todo.id directly so it shares state with the Todo tab.
+      const isCurrentOccurrence = dueAt === currentOccurrenceDueAt;
+      placeholders.push({
+        __kind: "todo-placeholder",
+        todo,
+        due_at: dueAt,
+        plannerOccurrenceId: `${todo.id}__planner__${dueAt}`,
+        previewAssignmentId: isCurrentOccurrence
+          ? null
+          : makeRecurringPreviewAssignmentId(seriesId, dueAt),
+      });
+    }
+    const next = nextRecurringTodoDate(cursor, recurrence);
+    if (!next) break;
+    cursor = next;
+    guard += 1;
+  }
+
+  return placeholders;
+}
+
+function resolveRecurringTodoNavigationTarget(todo, allTodos) {
+  const seriesId = String(todo?.series_id || todo?.id || "").trim();
+  if (!seriesId) return String(todo?.id || "");
+
+  const openSeriesTodos = (allTodos || []).filter((item) => {
+    if (!item || item.completed) return false;
+    const itemSeriesId = String(item.series_id || item.id || "").trim();
+    return itemSeriesId === seriesId;
+  });
+  if (openSeriesTodos.length === 0) return String(todo?.id || "");
+
+  openSeriesTodos.sort((a, b) => {
+    const at = a?.due_at ? new Date(a.due_at).getTime() : Infinity;
+    const bt = b?.due_at ? new Date(b.due_at).getTime() : Infinity;
+    if (at !== bt) return at - bt;
+    const ai = Number.isFinite(Number(a?.occurrence_index))
+      ? Number(a.occurrence_index)
+      : 0;
+    const bi = Number.isFinite(Number(b?.occurrence_index))
+      ? Number(b.occurrence_index)
+      : 0;
+    if (ai !== bi) return ai - bi;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  });
+
+  return String(openSeriesTodos[0]?.id || todo?.id || "");
 }
 
 function dayNumberUTC(d) {
@@ -779,6 +923,7 @@ export function WeeklyPlanner() {
     let active = true;
 
     syncTodos().then((serverTodos) => {
+      adoptRecurringPreviewStates(serverTodos, { courseId: "todo" });
       if (active) setTodos(serverTodos);
     });
 
@@ -813,7 +958,9 @@ export function WeeklyPlanner() {
     }
 
     function onTodosChanged() {
-      setTodos(loadTodos());
+      const nextTodos = loadTodos();
+      adoptRecurringPreviewStates(nextTodos, { courseId: "todo" });
+      setTodos(nextTodos);
     }
 
     window.addEventListener("storage", onStorage);
@@ -1254,7 +1401,7 @@ export function WeeklyPlanner() {
 
     const entryCourseLabel = (entry) => {
       if (entry.__kind === "base") return entry.assignment?.course_name || "";
-      if (entry.__kind === "todo") return "TO-DO's";
+      if (entry.__kind === "todo" || entry.__kind === "todo-placeholder") return "TO-DO's";
       const assignment = (itemsRaw || []).find(
         (it) =>
           it.course_id === entry.split.courseId &&
@@ -1270,7 +1417,7 @@ export function WeeklyPlanner() {
           entry.assignment?.id,
         );
       }
-      if (entry.__kind === "todo") {
+      if (entry.__kind === "todo" || entry.__kind === "todo-placeholder") {
         return workloadIsFavorite("todo", entry.todo?.id);
       }
       return false;
@@ -1292,11 +1439,14 @@ export function WeeklyPlanner() {
           if (ac !== bc) return ac.localeCompare(bc);
         }
 
-        if (x.__kind === "todo" || y.__kind === "todo") {
-          if (x.__kind !== y.__kind) return x.__kind === "base" ? -1 : 1;
-          const xt = x.todo?.due_at ? new Date(x.todo.due_at).getTime() : Infinity;
-          const yt = y.todo?.due_at ? new Date(y.todo.due_at).getTime() : Infinity;
+        const xTodoLike = x.__kind === "todo" || x.__kind === "todo-placeholder";
+        const yTodoLike = y.__kind === "todo" || y.__kind === "todo-placeholder";
+        if (xTodoLike || yTodoLike) {
+          if (xTodoLike !== yTodoLike) return x.__kind === "base" ? -1 : 1;
+          const xt = x.due_at ? new Date(x.due_at).getTime() : x.todo?.due_at ? new Date(x.todo.due_at).getTime() : Infinity;
+          const yt = y.due_at ? new Date(y.due_at).getTime() : y.todo?.due_at ? new Date(y.todo.due_at).getTime() : Infinity;
           if (xt !== yt) return xt - yt;
+          if (x.__kind !== y.__kind) return x.__kind === "todo" ? -1 : 1;
           return String(x.todo?.title || "").localeCompare(
             String(y.todo?.title || ""),
           );
@@ -1407,6 +1557,7 @@ export function WeeklyPlanner() {
     // --- Personal to-do items ---
     const todoUndated = [];
     if (settings.showPersonalTodos) {
+      const actualTodoOccurrenceKeys = new Set();
       for (const t of todos) {
         if (t.completed) continue;
         if (!t.due_at) {
@@ -1418,15 +1569,42 @@ export function WeeklyPlanner() {
           todoUndated.push(t);
           continue;
         }
+        actualTodoOccurrenceKeys.add(
+          makeTodoOccurrenceKey(t.series_id || t.id, due),
+        );
         if (due >= start && due < end) {
           const dayIdx = Math.floor(
             (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
           );
           const list = buckets.get(dayIdx) || [];
-          list.push({ __kind: "todo", todo: t });
+          list.push({ __kind: "todo", todo: t, due_at: t.due_at, plannerOccurrenceId: t.id });
           buckets.set(dayIdx, list);
         }
       }
+
+      const placeholderOccurrenceKeys = new Set();
+      for (const t of todos) {
+        if (t.completed || !t.due_at) continue;
+        const placeholders = buildRecurringTodoPlaceholders(
+          t,
+          start,
+          end,
+          actualTodoOccurrenceKeys,
+          placeholderOccurrenceKeys,
+        );
+        for (const placeholder of placeholders) {
+          const due = new Date(placeholder.due_at);
+          if (!Number.isFinite(due.getTime())) continue;
+          const dayIdx = Math.floor(
+            (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          if (dayIdx < 0 || dayIdx >= 7) continue;
+          const list = buckets.get(dayIdx) || [];
+          list.push(placeholder);
+          buckets.set(dayIdx, list);
+        }
+      }
+
       todoUndated.sort(
         (a, b) =>
           (workloadIsFavorite("todo", a.id) ? 0 : 1) -
@@ -1475,6 +1653,36 @@ export function WeeklyPlanner() {
       .map((x) => x.a);
     return upcoming;
   }, [items, view.end, settings.showCompleted, storageTick]);
+
+  useEffect(() => {
+    if (!settings.showPersonalTodos) return;
+    let seededAny = false;
+
+    for (let i = 0; i < 7; i += 1) {
+      const list = view.buckets.get(i) || [];
+      for (const entry of list) {
+        if (entry?.__kind !== "todo-placeholder") continue;
+
+        const previewAssignmentId = String(entry?.previewAssignmentId || "").trim();
+        const sourceAssignmentId = String(entry?.todo?.id || "").trim();
+        if (!previewAssignmentId || !sourceAssignmentId) continue;
+
+        if (
+          seedRecurringPreviewState({
+            courseId: "todo",
+            sourceAssignmentId,
+            previewAssignmentId,
+          })
+        ) {
+          seededAny = true;
+        }
+      }
+    }
+
+    if (seededAny) {
+      setStorageTick((t) => t + 1);
+    }
+  }, [view.buckets, settings.showPersonalTodos]);
 
   const viewOffsetLabel = useMemo(() => {
     const today = startOfDay(new Date());
@@ -1558,7 +1766,7 @@ export function WeeklyPlanner() {
           flex: 1 1 auto;
           max-width: none;
           gap: 6px !important;
-          flex-wrap: nowrap !important;
+          flex-wrap: wrap !important;
           min-width: 0;
           overflow: hidden;
         }
@@ -1995,13 +2203,15 @@ export function WeeklyPlanner() {
                   >
                     {list.map((entry) => {
                       // --- Personal to-do items ---
-                      if (entry.__kind === "todo") {
+                      if (entry.__kind === "todo" || entry.__kind === "todo-placeholder") {
                         const t = entry.todo;
-                        const dueTime = fmtTime(t.due_at);
-                        const dueDate = fmtShortDate(t.due_at);
+                        const isPlaceholder = entry.__kind === "todo-placeholder";
+                        const displayDueAt = entry.due_at || t.due_at;
+                        const dueTime = fmtTime(displayDueAt);
+                        const dueDate = fmtShortDate(displayDueAt);
                         const isFavorited = workloadIsFavorite("todo", t.id);
                         return (
-                          <div key={`todo-${t.id}`} className="card">
+                          <div key={`todo-${entry.plannerOccurrenceId || t.id}`} className="card">
                             <div className="cardBody" style={{ padding: 0 }}>
                               <div className="plannerCard">
                                 <div className="plannerBar plannerBar-todo" />
@@ -2013,14 +2223,19 @@ export function WeeklyPlanner() {
                                         <span>{t.title}</span>
                                       </span>
                                     </div>
-                                    <span className="badge badgeNeutral" style={{ flexShrink: 0 }}>
-                                      Personal
-                                    </span>
+                                    <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                      <span className="badge badgeNeutral">Personal</span>
+                                    </div>
                                   </div>
                                   <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
                                     <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
                                     <span className="mono">{dueDate || "—"} {dueTime || ""}</span>
                                   </div>
+                                  {normalizeTodoRecurrence(t.recurrence) !== "none" ? (
+                                    <div className="muted" style={{ marginTop: 6, fontSize: 11 }}>
+                                      {plannerTodoRecurrenceLabel(t.recurrence)}
+                                    </div>
+                                  ) : null}
                                   {t.notes ? (
                                     <div
                                       className="muted"
@@ -2039,8 +2254,13 @@ export function WeeklyPlanner() {
                                   <div className="plannerEffortCompact" style={{ marginTop: 10 }}>
                                     <WorkloadEstimateControl
                                       courseId="todo"
-                                      assignmentId={t.id}
+                                      assignmentId={
+                                        isPlaceholder
+                                          ? entry.previewAssignmentId || t.id
+                                          : t.id
+                                      }
                                       compactLabels={true}
+                                      compactChecklist={true}
                                     />
                                   </div>
                                 </div>

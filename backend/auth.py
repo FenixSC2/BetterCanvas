@@ -255,6 +255,12 @@ class WorkloadEstimate(Base):
         UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_workload_estimate'),
     )
 
+
+WORKLOAD_ESTIMATE_RETENTION_DAYS = max(
+    1,
+    int(os.getenv("WORKLOAD_ESTIMATE_RETENTION_DAYS", "90")),
+)
+
 class AssignmentWeightOverride(Base):
     __tablename__ = "assignment_weight_overrides"
 
@@ -305,6 +311,7 @@ class TodoItem(Base):
     series_id = Column(String, nullable=True, index=True)
     occurrence_index = Column(Integer, nullable=False, default=0)
     anchor_due_at = Column(String, nullable=True)
+    workload_reset_mode = Column(String, nullable=False, default="none")
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -381,6 +388,7 @@ def _ensure_todo_item_recurrence_columns() -> None:
         "ALTER TABLE todo_items ADD COLUMN series_id VARCHAR",
         "ALTER TABLE todo_items ADD COLUMN occurrence_index INTEGER",
         "ALTER TABLE todo_items ADD COLUMN anchor_due_at VARCHAR",
+        "ALTER TABLE todo_items ADD COLUMN workload_reset_mode VARCHAR",
     ]
 
     with engine.begin() as conn:
@@ -416,6 +424,10 @@ def _ensure_todo_item_recurrence_columns() -> None:
         if "anchor_due_at" in existing:
             conn.execute(
                 text("UPDATE todo_items SET anchor_due_at = due_at WHERE anchor_due_at IS NULL OR TRIM(anchor_due_at) = ''")
+            )
+        if "workload_reset_mode" in existing:
+            conn.execute(
+                text("UPDATE todo_items SET workload_reset_mode = 'none' WHERE workload_reset_mode IS NULL OR TRIM(workload_reset_mode) = ''")
             )
 
 # === Password hashing ===
@@ -550,6 +562,7 @@ def get_hidden_assignments(user_id: int, db: Session) -> list:
 
 def get_workload_estimates(user_id: int, db: Session) -> list:
     """Get all workload estimates for a user."""
+    prune_stale_workload_estimates(db, user_id=user_id)
     rows = db.query(WorkloadEstimate).filter(WorkloadEstimate.user_id == user_id).all()
     return [
         {
@@ -573,6 +586,7 @@ def upsert_workload_estimate(
     db: Session,
 ) -> WorkloadEstimate:
     """Create or update a workload estimate for a specific assignment."""
+    prune_stale_workload_estimates(db, user_id=user_id)
     existing = db.query(WorkloadEstimate).filter(
         WorkloadEstimate.user_id == user_id,
         WorkloadEstimate.course_id == course_id,
@@ -615,6 +629,20 @@ def delete_workload_estimate(
         db.commit()
         return True
     return False
+
+
+def prune_stale_workload_estimates(
+    db: Session,
+    user_id: Optional[int] = None,
+) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=WORKLOAD_ESTIMATE_RETENTION_DAYS)
+    query = db.query(WorkloadEstimate).filter(WorkloadEstimate.updated_at < cutoff)
+    if user_id is not None:
+        query = query.filter(WorkloadEstimate.user_id == user_id)
+    deleted = query.delete(synchronize_session=False)
+    if deleted:
+        db.commit()
+    return int(deleted or 0)
 
 
 def get_assignment_weight_overrides(user_id: int, db: Session) -> list:
@@ -794,6 +822,7 @@ def _todo_to_dict(row: TodoItem) -> dict:
         "series_id": row.series_id,
         "occurrence_index": int(row.occurrence_index or 0),
         "anchor_due_at": row.anchor_due_at,
+        "workload_reset_mode": row.workload_reset_mode or "none",
         "createdAt": row.created_at.isoformat() if row.created_at else None,
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -802,6 +831,11 @@ def _todo_to_dict(row: TodoItem) -> dict:
 def _normalize_recurrence(raw: Optional[str]) -> str:
     value = str(raw or "none").strip().lower()
     return value if value in {"none", "daily", "weekly", "monthly", "yearly"} else "none"
+
+
+def _normalize_workload_reset_mode(raw: Optional[str]) -> str:
+    value = str(raw or "none").strip().lower()
+    return value if value in {"none", "progress", "checklist", "both"} else "none"
 
 
 def _parse_due_local(raw: Optional[str]) -> Optional[datetime]:
@@ -959,6 +993,7 @@ def _generate_next_recurring_occurrence(
         series_id=series_id,
         occurrence_index=next_index,
         anchor_due_at=source_row.anchor_due_at or source_row.due_at,
+        workload_reset_mode=source_row.workload_reset_mode or "none",
     )
     db.add(created)
     return created
@@ -997,6 +1032,11 @@ def _normalize_edit_scope(raw: Optional[str]) -> str:
     return value if value in {"this-occurrence", "this-and-future"} else "this-occurrence"
 
 
+def _normalize_delete_scope(raw: Optional[str]) -> str:
+    value = str(raw or "this-occurrence").strip().lower()
+    return value if value in {"this-occurrence", "this-and-future"} else "this-occurrence"
+
+
 def _apply_future_series_updates(
     current_row: TodoItem,
     db: Session,
@@ -1004,6 +1044,7 @@ def _apply_future_series_updates(
     notes: str,
     due_at: Optional[str],
     recurrence: str,
+    workload_reset_mode: str,
 ) -> None:
     series_id = str(current_row.series_id or current_row.todo_id or "").strip()
     if not series_id:
@@ -1034,6 +1075,7 @@ def _apply_future_series_updates(
         future_row.notes = notes
         future_row.recurrence = recurrence
         future_row.series_id = series_id
+        future_row.workload_reset_mode = workload_reset_mode
         if shifted_due:
             future_row.due_at = shifted_due
             future_row.anchor_due_at = shifted_due
@@ -1064,6 +1106,7 @@ def create_todo(
     series_id: Optional[str] = None,
     occurrence_index: int = 0,
     anchor_due_at: Optional[str] = None,
+    workload_reset_mode: str = "none",
 ) -> TodoItem:
     existing = (
         db.query(TodoItem)
@@ -1074,6 +1117,7 @@ def create_todo(
         raise ValueError("Todo item already exists")
 
     normalized_recurrence = _normalize_recurrence(recurrence)
+    normalized_workload_reset_mode = _normalize_workload_reset_mode(workload_reset_mode)
     normalized_series_id = str(series_id or "").strip() or todo_id
     normalized_index = max(0, int(occurrence_index or 0))
     normalized_anchor = (str(anchor_due_at).strip() if anchor_due_at is not None else None) or due_at
@@ -1089,6 +1133,7 @@ def create_todo(
         series_id=normalized_series_id,
         occurrence_index=normalized_index,
         anchor_due_at=normalized_anchor,
+        workload_reset_mode=normalized_workload_reset_mode,
     )
     db.add(row)
     db.commit()
@@ -1108,6 +1153,7 @@ def update_todo(
     series_id: Optional[str] = None,
     occurrence_index: int = 0,
     anchor_due_at: Optional[str] = None,
+    workload_reset_mode: str = "none",
 ) -> Optional[TodoItem]:
     row, _ = update_todo_with_recurrence(
         user_id,
@@ -1121,6 +1167,7 @@ def update_todo(
         series_id=series_id,
         occurrence_index=occurrence_index,
         anchor_due_at=anchor_due_at,
+        workload_reset_mode=workload_reset_mode,
     )
     return row
 
@@ -1138,6 +1185,7 @@ def update_todo_with_recurrence(
     occurrence_index: int = 0,
     anchor_due_at: Optional[str] = None,
     edit_scope: str = "this-occurrence",
+    workload_reset_mode: str = "none",
 ) -> Tuple[Optional[TodoItem], Optional[TodoItem]]:
     row = (
         db.query(TodoItem)
@@ -1149,6 +1197,7 @@ def update_todo_with_recurrence(
 
     was_completed = bool(row.completed)
     normalized_recurrence = _normalize_recurrence(recurrence)
+    normalized_workload_reset_mode = _normalize_workload_reset_mode(workload_reset_mode)
     normalized_series_id = str(series_id or "").strip() or row.series_id or row.todo_id
     normalized_index = max(0, int(occurrence_index or 0))
     normalized_anchor = (str(anchor_due_at).strip() if anchor_due_at is not None else None) or row.anchor_due_at or due_at
@@ -1162,6 +1211,7 @@ def update_todo_with_recurrence(
     row.series_id = normalized_series_id
     row.occurrence_index = normalized_index
     row.anchor_due_at = normalized_anchor
+    row.workload_reset_mode = normalized_workload_reset_mode
     row.updated_at = datetime.now(timezone.utc)
 
     if normalized_edit_scope == "this-and-future":
@@ -1172,6 +1222,7 @@ def update_todo_with_recurrence(
             notes=notes,
             due_at=due_at,
             recurrence=normalized_recurrence,
+            workload_reset_mode=normalized_workload_reset_mode,
         )
 
     generated_row = None
@@ -1185,17 +1236,48 @@ def update_todo_with_recurrence(
     return row, generated_row
 
 
-def delete_todo(user_id: int, todo_id: str, db: Session) -> bool:
+def delete_todo(
+    user_id: int,
+    todo_id: str,
+    db: Session,
+    delete_scope: str = "this-occurrence",
+) -> list[str]:
     row = (
         db.query(TodoItem)
         .filter(TodoItem.user_id == user_id, TodoItem.todo_id == todo_id)
         .first()
     )
     if not row:
-        return False
-    db.delete(row)
+        return []
+
+    normalized_delete_scope = _normalize_delete_scope(delete_scope)
+    deleted_ids: list[str] = []
+
+    if normalized_delete_scope == "this-and-future":
+        series_id = str(row.series_id or row.todo_id or "").strip()
+        current_index = int(row.occurrence_index or 0)
+        if series_id:
+            rows = (
+                db.query(TodoItem)
+                .filter(
+                    TodoItem.user_id == user_id,
+                    TodoItem.series_id == series_id,
+                    TodoItem.occurrence_index >= current_index,
+                )
+                .order_by(TodoItem.occurrence_index.asc(), TodoItem.id.asc())
+                .all()
+            )
+            if rows:
+                deleted_ids = [str(item.todo_id) for item in rows]
+                for item in rows:
+                    db.delete(item)
+
+    if not deleted_ids:
+        deleted_ids = [str(row.todo_id)]
+        db.delete(row)
+
     db.commit()
-    return True
+    return deleted_ids
 
 
 # === Persistent auth sessions ===
@@ -1371,6 +1453,7 @@ class TodoItemPayload(BaseModel):
     occurrence_index: int = 0
     anchor_due_at: Optional[str] = None
     edit_scope: str = "this-occurrence"
+    workload_reset_mode: str = "none"
 
     @field_validator("id", "title")
     @classmethod
@@ -1412,6 +1495,11 @@ class TodoItemPayload(BaseModel):
     @classmethod
     def normalize_edit_scope(cls, v: str) -> str:
         return _normalize_edit_scope(v)
+
+    @field_validator("workload_reset_mode")
+    @classmethod
+    def normalize_workload_reset_mode(cls, v: str) -> str:
+        return _normalize_workload_reset_mode(v)
 
     @model_validator(mode="after")
     def validate_recurrence_requires_due(self):

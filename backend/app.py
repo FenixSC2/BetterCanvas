@@ -60,6 +60,8 @@ from auth import (
     create_todo,
     update_todo_with_recurrence,
     delete_todo,
+    prune_stale_workload_estimates,
+    SessionLocal,
     upsert_workload_estimate,
     delete_workload_estimate,
     get_assignment_weight_overrides,
@@ -2386,6 +2388,7 @@ def create_todo_endpoint(
             series_id=body.series_id,
             occurrence_index=body.occurrence_index,
             anchor_due_at=body.anchor_due_at,
+            workload_reset_mode=body.workload_reset_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -2401,6 +2404,7 @@ def create_todo_endpoint(
             "series_id": row.series_id,
             "occurrence_index": int(row.occurrence_index or 0),
             "anchor_due_at": row.anchor_due_at,
+            "workload_reset_mode": row.workload_reset_mode or "none",
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
@@ -2428,6 +2432,7 @@ def update_todo_endpoint(
         occurrence_index=body.occurrence_index,
         anchor_due_at=body.anchor_due_at,
         edit_scope=body.edit_scope,
+        workload_reset_mode=body.workload_reset_mode,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Todo item not found")
@@ -2443,6 +2448,7 @@ def update_todo_endpoint(
             "series_id": row.series_id,
             "occurrence_index": int(row.occurrence_index or 0),
             "anchor_due_at": row.anchor_due_at,
+            "workload_reset_mode": row.workload_reset_mode or "none",
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
@@ -2456,6 +2462,7 @@ def update_todo_endpoint(
             "series_id": generated_row.series_id,
             "occurrence_index": int(generated_row.occurrence_index or 0),
             "anchor_due_at": generated_row.anchor_due_at,
+            "workload_reset_mode": generated_row.workload_reset_mode or "none",
             "createdAt": generated_row.created_at.isoformat() if generated_row.created_at else None,
             "updatedAt": generated_row.updated_at.isoformat() if generated_row.updated_at else None,
         } if generated_row else None,
@@ -2465,12 +2472,18 @@ def update_todo_endpoint(
 @app.delete("/api/todos/{todo_id}")
 def delete_todo_endpoint(
     todo_id: str,
+    delete_scope: str = Query(default="this-occurrence"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Delete one personal todo item for the authenticated user."""
-    deleted = delete_todo(current_user.id, todo_id, db)
-    return {"success": deleted}
+    deleted_ids = delete_todo(
+        current_user.id,
+        todo_id,
+        db,
+        delete_scope=delete_scope,
+    )
+    return {"success": bool(deleted_ids), "deleted_ids": deleted_ids}
 
 @app.get("/api/debug/cache")
 def debug_cache():
@@ -2508,6 +2521,8 @@ async def on_startup():
         from auth import _initialize_database
         logger.info("Verifying database connectivity for %s", describe_database_target())
         await loop.run_in_executor(None, _initialize_database)
+        with SessionLocal() as db:
+            prune_stale_workload_estimates(db)
         logger.info("Database tables verified/created successfully.")
     except Exception as exc:
         logger.critical("Startup DB init failed: %s", exc)

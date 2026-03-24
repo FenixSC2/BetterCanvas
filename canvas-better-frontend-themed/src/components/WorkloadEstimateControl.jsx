@@ -282,6 +282,7 @@ export function WorkloadEstimateControl({
   courseId,
   assignmentId,
   compactLabels = false,
+  compactChecklist = false,
 }) {
   const [tick, setTick] = useState(0);
 
@@ -382,6 +383,13 @@ export function WorkloadEstimateControl({
     () => getChecklistProgress(checklistItems),
     [checklistItems],
   );
+  const useCompactChecklist = compactLabels || compactChecklist;
+  const compactChecklistExtraItems = useMemo(() => {
+    if (!useCompactChecklist) return [];
+    const nextId = checklistProgress.nextItem?.id;
+    if (!nextId) return [];
+    return checklistItems.filter((item) => item.id !== nextId);
+  }, [useCompactChecklist, checklistItems, checklistProgress.nextItem]);
   const remaining = computeRemainingHours(st);
   const isComplete = isChecklistMode
     ? checklistProgress.total > 0 && checklistProgress.done >= checklistProgress.total
@@ -583,12 +591,12 @@ export function WorkloadEstimateControl({
               </div>
             ) : (
               <>
-                {!compactLabels ? (
+                {!useCompactChecklist && (
                   <span className="effortPill">
                     <span className="muted">Checklist:</span>{" "}
                     <span className="mono">{Math.round(displayPct)}%</span>
                   </span>
-                ) : null}
+                )}
 
                 <span className="effortPill">
                   <span className="muted">Done:</span>{" "}
@@ -722,8 +730,8 @@ export function WorkloadEstimateControl({
             )
           ) : null}
 
-          {!compactComplete && isComplete ? (
-            <span className="effortDone">Complete</span>
+          {isComplete ? (
+            <span className="effortDone">{compactComplete ? "Done" : "Complete"}</span>
           ) : null}
         </div>
 
@@ -772,10 +780,42 @@ export function WorkloadEstimateControl({
       </div>
 
       {isChecklistMode ? (
-        <div className="effortChecklistSummary">
+        <div className={`effortChecklistSummary ${useCompactChecklist ? "isCompact" : ""}`}>
           {checklistProgress.total > 0 ? (
             <>
-              {checklistProgress.nextItem ? (
+              {useCompactChecklist ? (
+                <div className="effortChecklistCompactSummary">
+                  {checklistProgress.nextItem ? (
+                    <div className="effortChecklistCompactNextRow">
+                      <span className="effortChecklistCompactLabel">Next up:</span>
+                      <label className="effortChecklistPrimary effortChecklistPrimaryCompact">
+                        <input
+                          type="checkbox"
+                          className="themeCheckbox"
+                          checked={!!checklistProgress.nextItem.completed}
+                          onChange={(e) =>
+                            toggleChecklistItem(
+                              { courseId, assignmentId },
+                              checklistProgress.nextItem.id,
+                              e.target.checked,
+                            )
+                          }
+                        />
+                        <span
+                          className="effortChecklistPrimaryText effortChecklistCompactNext"
+                          title={checklistProgress.nextItem.text}
+                        >
+                          {checklistProgress.nextItem.text}
+                        </span>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="muted effortChecklistCompactNextRow isDone">
+                      All checklist items complete.
+                    </div>
+                  )}
+                </div>
+              ) : checklistProgress.nextItem ? (
                 <label className="effortChecklistPrimary">
                   <span
                     style={{
@@ -817,15 +857,29 @@ export function WorkloadEstimateControl({
                 </div>
               )}
 
-              <button
-                type="button"
-                className="effortChecklistExpandBtn"
-                onClick={() => setChecklistExpanded((v) => !v)}
-                aria-label={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
-                title={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
-              >
-                {checklistExpanded ? "▾" : "▸"}
-              </button>
+              {useCompactChecklist ? (
+                compactChecklistExtraItems.length > 0 ? (
+                  <button
+                    type="button"
+                    className="effortChecklistExpandBtn"
+                    onClick={() => setChecklistExpanded((v) => !v)}
+                    aria-label={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
+                    title={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
+                  >
+                    {checklistExpanded ? "▾" : "▸"}
+                  </button>
+                ) : null
+              ) : (
+                <button
+                  type="button"
+                  className="effortChecklistExpandBtn"
+                  onClick={() => setChecklistExpanded((v) => !v)}
+                  aria-label={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+                  title={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+                >
+                  {checklistExpanded ? "▾" : "▸"}
+                </button>
+              )}
             </>
           ) : showPreInputModeActions ? (
             <div className="muted" style={{ marginTop: 8 }}>
@@ -839,7 +893,7 @@ export function WorkloadEstimateControl({
         </div>
       ) : null}
 
-      {isChecklistMode && checklistExpanded && checklistProgress.total > 0 ? (
+      {isChecklistMode && checklistExpanded && checklistProgress.total > 0 && !useCompactChecklist ? (
         <div className="effortChecklistList">
           {checklistItems.map((item) => (
             <label key={item.id} className="effortChecklistItem">
@@ -864,6 +918,41 @@ export function WorkloadEstimateControl({
               </span>
             </label>
           ))}
+        </div>
+      ) : null}
+
+      {isChecklistMode && checklistExpanded && checklistProgress.total > 0 && useCompactChecklist ? (
+        <div className="effortChecklistCompactList">
+          {compactChecklistExtraItems.length > 0 ? (
+            compactChecklistExtraItems.map((item) => (
+              <label key={item.id} className="effortChecklistItem effortChecklistItemCompact">
+                <input
+                  type="checkbox"
+                  className="themeCheckbox"
+                  checked={!!item.completed}
+                  onChange={(e) =>
+                    toggleChecklistItem(
+                      { courseId, assignmentId },
+                      item.id,
+                      e.target.checked,
+                    )
+                  }
+                />
+                <span
+                  className={`effortChecklistItemText ${
+                    item.completed ? "isDone" : ""
+                  }`}
+                  title={item.text}
+                >
+                  {item.text}
+                </span>
+              </label>
+            ))
+          ) : (
+            <div className="muted" style={{ fontSize: 12 }}>
+              No additional checklist items.
+            </div>
+          )}
         </div>
       ) : null}
 

@@ -23,6 +23,9 @@ export function makeTodoId() {
 
 function normalizeTodo(raw) {
   const recurrence = String(raw?.recurrence || "none").trim().toLowerCase();
+  const workloadResetMode = String(raw?.workload_reset_mode || "none")
+    .trim()
+    .toLowerCase();
   return {
     id: String(raw?.id || ""),
     title: String(raw?.title || ""),
@@ -41,6 +44,12 @@ function normalizeTodo(raw) {
       ? Math.max(0, Number(raw.occurrence_index))
       : 0,
     anchor_due_at: raw?.anchor_due_at ? String(raw.anchor_due_at) : null,
+    workload_reset_mode:
+      workloadResetMode === "progress" ||
+      workloadResetMode === "checklist" ||
+      workloadResetMode === "both"
+        ? workloadResetMode
+        : "none",
     createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw?.updatedAt ? String(raw.updatedAt) : null,
   };
@@ -105,6 +114,7 @@ async function migrateLocalTodos(localTodos, serverTodos, opts = {}) {
           series_id: todo.series_id,
           occurrence_index: todo.occurrence_index,
           anchor_due_at: todo.anchor_due_at,
+          workload_reset_mode: todo.workload_reset_mode,
         },
         opts,
       ),
@@ -153,6 +163,7 @@ export async function createTodoItem(todo, opts = {}) {
       series_id: payload.series_id,
       occurrence_index: payload.occurrence_index,
       anchor_due_at: payload.anchor_due_at,
+      workload_reset_mode: payload.workload_reset_mode,
     },
     opts,
   );
@@ -172,7 +183,7 @@ export async function updateTodoItem(todoId, todo, opts = {}) {
     );
     writeCache(next);
     notifyTodosChanged();
-    return updated;
+    return { updatedTodo: updated, generatedTodo: null };
   }
   const res = await canvasApi.updateTodo(
     todoId,
@@ -186,6 +197,7 @@ export async function updateTodoItem(todoId, todo, opts = {}) {
       series_id: payload.series_id,
       occurrence_index: payload.occurrence_index,
       anchor_due_at: payload.anchor_due_at,
+      workload_reset_mode: payload.workload_reset_mode,
       edit_scope:
         todo?.edit_scope === "this-and-future"
           ? "this-and-future"
@@ -201,18 +213,40 @@ export async function updateTodoItem(todoId, todo, opts = {}) {
   if (maybeGenerated) next.push(maybeGenerated);
   writeCache(next);
   notifyTodosChanged();
-  return updated;
+  return { updatedTodo: updated, generatedTodo: maybeGenerated };
 }
 
 export async function deleteTodoItem(todoId, opts = {}) {
+  const deleteScope =
+    opts?.delete_scope === "this-and-future"
+      ? "this-and-future"
+      : "this-occurrence";
   if (isDemoMode()) {
-    const next = loadTodos().filter((item) => item.id !== todoId);
+    const current = loadTodos();
+    const target = current.find((item) => item.id === todoId);
+    const deletedIds =
+      deleteScope === "this-and-future" && target?.series_id
+        ? current
+            .filter(
+              (item) =>
+                item.series_id === target.series_id &&
+                item.occurrence_index >= target.occurrence_index,
+            )
+            .map((item) => item.id)
+        : [todoId];
+    const deletedIdSet = new Set(deletedIds.map((id) => String(id)));
+    const next = current.filter((item) => !deletedIdSet.has(String(item.id)));
     writeCache(next);
     notifyTodosChanged();
-    return;
+    return deletedIds;
   }
-  await canvasApi.deleteTodo(todoId, opts);
-  const next = loadTodos().filter((item) => item.id !== todoId);
+  const res = await canvasApi.deleteTodo(todoId, deleteScope, opts);
+  const deletedIds = Array.isArray(res?.deleted_ids)
+    ? res.deleted_ids.map((id) => String(id))
+    : [String(todoId)];
+  const deletedIdSet = new Set(deletedIds);
+  const next = loadTodos().filter((item) => !deletedIdSet.has(String(item.id)));
   writeCache(next);
   notifyTodosChanged();
+  return deletedIds;
 }

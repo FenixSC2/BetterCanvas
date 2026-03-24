@@ -171,9 +171,12 @@ export const canvasApi = {
         body: todo,
       }),
 
-    deleteTodo: (todoId, opts) =>
-      request(`/api/todos/${encodeURIComponent(todoId)}`, {
-        ...opts,
-        method: "DELETE",
-      }),
+    deleteTodo: (todoId, deleteScope = "this-occurrence", opts) =>
+      request(
+        `/api/todos/${encodeURIComponent(todoId)}?delete_scope=${encodeURIComponent(deleteScope)}`,
+        {
+          ...opts,
+          method: "DELETE",
+        },
+      ),
 };

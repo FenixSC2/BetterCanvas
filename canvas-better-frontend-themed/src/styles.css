@@ -1519,6 +1519,10 @@ details.expandable > .cardBody,
   gap: 10px;
 }
 
+.effortChecklistSummary.isCompact {
+  align-items: flex-start;
+}
+
 .effortChecklistPrimary {
   display: inline-flex;
   align-items: center;
@@ -1757,6 +1761,63 @@ details.expandable > .cardBody,
 
 .effortChecklistEditorLabel .effortChecklistTextInput {
   max-width: none;
+}
+
+.effortChecklistCompactSummary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.effortChecklistCompactPills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.effortChecklistCompactPills .effortPill {
+  font-size: 12px;
+  padding: 2px 7px;
+}
+
+.effortChecklistCompactNextRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.effortChecklistCompactLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.effortChecklistCompactNext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.effortChecklistPrimaryCompact {
+  min-width: 0;
+}
+
+.effortChecklistCompactList {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.effortChecklistItemCompact {
+  font-size: 12px;
 }
 
 .effortDivider {

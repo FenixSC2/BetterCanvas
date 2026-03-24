@@ -10,8 +10,14 @@ import {
   updateTodoItem,
 } from "../lib/todoStore";
 import {
+  adoptRecurringPreviewStates,
+  computeCurrentOccurrenceDueAt,
+  handoffRecurringEffortState,
+  hasStoredEffortState,
   importChecklistFromTodo,
   isAssignmentFavorited,
+  makeRecurringPreviewAssignmentId,
+  moveEffortState,
 } from "../lib/workloadEstimates";
 
 // WorkloadEstimateControl uses courseId/assignmentId to namespace localStorage keys.
@@ -138,6 +144,11 @@ function recurrenceLabel(value) {
   return "No repeat";
 }
 
+function normalizeWorkloadResetMode(value) {
+  const raw = String(value || "none").trim().toLowerCase();
+  return ["progress", "checklist", "both"].includes(raw) ? raw : "none";
+}
+
 /* ---------- TodoItemForm ---------- */
 // Renders a create or edit form inline in a card body.
 // onSubmit({ title, notes, due_at })
@@ -166,6 +177,9 @@ function TodoItemForm({
   const [appendToChecklist, setAppendToChecklist] = useState(
     initial.import_strategy !== "replace",
   );
+  const [workloadResetMode, setWorkloadResetMode] = useState(() =>
+    normalizeWorkloadResetMode(initial.workload_reset_mode),
+  );
   const [editScope, setEditScope] = useState(
     initial.edit_scope === "this-and-future"
       ? "this-and-future"
@@ -173,10 +187,22 @@ function TodoItemForm({
   );
   const [err, setErr] = useState("");
   const titleRef = useRef(null);
+  const taskInputRefs = useRef([]);
+  const pendingTaskFocusIndexRef = useRef(null);
 
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const nextFocusIndex = pendingTaskFocusIndexRef.current;
+    if (!Number.isInteger(nextFocusIndex)) return;
+    const nextInput = taskInputRefs.current[nextFocusIndex];
+    if (!nextInput) return;
+    nextInput.focus();
+    nextInput.select();
+    pendingTaskFocusIndexRef.current = null;
+  }, [taskRows]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -199,6 +225,7 @@ function TodoItemForm({
       series_id: String(initial.series_id || initial.id || "").trim() || null,
       occurrence_index: Number(initial.occurrence_index || 0) || 0,
       anchor_due_at: String(initial.anchor_due_at || "").trim() || dueAt,
+      workload_reset_mode: workloadResetMode,
       edit_scope: editScope,
       task_items: sanitizeTaskRows(taskRows),
       import_strategy: appendToChecklist ? "append" : "replace",
@@ -257,6 +284,7 @@ function TodoItemForm({
             setRecurrence(normalizeRecurrence(e.target.value));
             if (err) setErr("");
           }}
+          className="select"
           style={{ width: "auto", maxWidth: 260 }}
         >
           <option value="none">Does not repeat</option>
@@ -275,10 +303,30 @@ function TodoItemForm({
           <select
             value={editScope}
             onChange={(e) => setEditScope(e.target.value)}
+            className="select"
             style={{ width: "auto", maxWidth: 260 }}
           >
             <option value="this-occurrence">This occurrence only</option>
             <option value="this-and-future">This and future occurrences</option>
+          </select>
+        </div>
+      ) : null}
+
+      {recurrence !== "none" ? (
+        <div style={{ display: "grid", gap: 4 }}>
+          <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+            On each repeat, reset workload
+          </label>
+          <select
+            value={workloadResetMode}
+            onChange={(e) => setWorkloadResetMode(normalizeWorkloadResetMode(e.target.value))}
+            className="select"
+            style={{ width: "auto", maxWidth: 320 }}
+          >
+            <option value="none">Do not reset workload</option>
+            <option value="progress">Reset progress only</option>
+            <option value="checklist">Uncheck checklist items only</option>
+            <option value="both">Reset progress and uncheck checklist items</option>
           </select>
         </div>
       ) : null}
@@ -318,6 +366,9 @@ function TodoItemForm({
               style={{ display: "flex", gap: 8, alignItems: "center" }}
             >
               <input
+                ref={(node) => {
+                  taskInputRefs.current[idx] = node;
+                }}
                 type="text"
                 value={row}
                 onChange={(e) => {
@@ -328,6 +379,7 @@ function TodoItemForm({
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
                   e.preventDefault();
+                  pendingTaskFocusIndexRef.current = idx + 1;
                   setTaskRows((prev) => {
                     const next = [...prev];
                     next.splice(idx + 1, 0, "");
@@ -408,8 +460,15 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
     assignmentId: todo.id,
   });
 
-  const urgencyVariant = getUrgencyVariant(todo);
-  const urgencyLabel = getUrgencyLabel(todo);
+  const effortAssignmentId = todo.id;
+
+  // For recurring todos, display the current occurrence date rather than the
+  // original DB anchor date (e.g. show Mar 24 not Mar 18 for a daily repeat).
+  const isRecurring = normalizeRecurrence(todo.recurrence) !== "none";
+  const effectiveDueAt = (isRecurring && computeCurrentOccurrenceDueAt(todo)) || todo.due_at;
+
+  const urgencyVariant = getUrgencyVariant({ ...todo, due_at: effectiveDueAt });
+  const urgencyLabel = getUrgencyLabel({ ...todo, due_at: effectiveDueAt });
 
   const badgeClass =
     urgencyVariant === "danger"
@@ -510,7 +569,7 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
                 </span>
               ) : null}
               <span className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                {fmtDue(todo.due_at)}
+                {fmtDue(effectiveDueAt)}
               </span>
             </div>
           </div>
@@ -528,9 +587,7 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
             <button
               type="button"
               className="btn btnDanger"
-              onClick={() => {
-                if (window.confirm(`Delete "${todo.title}"?`)) onDelete(todo.id);
-              }}
+              onClick={() => onDelete(todo)}
               style={{ fontSize: "var(--fontSm)", padding: "4px 10px" }}
             >
               Delete
@@ -615,7 +672,7 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
         <div style={{ marginTop: 14, paddingLeft: 26 }}>
           <WorkloadEstimateControl
             courseId={TODO_COURSE_ID}
-            assignmentId={todo.id}
+            assignmentId={effortAssignmentId}
           />
         </div>
       </div>
@@ -647,12 +704,98 @@ function SectionHeading({ label, count }) {
   );
 }
 
+function DeleteRecurringTodoModal({ todo, onClose, onConfirm }) {
+  if (!todo) return null;
+
+  return (
+    <div className="modalOverlay" onMouseDown={onClose} role="presentation">
+      <div
+        className="modalPanel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete recurring to-do"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="modalHeader">
+          <div>
+            <div className="h2">Delete recurring to-do</div>
+            <div className="muted">
+              Choose how much of this recurring series to remove.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="iconBtn"
+            onClick={onClose}
+            aria-label="Close delete dialog"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M18 6 6 18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M6 6l12 12"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="modalBody" style={{ display: "grid", gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>{todo.title}</div>
+            <div className="muted" style={{ marginTop: 4, fontSize: "var(--fontSm)" }}>
+              {recurrenceLabel(todo.recurrence)}{todo.due_at ? ` • ${fmtDue(todo.due_at)}` : ""}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            <button
+              type="button"
+              className="btn btnDanger"
+              onClick={() => onConfirm("this-occurrence")}
+              style={{ justifyContent: "flex-start" }}
+            >
+              Delete this occurrence only
+            </button>
+            <button
+              type="button"
+              className="btn btnDanger"
+              onClick={() => onConfirm("this-and-future")}
+              style={{ justifyContent: "flex-start" }}
+            >
+              Delete this and future occurrences
+            </button>
+            <button type="button" className="btn" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- TodoPage ---------- */
 
 export function TodoPage() {
   const [todos, setTodos] = useState(() => loadTodos());
   const [showNewForm, setShowNewForm] = useState(false);
   const [focusedTodoId, setFocusedTodoId] = useState("");
+  const [pendingDeleteTodo, setPendingDeleteTodo] = useState(null);
   const [workloadTick, setWorkloadTick] = useState(0);
 
   // Keep in sync when another tab or the planner writes to the store
@@ -660,11 +803,14 @@ export function TodoPage() {
     let active = true;
 
     syncTodos().then((serverTodos) => {
+      adoptRecurringPreviewStates(serverTodos, { courseId: TODO_COURSE_ID });
       if (active) setTodos(serverTodos);
     });
 
     function onTodosChanged() {
-      setTodos(loadTodos());
+      const nextTodos = loadTodos();
+      adoptRecurringPreviewStates(nextTodos, { courseId: TODO_COURSE_ID });
+      setTodos(nextTodos);
     }
     function onStorage(e) {
       if (e.key === "canvassist:todos") onTodosChanged();
@@ -741,6 +887,7 @@ export function TodoPage() {
       series_id: draft?.series_id || null,
       occurrence_index: Number(draft?.occurrence_index || 0) || 0,
       anchor_due_at: draft?.anchor_due_at || draft?.due_at || null,
+      workload_reset_mode: normalizeWorkloadResetMode(draft?.workload_reset_mode),
       createdAt: now,
     };
     await createTodoItem(newItem);
@@ -771,6 +918,10 @@ export function TodoPage() {
       series_id: draft?.series_id || existing.series_id || existing.id,
       occurrence_index: Number(draft?.occurrence_index ?? existing.occurrence_index ?? 0) || 0,
       anchor_due_at: draft?.anchor_due_at || existing.anchor_due_at || draft?.due_at || null,
+      workload_reset_mode:
+        normalizeWorkloadResetMode(draft?.workload_reset_mode) ||
+        existing.workload_reset_mode ||
+        "none",
       edit_scope:
         draft?.edit_scope === "this-and-future"
           ? "this-and-future"
@@ -791,11 +942,60 @@ export function TodoPage() {
   async function handleToggleComplete(id) {
     const existing = todos.find((t) => t.id === id);
     if (!existing) return;
-    await updateTodoItem(id, { ...existing, completed: !existing.completed });
+    const result = await updateTodoItem(id, { ...existing, completed: !existing.completed });
+
+    const nextCompleted = !existing.completed;
+    if (nextCompleted && result?.generatedTodo?.id) {
+      const generatedTodo = result.generatedTodo;
+      const previewAssignmentId = makeRecurringPreviewAssignmentId(
+        generatedTodo.series_id || generatedTodo.id,
+        generatedTodo.due_at || generatedTodo.anchor_due_at,
+      );
+
+      if (
+        previewAssignmentId &&
+        hasStoredEffortState({
+          courseId: TODO_COURSE_ID,
+          assignmentId: previewAssignmentId,
+        })
+      ) {
+        moveEffortState({
+          courseId: TODO_COURSE_ID,
+          fromAssignmentId: previewAssignmentId,
+          toAssignmentId: generatedTodo.id,
+        });
+      } else {
+        handoffRecurringEffortState(
+          {
+            courseId: TODO_COURSE_ID,
+            fromAssignmentId: id,
+            toAssignmentId: generatedTodo.id,
+          },
+          existing.workload_reset_mode || "none",
+        );
+      }
+    }
   }
 
-  async function handleDelete(id) {
-    await deleteTodoItem(id);
+  async function handleDelete(id, deleteScope = "this-occurrence") {
+    await deleteTodoItem(id, { delete_scope: deleteScope });
+  }
+
+  function handleRequestDelete(todo) {
+    if (todo?.recurrence && todo.recurrence !== "none") {
+      setPendingDeleteTodo(todo);
+      return;
+    }
+    if (window.confirm(`Delete "${todo.title}"?`)) {
+      handleDelete(todo.id);
+    }
+  }
+
+  async function handleConfirmDelete(deleteScope) {
+    const target = pendingDeleteTodo;
+    setPendingDeleteTodo(null);
+    if (!target?.id) return;
+    await handleDelete(target.id, deleteScope);
   }
 
   /* ---------- derive sections ---------- */
@@ -932,7 +1132,7 @@ export function TodoPage() {
               todo={t}
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -949,7 +1149,7 @@ export function TodoPage() {
               todo={t}
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -966,7 +1166,7 @@ export function TodoPage() {
               todo={t}
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDelete={handleRequestDelete}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -995,7 +1195,7 @@ export function TodoPage() {
                 todo={t}
                 onToggleComplete={handleToggleComplete}
                 onEdit={handleEdit}
-                onDelete={handleDelete}
+                onDelete={handleRequestDelete}
                 isFocused={String(focusedTodoId) === String(t.id)}
               />
             ))}
@@ -1014,6 +1214,12 @@ export function TodoPage() {
           </div>
         </div>
       ) : null}
+
+      <DeleteRecurringTodoModal
+        todo={pendingDeleteTodo}
+        onClose={() => setPendingDeleteTodo(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

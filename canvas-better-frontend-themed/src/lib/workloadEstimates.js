@@ -652,3 +652,174 @@ export function removeChecklistItem({ courseId, assignmentId }, itemId) {
   const nextItems = prev.checklistItems.filter((item) => item.id !== itemId);
   setChecklistItems({ courseId, assignmentId }, nextItems);
 }
+
+// -----------------------------
+// Recurring todo helpers
+// -----------------------------
+
+function _normalizeRecurringPreviewDueAt(dueAt) {
+  return String(dueAt || "").trim().slice(0, 19);
+}
+
+export function makeRecurringPreviewAssignmentId(seriesId, dueAt) {
+  const safeSeriesId = String(seriesId || "").trim();
+  const safeDueAt = _normalizeRecurringPreviewDueAt(dueAt);
+  if (!safeSeriesId || !safeDueAt) return "";
+  return `preview:${safeSeriesId}:${safeDueAt}`;
+}
+
+function _normalizeTodoRecurrence(value) {
+  const r = String(value || "none").trim().toLowerCase();
+  return ["daily", "weekly", "monthly", "yearly"].includes(r) ? r : "none";
+}
+
+function _addDaysLocal(date, n) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function _addMonthsLocal(date, months) {
+  const d = new Date(date.getTime());
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return d;
+}
+
+function _nextRecurringDate(date, recurrence) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
+  if (recurrence === "daily") return _addDaysLocal(date, 1);
+  if (recurrence === "weekly") return _addDaysLocal(date, 7);
+  if (recurrence === "monthly") return _addMonthsLocal(date, 1);
+  if (recurrence === "yearly") return _addMonthsLocal(date, 12);
+  return null;
+}
+
+function _formatOccurrenceDueAt(date) {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
+}
+
+/**
+ * Returns the most recent occurrence of a recurring todo that falls on today's
+ * calendar date or earlier, as a local ISO datetime string. Uses start-of-tomorrow
+ * as the cutoff so an occurrence due at e.g. 4:20 AM still counts as today's
+ * occurrence even when checked before 4:20 AM.
+ */
+export function computeCurrentOccurrenceDueAt(todo) {
+  const recurrence = _normalizeTodoRecurrence(todo?.recurrence);
+  if (recurrence === "none") return null;
+  const seed = new Date(todo?.due_at || todo?.anchor_due_at || "");
+  if (!Number.isFinite(seed.getTime())) return null;
+  const startOfTomorrow = new Date();
+  startOfTomorrow.setHours(0, 0, 0, 0);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+  let cursor = seed;
+  let last = cursor;
+  let guard = 0;
+  while (cursor.getTime() < startOfTomorrow.getTime() && guard < 2000) {
+    last = cursor;
+    const next = _nextRecurringDate(cursor, recurrence);
+    if (!next) break;
+    cursor = next;
+    guard++;
+  }
+  return _formatOccurrenceDueAt(last);
+}
+
+export function hasStoredEffortState({ courseId, assignmentId }) {
+  return _readState({ courseId, assignmentId }) !== null;
+}
+
+export function moveEffortState({ courseId, fromAssignmentId, toAssignmentId }) {
+  const fromId = String(fromAssignmentId || "").trim();
+  const toId = String(toAssignmentId || "").trim();
+  if (!fromId || !toId || fromId === toId) return false;
+  const from = _readState({ courseId, assignmentId: fromId });
+  if (!from) return false;
+  const existing = _readState({ courseId, assignmentId: toId });
+  const fromNorm = normalizeState(from);
+  const existingNorm = normalizeState(existing);
+  const fromHasData =
+    fromNorm.estimateHours > 0 || fromNorm.checklistItems.length > 0;
+  const existingHasData =
+    existingNorm.estimateHours > 0 || existingNorm.checklistItems.length > 0;
+  const chosen =
+    existingHasData && !fromHasData ? existingNorm : fromNorm;
+  _writeState(
+    { courseId, assignmentId: toId },
+    { ...chosen, updatedAt: Date.now() }
+  );
+  // "Clear" source by writing null — _readState returns null for stored null,
+  // so hasStoredEffortState returns false for this key going forward.
+  _writeState({ courseId, assignmentId: fromId }, null);
+  emitChanged({ courseId, assignmentId: fromId });
+  emitChanged({ courseId, assignmentId: toId });
+  return true;
+}
+
+export function adoptRecurringPreviewStates(todos, { courseId = "todo" } = {}) {
+  const items = Array.isArray(todos) ? todos : [];
+  for (const todo of items) {
+    if (!todo || todo.completed || !todo.due_at) continue;
+    const previewAssignmentId = makeRecurringPreviewAssignmentId(
+      todo.series_id || todo.id,
+      todo.due_at || todo.anchor_due_at
+    );
+    if (!previewAssignmentId || previewAssignmentId === String(todo.id)) continue;
+    if (!hasStoredEffortState({ courseId, assignmentId: previewAssignmentId })) continue;
+    moveEffortState({
+      courseId,
+      fromAssignmentId: previewAssignmentId,
+      toAssignmentId: todo.id,
+    });
+  }
+}
+
+export function handoffRecurringEffortState({
+  courseId = "todo",
+  completedTodoId,
+  generatedTodoId,
+}) {
+  return moveEffortState({
+    courseId,
+    fromAssignmentId: completedTodoId,
+    toAssignmentId: generatedTodoId,
+  });
+}
+
+export function seedRecurringPreviewState({
+  courseId = "todo",
+  sourceAssignmentId,
+  previewAssignmentId,
+}) {
+  const sourceId = String(sourceAssignmentId || "").trim();
+  const previewId = String(previewAssignmentId || "").trim();
+  if (!sourceId || !previewId || sourceId === previewId) return false;
+  if (hasStoredEffortState({ courseId, assignmentId: previewId })) return false;
+  const source = getEffortState({ courseId, assignmentId: sourceId });
+  const sourceChecklist = normalizeChecklistItems(source?.checklistItems).map(
+    (item) => ({ ...item, completed: false })
+  );
+  const hasEstimate = Number(source?.estimateHours) > 0;
+  const hasChecklist = sourceChecklist.length > 0;
+  if (!hasEstimate && !hasChecklist) return false;
+  const next = {
+    ...source,
+    completedHours: 0,
+    completed: false,
+    checklistItems: sourceChecklist,
+    updatedAt: Date.now(),
+  };
+  _writeState({ courseId, assignmentId: previewId }, next);
+  emitChanged({ courseId, assignmentId: previewId });
+  return true;
+}
