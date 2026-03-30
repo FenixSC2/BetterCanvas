@@ -37,6 +37,12 @@ export function ForgotPassword() {
         <h1 className="authTitle">Reset your password</h1>
         <p className="authSubtitle">Enter the email linked to your account.</p>
 
+        <div className="authWarning" style={{ marginBottom: "16px" }}>
+          Password reset emails are temporarily limited by our email provider and only work for
+          pre-approved addresses right now. If you need to reset your password, please contact
+          support for help.
+        </div>
+
         {localError && (
           <div className="authError" style={{ marginBottom: "16px" }}>
             {localError}
