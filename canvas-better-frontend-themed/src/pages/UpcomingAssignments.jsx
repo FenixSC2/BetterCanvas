@@ -6,7 +6,7 @@ import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
-import { loadTodos, syncTodos } from "../lib/todoStore";
+import { loadTodos, syncTodos, updateTodoItem } from "../lib/todoStore";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
 function fmtDue(dt) {
@@ -395,6 +395,13 @@ export function UpcomingAssignments() {
       );
     };
   }, []);
+
+  async function handleToggleTodoComplete(id) {
+    const existing = todos.find((t) => t.id === id);
+    if (!existing) return;
+    await updateTodoItem(id, { ...existing, completed: !existing.completed });
+    setTodos(loadTodos());
+  }
 
   const todoItems = useMemo(() => todos.map(normalizeTodo), [todos]);
   const datedTodoItems = useMemo(
@@ -1047,9 +1054,19 @@ export function UpcomingAssignments() {
                         <div className="assignmentTop">
                           <div className="assignmentTitleRow">
                             <div className="assignmentTitleRowLeft">
+                              {todoItem ? (
+                                <input
+                                  type="checkbox"
+                                  className="themeCheckbox"
+                                  checked={!!a.completed}
+                                  onChange={() => handleToggleTodoComplete(a.id)}
+                                  style={{ marginTop: 2, flexShrink: 0 }}
+                                  aria-label={a.completed ? "Mark incomplete" : "Mark complete"}
+                                />
+                              ) : null}
                               <span className="assignmentNameWrap">
                                 {isFavorited ? <FavoriteMarker /> : null}
-                                <span className="assignmentName">{a.name}</span>
+                                <span className="assignmentName" style={todoItem && a.completed ? { textDecoration: "line-through" } : undefined}>{a.name}</span>
                               </span>
 
                               <span
@@ -1238,9 +1255,19 @@ export function UpcomingAssignments() {
                           <div className="assignmentTop">
                             <div className="assignmentTitleRow">
                               <div className="assignmentTitleRowLeft">
+                                {todoItem ? (
+                                  <input
+                                    type="checkbox"
+                                    className="themeCheckbox"
+                                    checked={!!a.completed}
+                                    onChange={() => handleToggleTodoComplete(a.id)}
+                                    style={{ marginTop: 2, flexShrink: 0 }}
+                                    aria-label={a.completed ? "Mark incomplete" : "Mark complete"}
+                                  />
+                                ) : null}
                                 <span className="assignmentNameWrap">
                                   {isFavorited ? <FavoriteMarker /> : null}
-                                  <span className="assignmentName">{a.name}</span>
+                                  <span className="assignmentName" style={todoItem && a.completed ? { textDecoration: "line-through" } : undefined}>{a.name}</span>
                                 </span>
 
                                 <span
