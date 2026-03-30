@@ -455,7 +455,7 @@ function AnchoredPopover({
 export function GradePerformance({ demoMode = false }) {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchScope, setSearchScope] = useState("all");
+  const [searchScope, setSearchScope] = useState("course");
   const [defaultPrediction, setDefaultPrediction] = useState("85");
   const [predictedById, setPredictedById] = useState({});
   const [predictionDraftById, setPredictionDraftById] = useState({});
@@ -483,6 +483,7 @@ export function GradePerformance({ demoMode = false }) {
   );
   const [editingKey, setEditingKey] = useState("");
   const [editWeightInput, setEditWeightInput] = useState("");
+  const [editingPredictionKey, setEditingPredictionKey] = useState(null);
   const [editUnlockScore, setEditUnlockScore] = useState(false);
   const [editScoreInput, setEditScoreInput] = useState("");
   const [lastProjectionDelta, setLastProjectionDelta] = useState(null);
@@ -1034,6 +1035,44 @@ export function GradePerformance({ demoMode = false }) {
     recordProjectionDelta(next, weightOverridesById, nextScoreOverrides);
   }
 
+  function applyDefaultToUnpredicted() {
+    const defaultPred = clampPercent(defaultPrediction, 85);
+    const next = { ...predictedById };
+    const nextDrafts = { ...(predictionDraftById || {}) };
+    for (const assignment of filteredAssignments) {
+      const key = assignmentIdentity(assignment);
+      if (next[key] != null) continue;
+      const effectiveWeight = Number(weightOverridesById?.[key]?.weight_points);
+      const basePoints = Number(assignment?.points_possible);
+      const hasEffectivePoints =
+        (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
+        (Number.isFinite(basePoints) && basePoints > 0);
+      const submitted = assignment?.submitted === true;
+      const hasScore = Number.isFinite(Number(assignment?.score));
+      if (!hasEffectivePoints || (submitted && hasScore)) continue;
+      next[key] = String(defaultPred);
+      delete nextDrafts[key];
+    }
+    setPredictedById(next);
+    setPredictionDraftById(nextDrafts);
+    recordProjectionDelta(next);
+  }
+
+  function applyActualScoresToVisible() {
+    const next = { ...predictedById };
+    const nextDrafts = { ...(predictionDraftById || {}) };
+    for (const assignment of filteredAssignments) {
+      const key = assignmentIdentity(assignment);
+      const pct = toPct(assignment?.score, assignment?.points_possible);
+      if (pct == null) continue;
+      next[key] = String(pct);
+      delete nextDrafts[key];
+    }
+    setPredictedById(next);
+    setPredictionDraftById(nextDrafts);
+    recordProjectionDelta(next);
+  }
+
   function getWeightInputValue(assignment) {
     const key = assignmentIdentity(assignment);
     const saved = Number(weightOverridesById?.[key]?.weight_points);
@@ -1386,17 +1425,32 @@ export function GradePerformance({ demoMode = false }) {
                   text="The weighted-final, target, and minimum-needed calculators below all use this selected class."
                 />
               </span>
-              <select
-                className="select"
-                value={selectedCourseId}
-                onChange={(e) => setSelectedCourseId(e.target.value)}
-              >
-                {summaries.map((course) => (
-                  <option key={course.id} value={String(course.id)}>
-                    {course.name}
-                  </option>
-                ))}
-              </select>
+              <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                <select
+                  className="select"
+                  style={{ flex: "1 1 auto" }}
+                  value={selectedCourseId}
+                  onChange={(e) => setSelectedCourseId(e.target.value)}
+                >
+                  {summaries.map((course) => (
+                    <option key={course.id} value={String(course.id)}>
+                      {course.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedCourse?.html_url ? (
+                  <a
+                    className="btn"
+                    href={`${selectedCourse.html_url}/grades`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open course grades in Canvas"
+                    style={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                  >
+                    View Grades
+                  </a>
+                ) : null}
+              </div>
             </label>
           </div>
 
@@ -1852,8 +1906,25 @@ export function GradePerformance({ demoMode = false }) {
               type="button"
               className="btn"
               onClick={applyDefaultPredictionToVisible}
+              title="Apply the default % to all visible ungraded assignments"
             >
-              Apply Default To Visible Ungraded
+              Apply Default To All Ungraded
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={applyDefaultToUnpredicted}
+              title="Apply the default % only to visible ungraded assignments that don't already have a prediction"
+            >
+              Apply Default To Unpredicted
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={applyActualScoresToVisible}
+              title="Use each assignment's actual Canvas score as its prediction for visible scored items"
+            >
+              Apply Actual Scores
             </button>
             <button
               type="button"
@@ -1902,46 +1973,43 @@ export function GradePerformance({ demoMode = false }) {
                   searchScope === "all" ? formatCourseLabel(assignment) : null;
                 const predictValue = predictedById[key] ?? "";
                 const draftPredictValue = getPredictionDraftValue(key);
-                const hasPendingPredictionDraft =
-                  String(draftPredictValue) !== String(predictValue);
                 const effectivePoints = row?.effectivePoints;
                 const basePoints = row?.basePoints;
                 const saving = savingWeightKey === key;
                 const hasScoreOverride = !!scoreOverridesById?.[key]?.enabled;
                 const isEditingThis = editingKey === key;
 
-                let statusText = "Not submitted or graded yet";
+                let statusText = "Not submitted or scored";
                 if (row?.countedAsGraded) {
-                  statusText = `Submitted and scored ${displayGrade(`${fmtPoints(row.score)} (${fmtPct(toPct(row.score, row.effectivePoints))})`)}`;
-                  if (hasScoreOverride) {
-                    statusText = `Score unlocked override applied: ${displayGrade(`${fmtPoints(row.score)} (${fmtPct(toPct(row.score, row.effectivePoints))})`)}`;
-                  }
+                  statusText = hasScoreOverride ? "Score unlocked" : "Submitted and scored";
                 } else if (row?.pendingScore) {
-                  statusText =
-                    "Score exists but submission is not marked submitted, so it is excluded from graded calculations";
+                  statusText = "Scored but not submitted";
                 } else if (assignment?.submitted === true) {
-                  statusText = "Submitted but no score yet";
+                  statusText = "Submitted but not scored yet";
                 }
 
                 return (
                   <li key={key} className="gradeCalcListItem">
                     <div className="gradeCalcListMain">
-                      <div className="gradeCalcItemTitle">
-                        {assignment.name}
+                      <div className="gradeCalcItemTitleRow">
+                        <span className="gradeCalcItemTitle">{assignment.name}</span>
+                        {row?.isWeightOverridden ? (
+                          <span className="badge badgeNeutral">Custom weight</span>
+                        ) : null}
+                        {hasScoreOverride ? (
+                          <span className="badge badgeWarn">Score modified</span>
+                        ) : null}
                       </div>
                       {courseLabel ? (
                         <div className="muted">{courseLabel}</div>
                       ) : null}
                       <div className="muted">
-                        Effective weight:{" "}
-                        {Number.isFinite(effectivePoints)
-                          ? `${fmtPoints(effectivePoints)} pts`
-                          : "Not set"}
+                        Canvas weight:{" "}
                         {Number.isFinite(basePoints)
-                          ? ` • Canvas weight: ${fmtPoints(basePoints)} pts`
-                          : ""}
-                        {row?.isWeightOverridden
-                          ? " • Custom override saved"
+                          ? `${fmtPoints(basePoints)} pts`
+                          : "Not set"}
+                        {row?.isWeightOverridden && Number.isFinite(effectivePoints)
+                          ? ` (Effective weight: ${fmtPoints(effectivePoints)} pts)`
                           : ""}
                       </div>
                       <div className="muted">{statusText}</div>
@@ -1949,79 +2017,107 @@ export function GradePerformance({ demoMode = false }) {
 
                     <div className="gradeCalcListControls">
                       <div className="gradeCalcListMeta">
-                        {row?.isWeightOverridden ? (
-                          <span className="badge badgeNeutral">
-                            Custom weight
-                          </span>
-                        ) : null}
-
                         {!row?.hasEffectivePoints ? (
-                          <div className="gradeCalcLockedMeta">
-                            <span className="badge badgeNeutral gradeCalcNoImpactBadge">
-                              No grade impact (0 pts)
-                            </span>
+                          <span className="badge badgeNeutral gradeCalcNoImpactBadge">
+                            No grade impact (0 pts)
+                          </span>
+                        ) : row?.countedAsGraded ? (
+                          <span
+                            className={`${gradeSensitiveBadgeClass("badgeSuccess")} gradeCalcScorePill`}
+                          >
+                            {displayGrade(
+                              fmtPct(
+                                toPct(row?.score, row?.effectivePoints),
+                              ),
+                            )}
+                          </span>
+                        ) : editingPredictionKey === key ? (
+                          <div className="gradeCalcPredictInputRow">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              autoFocus
+                              value={draftPredictValue}
+                              placeholder={String(
+                                clampPercent(defaultPrediction, 85),
+                              )}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setPredictionDraftById((prev) => ({
+                                  ...(prev || {}),
+                                  [key]: next,
+                                }));
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitPredictionDraft(key, e.currentTarget.value);
+                                  setEditingPredictionKey(null);
+                                } else if (e.key === "Escape") {
+                                  setEditingPredictionKey(null);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="btn gradeCalcApplyBtn"
+                              onClick={() => {
+                                commitPredictionDraft(key, draftPredictValue);
+                                setEditingPredictionKey(null);
+                              }}
+                            >
+                              Apply
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => setEditingPredictionKey(null)}
+                            >
+                              Cancel
+                            </button>
                           </div>
-                        ) : !row?.countedAsGraded ? (
-                          <label className="gradeCalcPredictField">
-                            <span className="muted">Predict %</span>
-                            <div className="gradeCalcPredictInputRow">
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={draftPredictValue}
-                                placeholder={String(
-                                  clampPercent(defaultPrediction, 85),
-                                )}
-                                onChange={(e) => {
-                                  const next = e.target.value;
-                                  setPredictionDraftById((prev) => ({
-                                    ...(prev || {}),
-                                    [key]: next,
-                                  }));
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    commitPredictionDraft(
-                                      key,
-                                      e.currentTarget.value,
-                                    );
-                                  }
-                                }}
-                              />
+                        ) : (
+                          <div className="gradeCalcPredictPillRow">
+                            {predictValue ? (
                               <button
                                 type="button"
-                                className="btn gradeCalcApplyBtn"
-                                onClick={() =>
-                                  commitPredictionDraft(key, draftPredictValue)
-                                }
-                                disabled={!hasPendingPredictionDraft}
+                                className="gradeCalcPredictPill"
+                                onClick={() => {
+                                  setPredictionDraftById((prev) => ({
+                                    ...(prev || {}),
+                                    [key]: predictValue,
+                                  }));
+                                  setEditingPredictionKey(key);
+                                }}
+                                title="Click to edit prediction"
                               >
-                                Apply
+                                {displayGrade(fmtPct(Number(predictValue)))}
                               </button>
-                            </div>
-                          </label>
-                        ) : (
-                          <div className="gradeCalcLockedMeta">
-                            <span
-                              className={`badge ${hasScoreOverride ? "badgeWarn" : "badgeNeutral"} gradeCalcLockBadge`}
-                            >
-                              {hasScoreOverride
-                                ? "Score modified from original"
-                                : "Prediction locked by graded status"}
-                            </span>
-                            {row?.countedAsGraded ? (
-                              <span
-                                className={`${gradeSensitiveBadgeClass("badgeSuccess")} gradeCalcAssignmentScoreBadge`}
+                            ) : (
+                              <button
+                                type="button"
+                                className="gradeCalcPredictPill gradeCalcPredictPillEmpty"
+                                onClick={() => setEditingPredictionKey(key)}
+                                title="Click to add a prediction"
                               >
-                                Score:{" "}
-                                {displayGrade(
-                                  fmtPct(
-                                    toPct(row?.score, row?.effectivePoints),
-                                  ),
-                                )}
-                              </span>
+                                Predict score
+                              </button>
+                            )}
+                            {row?.pendingScore ? (
+                              <button
+                                type="button"
+                                className="btn gradeCalcUseScoreBtn"
+                                onClick={() => {
+                                  const pct = toPct(row.score, row.effectivePoints);
+                                  if (pct != null) {
+                                    commitPredictionDraft(key, String(pct));
+                                  }
+                                }}
+                                title="Apply the existing Canvas score as a prediction"
+                              >
+                                Use actual score ({displayGrade(fmtPct(toPct(row.score, row.effectivePoints)))})
+                              </button>
                             ) : null}
                           </div>
                         )}
@@ -2033,37 +2129,50 @@ export function GradePerformance({ demoMode = false }) {
                         ) : null}
                       </div>
 
-                      <button
-                        type="button"
-                        ref={(node) => {
-                          if (node) editAnchorRefs.current[key] = node;
-                          else delete editAnchorRefs.current[key];
-                        }}
-                        className="effortGearBtn gradeCalcEditBtn"
-                        onClick={() =>
-                          isEditingThis
-                            ? closeEditPopup()
-                            : openEditPopup(assignment)
-                        }
-                        title="Edit assignment assumptions"
-                        aria-label="Edit assignment assumptions"
-                        aria-expanded={isEditingThis}
-                      >
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          aria-hidden="true"
+                      <div className="gradeCalcRowActions">
+                        {assignment?.html_url ? (
+                          <a
+                            className="btn"
+                            href={assignment.html_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open assignment in Canvas"
+                          >
+                            View
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          ref={(node) => {
+                            if (node) editAnchorRefs.current[key] = node;
+                            else delete editAnchorRefs.current[key];
+                          }}
+                          className="effortGearBtn gradeCalcEditBtn"
+                          onClick={() =>
+                            isEditingThis
+                              ? closeEditPopup()
+                              : openEditPopup(assignment)
+                          }
+                          title="Edit assignment assumptions"
+                          aria-label="Edit assignment assumptions"
+                          aria-expanded={isEditingThis}
                         >
-                          <path
-                            d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-.95-.55a7.9 7.9 0 0 0-.17-1.03l.78-.8a1 1 0 0 0 .16-1.2l-1.1-1.9a1 1 0 0 0-1.14-.46l-1.03.32a8.23 8.23 0 0 0-.89-.52l-.16-1.07a1 1 0 0 0-.99-.84h-2.2a1 1 0 0 0-.99.84l-.16 1.07c-.31.14-.61.31-.89.52l-1.03-.32a1 1 0 0 0-1.14.46l-1.1 1.9a1 1 0 0 0 .16 1.2l.78.8c-.08.34-.13.68-.17 1.03L3 12a1 1 0 0 0-.5.86v2.28a1 1 0 0 0 .5.86l.95.55c.04.35.1.69.17 1.03l-.78.8a1 1 0 0 0-.16 1.2l1.1 1.9a1 1 0 0 0 1.14.46l1.03-.32c.28.2.58.37.89.52l.16 1.07a1 1 0 0 0 .99.84h2.2a1 1 0 0 0 .99-.84l.16-1.07c.31-.14.61-.31.89-.52l1.03.32a1 1 0 0 0 1.14-.46l1.1-1.9a1 1 0 0 0-.16-1.2l-.78-.8c.08-.34.13-.68.17-1.03l.95-.55a1 1 0 0 0 .5-.86v-2.28A1 1 0 0 0 21 12Z"
-                            stroke="currentColor"
-                            strokeWidth="1.3"
-                          />
-                        </svg>
-                        Edit
-                      </button>
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-.95-.55a7.9 7.9 0 0 0-.17-1.03l.78-.8a1 1 0 0 0 .16-1.2l-1.1-1.9a1 1 0 0 0-1.14-.46l-1.03.32a8.23 8.23 0 0 0-.89-.52l-.16-1.07a1 1 0 0 0-.99-.84h-2.2a1 1 0 0 0-.99.84l-.16 1.07c-.31.14-.61.31-.89.52l-1.03-.32a1 1 0 0 0-1.14.46l-1.1 1.9a1 1 0 0 0 .16 1.2l.78.8c-.08.34-.13.68-.17 1.03L3 12a1 1 0 0 0-.5.86v2.28a1 1 0 0 0 .5.86l.95.55c.04.35.1.69.17 1.03l-.78.8a1 1 0 0 0-.16 1.2l1.1 1.9a1 1 0 0 0 1.14.46l1.03-.32c.28.2.58.37.89.52l.16 1.07a1 1 0 0 0 .99.84h2.2a1 1 0 0 0 .99-.84l.16-1.07c.31-.14.61-.31.89-.52l1.03.32a1 1 0 0 0 1.14-.46l1.1-1.9a1 1 0 0 0-.16-1.2l-.78-.8c.08-.34.13-.68.17-1.03l.95-.55a1 1 0 0 0 .5-.86v-2.28A1 1 0 0 0 21 12Z"
+                              stroke="currentColor"
+                              strokeWidth="1.3"
+                            />
+                          </svg>
+                          Edit
+                        </button>
+                      </div>
                     </div>
                   </li>
                 );

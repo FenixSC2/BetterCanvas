@@ -1084,7 +1084,9 @@ export function UpcomingAssignments() {
                               </span>
 
                               {todoItem ? (
-                                <span className="badge badgeNeutral">Personal</span>
+                                <span className="badge badgeNeutral">
+                                  {a.source?.startsWith("announcement") ? "Announcement" : "Personal"}
+                                </span>
                               ) : typeof a.points_possible === "number" ? (
                                 <span className="muted assignmentPts">
                                   <span className="mono">
@@ -1285,7 +1287,9 @@ export function UpcomingAssignments() {
                                 </span>
 
                                 {todoItem ? (
-                                  <span className="badge badgeNeutral">Personal</span>
+                                  <span className="badge badgeNeutral">
+                                    {a.source?.startsWith("announcement") ? "Announcement" : "Personal"}
+                                  </span>
                                 ) : typeof a.points_possible === "number" ? (
                                   <span className="muted assignmentPts">
                                     <span className="mono">{a.points_possible}</span>{" "}

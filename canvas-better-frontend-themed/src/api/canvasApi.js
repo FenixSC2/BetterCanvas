@@ -116,6 +116,15 @@ export const canvasApi = {
         opts
       ),
 
+    getAnnouncementLastSeen: (opts) => request("/api/announcements/last-seen", opts),
+
+    setAnnouncementLastSeen: (announcementId, opts) =>
+      request("/api/announcements/last-seen", {
+        ...opts,
+        method: "POST",
+        body: { announcement_id: announcementId },
+      }),
+
     // Hidden assignments management
     getHiddenAssignments: (opts) => request("/api/hidden-assignments", opts),
 

@@ -2126,6 +2126,7 @@ export function WeeklyPlanner() {
 
       {/* 4x2 layout (7 days + Next up card) */}
       <div
+        className="plannerGrid"
         style={{
           display: "grid",
           gridTemplateColumns: `repeat(${UI.GRID_COLS}, minmax(0, 1fr))`,
@@ -2224,7 +2225,9 @@ export function WeeklyPlanner() {
                                       </span>
                                     </div>
                                     <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                      <span className="badge badgeNeutral">Personal</span>
+                                      <span className="badge badgeNeutral">
+                                        {t.source?.startsWith("announcement") ? "Announcement" : "Personal"}
+                                      </span>
                                     </div>
                                   </div>
                                   <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
@@ -2949,7 +2952,9 @@ export function WeeklyPlanner() {
                                   {workloadIsFavorite("todo", t.id) ? <FavoriteMarker /> : null}
                                   <span>{t.title}</span>
                                 </span>
-                                <span className="badge badgeNeutral plannerUndatedBadge">Personal</span>
+                                <span className="badge badgeNeutral plannerUndatedBadge">
+                                  {t.source?.startsWith("announcement") ? "Announcement" : "Personal"}
+                                </span>
                               </div>
                               <div className="muted plannerUndatedMeta">
                                 <span className="mono">TO-DO's</span> • No due date

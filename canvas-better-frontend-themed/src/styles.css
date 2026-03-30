@@ -1218,14 +1218,16 @@ details.expandable > .cardBody,
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
+  min-width: 0;
 }
 
 .assignmentTitleRowLeft {
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 0;
 }
 
 .assignmentNameWrap {
@@ -1233,12 +1235,15 @@ details.expandable > .cardBody,
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .assignmentName {
   font-weight: 900;
   font-size: calc(var(--fontBase) + 4px);
   line-height: 1.15;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .favoriteMarker {
@@ -2638,7 +2643,7 @@ details.expandable > .cardBody,
   padding: 10px;
   display: flex;
   gap: 10px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
@@ -2647,14 +2652,22 @@ details.expandable > .cardBody,
   flex: 1;
 }
 
+.gradeCalcItemTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .gradeCalcItemTitle {
   font-weight: 700;
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .gradeCalcListControls {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: end;
   gap: 8px;
   min-width: 320px;
@@ -2662,11 +2675,11 @@ details.expandable > .cardBody,
 
 .gradeCalcListMeta {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-width: 0;
+  min-width: 160px;
 }
 
 .gradeCalcPredictField {
@@ -2685,9 +2698,10 @@ details.expandable > .cardBody,
   flex: 1 1 auto;
 }
 
-.gradeCalcApplyBtn {
-  padding: 6px 8px;
-  white-space: nowrap;
+.gradeCalcPredictInputRow .btn {
+  flex: 0 0 auto;
+  min-width: 76px;
+  justify-content: center;
 }
 
 .gradeCalcLockBadge,
@@ -2698,12 +2712,6 @@ details.expandable > .cardBody,
   justify-content: center;
   min-height: 30px;
   max-width: 100%;
-}
-
-.gradeCalcLockedMeta {
-  display: grid;
-  gap: 8px;
-  width: 240px;
 }
 
 .gradeCalcAssignmentScoreBadge {
@@ -2720,8 +2728,9 @@ details.expandable > .cardBody,
   text-align: center;
   line-height: 1.2;
   justify-content: center;
-  width: 100%;
-  min-height: 36px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: var(--fontSm);
   max-width: none;
   font-weight: 700;
   border-color: color-mix(in srgb, var(--accent, #4f8ef7) 55%, var(--border2));
@@ -2779,9 +2788,87 @@ details.expandable > .cardBody,
 }
 
 .gradeCalcEditBtn {
-  margin-left: auto;
   width: fit-content;
   flex-shrink: 0;
+  height: auto;
+  font-size: inherit;
+  padding: 8px 10px;
+  justify-content: center;
+}
+
+.gradeCalcRowActions > * {
+  justify-content: center;
+  font-size: inherit;
+}
+
+.gradeCalcRowActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Score pill — replaces the old score badge in the prediction column */
+.gradeCalcScorePill {
+  font-size: 1.05rem;
+  font-weight: 800;
+  padding: 12px 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Prediction pill — clickable chip shown when a prediction has been set */
+.gradeCalcPredictPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  white-space: nowrap;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  transition: background 120ms, border-color 120ms;
+}
+
+.gradeCalcPredictPill:hover {
+  background: color-mix(in srgb, var(--accent, #4f8ef7) 15%, var(--surface2));
+  border-color: color-mix(in srgb, var(--accent, #4f8ef7) 60%, var(--border2));
+}
+
+.gradeCalcPredictPillEmpty {
+  color: var(--muted);
+  border-style: dashed;
+  font-weight: 500;
+}
+
+.gradeCalcPredictPillRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.gradeCalcUseScoreBtn {
+  font-size: var(--fontSm);
+  border-radius: 999px;
+  padding: 6px 14px;
+  text-align: center;
+}
+
+/* Inline prediction edit row (replaces old gradeCalcPredictInputRow layout) */
+.gradeCalcPredictInputRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .gradeCalcPopover {
@@ -2866,7 +2953,7 @@ details.expandable > .cardBody,
   }
 
   .gradeCalcListMeta {
-    justify-content: flex-start;
+    align-items: flex-start;
     flex: 1;
   }
 
@@ -3007,5 +3094,72 @@ details.expandable > .cardBody,
   .authInfoBubbleHoverable:focus-visible .authInfoTooltip,
   .authInfoBubble.isOpen .authInfoTooltip {
     transform: translateY(0);
+  }
+}
+
+/* ===== Mobile layout improvements ===== */
+
+/* Tabs: scrollable row instead of wrapping to multiple lines on small screens */
+@media (max-width: 600px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex-shrink: 0;
+  }
+}
+
+/* Weekly Planner: 2-col on tablet, 1-col on phone */
+@media (max-width: 720px) {
+  .plannerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-rows: 400px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .plannerGrid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: 380px !important;
+  }
+}
+
+/* Grades tab: stack search controls and bulk buttons on mobile */
+@media (max-width: 600px) {
+  .gradeCalcSearchControls {
+    grid-template-columns: 1fr;
+  }
+
+  .gradeCalcControls .row {
+    flex-wrap: wrap;
+  }
+
+  .gradeCalcListControls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .gradeCalcRowActions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+/* Announcement card actions: stack on small screens */
+@media (max-width: 520px) {
+  .listItem .expandableRight {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
   }
 }

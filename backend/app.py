@@ -1980,6 +1980,52 @@ def api_announcements(
             pass
     return get_announcements(days_back=days_back, limit=limit, mode=cache, token=token, user_id=user_id)
 
+
+@app.get("/api/announcements/last-seen")
+def api_get_announcement_last_seen(
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Return the ID of the last announcement the user opened the dropdown to see."""
+    if not session_id or is_demo_session(session_id):
+        return {"last_seen_id": 0}
+    try:
+        uid = get_session_user_id(session_id, db)
+        if not uid:
+            return {"last_seen_id": 0}
+        user = db.query(User).filter(User.id == uid).first()
+        raw = getattr(user, "last_seen_announcement_id", None) if user else None
+        return {"last_seen_id": raw if isinstance(raw, int) else 0}
+    except Exception:
+        return {"last_seen_id": 0}
+
+
+@app.post("/api/announcements/last-seen")
+def api_set_announcement_last_seen(
+    payload: dict,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Update the last-seen announcement ID when the user opens the announcements dropdown."""
+    if not session_id or is_demo_session(session_id):
+        return {"ok": True}
+    try:
+        uid = get_session_user_id(session_id, db)
+        if not uid:
+            return {"ok": True}
+        announcement_id = int(payload.get("announcement_id", 0))
+        user = db.query(User).filter(User.id == uid).first()
+        if user:
+            current = getattr(user, "last_seen_announcement_id", None)
+            current_int = current if isinstance(current, int) else 0
+            if announcement_id > current_int:
+                db.query(User).filter(User.id == uid).update({"last_seen_announcement_id": announcement_id})
+                db.commit()
+    except Exception:
+        db.rollback()
+    return {"ok": True}
+
+
 # === Background sync loop ===
 _sync_task: Optional[asyncio.Task] = None
 
@@ -2389,6 +2435,7 @@ def create_todo_endpoint(
             occurrence_index=body.occurrence_index,
             anchor_due_at=body.anchor_due_at,
             workload_reset_mode=body.workload_reset_mode,
+            source=body.source,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -2405,6 +2452,7 @@ def create_todo_endpoint(
             "occurrence_index": int(row.occurrence_index or 0),
             "anchor_due_at": row.anchor_due_at,
             "workload_reset_mode": row.workload_reset_mode or "none",
+            "source": getattr(row, "source", None),
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
@@ -2449,6 +2497,7 @@ def update_todo_endpoint(
             "occurrence_index": int(row.occurrence_index or 0),
             "anchor_due_at": row.anchor_due_at,
             "workload_reset_mode": row.workload_reset_mode or "none",
+            "source": getattr(row, "source", None),
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
         },
@@ -2463,6 +2512,7 @@ def update_todo_endpoint(
             "occurrence_index": int(generated_row.occurrence_index or 0),
             "anchor_due_at": generated_row.anchor_due_at,
             "workload_reset_mode": generated_row.workload_reset_mode or "none",
+            "source": getattr(generated_row, "source", None),
             "createdAt": generated_row.created_at.isoformat() if generated_row.created_at else None,
             "updatedAt": generated_row.updated_at.isoformat() if generated_row.updated_at else None,
         } if generated_row else None,

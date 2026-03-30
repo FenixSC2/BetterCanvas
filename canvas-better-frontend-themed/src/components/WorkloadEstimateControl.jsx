@@ -782,116 +782,104 @@ export function WorkloadEstimateControl({
         </div>
       </div>
 
-      {isChecklistMode ? (
+      {isChecklistMode && checklistProgress.total > 0 ? (
         <div className={`effortChecklistSummary ${useCompactChecklist ? "isCompact" : ""}`}>
-          {checklistProgress.total > 0 ? (
-            <>
-              {useCompactChecklist ? (
-                <div className="effortChecklistCompactSummary">
-                  {checklistProgress.nextItem ? (
-                    <div className="effortChecklistCompactNextRow">
-                      <span className="effortChecklistCompactLabel">Next up:</span>
-                      <label className="effortChecklistPrimary effortChecklistPrimaryCompact">
-                        <input
-                          type="checkbox"
-                          className="themeCheckbox"
-                          checked={!!checklistProgress.nextItem.completed}
-                          onChange={(e) =>
-                            toggleChecklistItem(
-                              { courseId, assignmentId },
-                              checklistProgress.nextItem.id,
-                              e.target.checked,
-                            )
-                          }
-                        />
-                        <span
-                          className="effortChecklistPrimaryText effortChecklistCompactNext"
-                          title={checklistProgress.nextItem.text}
-                        >
-                          {checklistProgress.nextItem.text}
-                        </span>
-                      </label>
-                    </div>
-                  ) : (
-                    <div className="muted effortChecklistCompactNextRow isDone">
-                      All checklist items complete.
-                    </div>
-                  )}
+          {useCompactChecklist ? (
+            <div className="effortChecklistCompactSummary">
+              {checklistProgress.nextItem ? (
+                <div className="effortChecklistCompactNextRow">
+                  <span className="effortChecklistCompactLabel">Next up:</span>
+                  <label className="effortChecklistPrimary effortChecklistPrimaryCompact">
+                    <input
+                      type="checkbox"
+                      className="themeCheckbox"
+                      checked={!!checklistProgress.nextItem.completed}
+                      onChange={(e) =>
+                        toggleChecklistItem(
+                          { courseId, assignmentId },
+                          checklistProgress.nextItem.id,
+                          e.target.checked,
+                        )
+                      }
+                    />
+                    <span
+                      className="effortChecklistPrimaryText effortChecklistCompactNext"
+                      title={checklistProgress.nextItem.text}
+                    >
+                      {checklistProgress.nextItem.text}
+                    </span>
+                  </label>
                 </div>
-              ) : checklistProgress.nextItem ? (
-                <label className="effortChecklistPrimary">
-                  <span
-                    style={{
-                      fontSize: "var(--fontSm)",
-                      fontWeight: 700,
-                      flexShrink: 0,
-                      color: "var(--muted)",
-                    }}
-                  >
-                    Next up:
-                  </span>
-                  <input
-                    type="checkbox"
-                    className="themeCheckbox"
-                    checked={!!checklistProgress.nextItem.completed}
-                    onChange={(e) =>
-                      toggleChecklistItem(
-                        { courseId, assignmentId },
-                        checklistProgress.nextItem.id,
-                        e.target.checked,
-                      )
-                    }
-                  />
-                  <span className="effortChecklistPrimaryText">
-                    {checklistProgress.nextItem.text}
-                  </span>
-                </label>
               ) : (
-                <div className="effortChecklistPrimary isDone">
-                  <input
-                    type="checkbox"
-                    className="themeCheckbox"
-                    checked={true}
-                    readOnly
-                  />
-                  <span className="effortChecklistPrimaryText isDone">
-                    All checklist items complete.
-                  </span>
+                <div className="muted effortChecklistCompactNextRow isDone">
+                  All checklist items complete.
                 </div>
               )}
-
-              {useCompactChecklist ? (
-                compactChecklistExtraItems.length > 0 ? (
-                  <button
-                    type="button"
-                    className="effortChecklistExpandBtn"
-                    onClick={() => setChecklistExpanded((v) => !v)}
-                    aria-label={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
-                    title={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
-                  >
-                    {checklistExpanded ? "▾" : "▸"}
-                  </button>
-                ) : null
-              ) : (
-                <button
-                  type="button"
-                  className="effortChecklistExpandBtn"
-                  onClick={() => setChecklistExpanded((v) => !v)}
-                  aria-label={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
-                  title={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
-                >
-                  {checklistExpanded ? "▾" : "▸"}
-                </button>
-              )}
-            </>
-          ) : showPreInputModeActions ? (
-            <div className="muted" style={{ marginTop: 8 }}>
-              Start a checklist step or switch back to hour estimate.
             </div>
+          ) : checklistProgress.nextItem ? (
+            <label className="effortChecklistPrimary">
+              <span
+                style={{
+                  fontSize: "var(--fontSm)",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  color: "var(--muted)",
+                }}
+              >
+                Next up:
+              </span>
+              <input
+                type="checkbox"
+                className="themeCheckbox"
+                checked={!!checklistProgress.nextItem.completed}
+                onChange={(e) =>
+                  toggleChecklistItem(
+                    { courseId, assignmentId },
+                    checklistProgress.nextItem.id,
+                    e.target.checked,
+                  )
+                }
+              />
+              <span className="effortChecklistPrimaryText">
+                {checklistProgress.nextItem.text}
+              </span>
+            </label>
           ) : (
-            <div className="muted" style={{ marginTop: 8 }}>
-              No checklist items yet. Open settings to add steps.
+            <div className="effortChecklistPrimary isDone">
+              <input
+                type="checkbox"
+                className="themeCheckbox"
+                checked={true}
+                readOnly
+              />
+              <span className="effortChecklistPrimaryText isDone">
+                All checklist items complete.
+              </span>
             </div>
+          )}
+
+          {useCompactChecklist ? (
+            compactChecklistExtraItems.length > 0 ? (
+              <button
+                type="button"
+                className="effortChecklistExpandBtn"
+                onClick={() => setChecklistExpanded((v) => !v)}
+                aria-label={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
+                title={checklistExpanded ? "Hide additional checklist items" : "Show additional checklist items"}
+              >
+                {checklistExpanded ? "▾" : "▸"}
+              </button>
+            ) : null
+          ) : (
+            <button
+              type="button"
+              className="effortChecklistExpandBtn"
+              onClick={() => setChecklistExpanded((v) => !v)}
+              aria-label={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+              title={checklistExpanded ? "Collapse checklist" : "Expand checklist"}
+            >
+              {checklistExpanded ? "▾" : "▸"}
+            </button>
           )}
         </div>
       ) : null}
@@ -960,7 +948,7 @@ export function WorkloadEstimateControl({
       ) : null}
 
       {/* ✅ Draggable progress bar (snaps by global step) */}
-      {isChecklistMode ? (
+      {isChecklistMode && checklistProgress.total > 0 ? (
         <div className="effortBarWrap">
           <div
             className="effortBarTrack"
@@ -974,7 +962,7 @@ export function WorkloadEstimateControl({
 
           <div className="effortBarMeta mono">{Math.round(displayPct)}%</div>
         </div>
-      ) : estimate <= 0 ? (
+      ) : isChecklistMode || estimate <= 0 ? (
         <div className="effortBarWrap">
         </div>
       ) : compactLabels && isComplete ? (

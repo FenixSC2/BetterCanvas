@@ -213,6 +213,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen_announcement_id = Column(Integer, nullable=True, default=0)
 
 class CanvasToken(Base):
     __tablename__ = "canvas_tokens"
@@ -312,6 +313,7 @@ class TodoItem(Base):
     occurrence_index = Column(Integer, nullable=False, default=0)
     anchor_due_at = Column(String, nullable=True)
     workload_reset_mode = Column(String, nullable=False, default="none")
+    source = Column(String, nullable=True, default=None)
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -356,6 +358,7 @@ def _initialize_database() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             _ensure_todo_item_recurrence_columns()
+            _ensure_user_announcement_columns()
             if attempt > 1:
                 logger.info("Database initialization succeeded on retry %s/%s", attempt, attempts)
             return
@@ -389,6 +392,7 @@ def _ensure_todo_item_recurrence_columns() -> None:
         "ALTER TABLE todo_items ADD COLUMN occurrence_index INTEGER",
         "ALTER TABLE todo_items ADD COLUMN anchor_due_at VARCHAR",
         "ALTER TABLE todo_items ADD COLUMN workload_reset_mode VARCHAR",
+        "ALTER TABLE todo_items ADD COLUMN source VARCHAR",
     ]
 
     with engine.begin() as conn:
@@ -429,6 +433,23 @@ def _ensure_todo_item_recurrence_columns() -> None:
             conn.execute(
                 text("UPDATE todo_items SET workload_reset_mode = 'none' WHERE workload_reset_mode IS NULL OR TRIM(workload_reset_mode) = ''")
             )
+
+
+def _ensure_user_announcement_columns() -> None:
+    """Best-effort runtime migration to add last_seen_announcement_id to users table."""
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        try:
+            existing = {col["name"] for col in inspector.get_columns("users")}
+        except Exception:
+            return
+
+        if "last_seen_announcement_id" not in existing:
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_seen_announcement_id INTEGER DEFAULT 0"))
+            except Exception:
+                pass
+
 
 # === Password hashing ===
 def hash_password(password: str) -> str:
@@ -823,6 +844,7 @@ def _todo_to_dict(row: TodoItem) -> dict:
         "occurrence_index": int(row.occurrence_index or 0),
         "anchor_due_at": row.anchor_due_at,
         "workload_reset_mode": row.workload_reset_mode or "none",
+        "source": getattr(row, "source", None),
         "createdAt": row.created_at.isoformat() if row.created_at else None,
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -1107,6 +1129,7 @@ def create_todo(
     occurrence_index: int = 0,
     anchor_due_at: Optional[str] = None,
     workload_reset_mode: str = "none",
+    source: Optional[str] = None,
 ) -> TodoItem:
     existing = (
         db.query(TodoItem)
@@ -1134,6 +1157,7 @@ def create_todo(
         occurrence_index=normalized_index,
         anchor_due_at=normalized_anchor,
         workload_reset_mode=normalized_workload_reset_mode,
+        source=source,
     )
     db.add(row)
     db.commit()
@@ -1454,6 +1478,7 @@ class TodoItemPayload(BaseModel):
     anchor_due_at: Optional[str] = None
     edit_scope: str = "this-occurrence"
     workload_reset_mode: str = "none"
+    source: Optional[str] = None
 
     @field_validator("id", "title")
     @classmethod

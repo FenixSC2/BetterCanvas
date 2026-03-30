@@ -50,6 +50,7 @@ function normalizeTodo(raw) {
       workloadResetMode === "both"
         ? workloadResetMode
         : "none",
+    source: raw?.source ? String(raw.source) : null,
     createdAt: raw?.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw?.updatedAt ? String(raw.updatedAt) : null,
   };
@@ -164,6 +165,7 @@ export async function createTodoItem(todo, opts = {}) {
       occurrence_index: payload.occurrence_index,
       anchor_due_at: payload.anchor_due_at,
       workload_reset_mode: payload.workload_reset_mode,
+      source: payload.source,
     },
     opts,
   );

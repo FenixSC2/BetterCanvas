@@ -8,6 +8,7 @@ import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
+import { makeTodoId, createTodoItem, loadTodos } from "../lib/todoStore";
 import { useAuth } from "../hooks/useAuth";
 
 // desktop notifications
@@ -120,6 +121,37 @@ export function MyInformation() {
   // Seen tracking
   const [seenIds, setSeenIds] = useState(() => new Set());
 
+  // Add-announcement-to-todo state: maps announcement id → { date, status }
+  const [todoFormById, setTodoFormById] = useState({});
+
+  // Set of announcement IDs that already have a to-do item (source = "announcement:{id}")
+  const [addedAnnouncementIds, setAddedAnnouncementIds] = useState(() => {
+    const todos = loadTodos();
+    const ids = new Set();
+    for (const t of todos) {
+      if (t.source?.startsWith("announcement:")) {
+        ids.add(t.source.slice("announcement:".length));
+      }
+    }
+    return ids;
+  });
+
+  // Keep addedAnnouncementIds in sync when the todo store changes
+  useEffect(() => {
+    function onTodosChanged() {
+      const todos = loadTodos();
+      const ids = new Set();
+      for (const t of todos) {
+        if (t.source?.startsWith("announcement:")) {
+          ids.add(t.source.slice("announcement:".length));
+        }
+      }
+      setAddedAnnouncementIds(ids);
+    }
+    window.addEventListener("canvassist:todos:changed", onTodosChanged);
+    return () => window.removeEventListener("canvassist:todos:changed", onTodosChanged);
+  }, []);
+
   const SHOW_GPA_KEY = "myinfo:showGpaInCollapsed";
   const [showGpaCollapsed, setShowGpaCollapsed] = useState(() => {
     try {
@@ -161,7 +193,20 @@ export function MyInformation() {
   }
 
   const SEEN_KEY = "announcements:seenIds";
-  const LAST_SEEN_KEY = "announcements:lastSeenId";
+
+  // DB-backed high-water mark: the ID of the newest announcement the user has
+  // opened the dropdown to see. Fetched once on mount; only updated when the
+  // user opens the Announcements expandable.
+  const [lastSeenIdFromDb, setLastSeenIdFromDb] = useState(0);
+  const lastSeenIdRef = useRef(0);
+
+  useEffect(() => {
+    canvasApi.getAnnouncementLastSeen().then((res) => {
+      const id = res?.last_seen_id ?? 0;
+      setLastSeenIdFromDb(id);
+      lastSeenIdRef.current = id;
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const missingCount = overview?.missing_count ?? 0;
   const due24Count = overview?.due_next_24h_count ?? 0;
@@ -183,15 +228,11 @@ export function MyInformation() {
       ? window.isSecureContext || window.location.hostname === "localhost"
       : false;
 
-  // NEW badge count
+  // NEW badge count — based on DB high-water mark so it persists across sessions
   const newAnnouncementCount = useMemo(() => {
     if (!announcements?.length) return 0;
-    let c = 0;
-    for (const a of announcements) {
-      if (a?.id && !seenIds.has(a.id)) c += 1;
-    }
-    return c;
-  }, [announcements, seenIds]);
+    return announcements.filter((a) => a?.id && a.id > lastSeenIdFromDb).length;
+  }, [announcements, lastSeenIdFromDb]);
 
   function persistSeen(nextSet) {
     setSeenIds(new Set(nextSet));
@@ -209,13 +250,6 @@ export function MyInformation() {
     const next = new Set(seenIds);
     next.add(id);
     persistSeen(next);
-
-    try {
-      const lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || "0");
-      if (id > lastSeen) localStorage.setItem(LAST_SEEN_KEY, String(id));
-    } catch {
-      // ignore
-    }
   }
 
   function markAllAnnouncementsSeen() {
@@ -226,12 +260,10 @@ export function MyInformation() {
     persistSeen(next);
 
     const newestId = announcements?.[0]?.id ?? 0;
-    if (newestId) {
-      try {
-        localStorage.setItem(LAST_SEEN_KEY, String(newestId));
-      } catch {
-        // ignore
-      }
+    if (newestId && newestId > lastSeenIdRef.current) {
+      lastSeenIdRef.current = newestId;
+      setLastSeenIdFromDb(newestId);
+      canvasApi.setAnnouncementLastSeen(newestId).catch(() => {});
     }
   }
 
@@ -270,13 +302,7 @@ export function MyInformation() {
     if (!notif.enabled || notif.permission !== "granted") return;
     if (!announcements?.length) return;
 
-    let lastSeen = 0;
-    try {
-      lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || "0");
-    } catch {
-      lastSeen = 0;
-    }
-
+    const lastSeen = lastSeenIdRef.current;
     const newestId = announcements?.[0]?.id ?? 0;
     if (newestId > lastSeen) {
       const newOnes = announcements.filter((a) => a.id > lastSeen).slice(0, 3);
@@ -291,12 +317,6 @@ export function MyInformation() {
           url: a.html_url || window.location.href,
           cooldownMs: 0,
         });
-      }
-
-      try {
-        localStorage.setItem(LAST_SEEN_KEY, String(newestId));
-      } catch {
-        // ignore
       }
     }
   }, [announcements, notif.enabled, notif.permission]);
@@ -453,6 +473,7 @@ export function MyInformation() {
             {announcements.map((a) => {
               const isNew = a?.id && !seenIds.has(a.id);
               const titleText = a?.title || "Untitled announcement";
+              const todoForm = todoFormById[a.id] || {};
 
               const subtitle = (
                 <span className="muted">
@@ -488,18 +509,104 @@ export function MyInformation() {
                 </span>
               );
 
-              const right = a.html_url ? (
-                <a
-                  className="btn"
-                  href={a.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => markAnnouncementSeen(a.id)}
-                  title="Open in Canvas"
-                >
-                  View in Canvas
-                </a>
-              ) : null;
+              const right = (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                  <div className="row" style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {a.html_url ? (
+                      <a
+                        className="btn"
+                        href={a.html_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => markAnnouncementSeen(a.id)}
+                        title="Open in Canvas"
+                      >
+                        View in Canvas
+                      </a>
+                    ) : null}
+                    {addedAnnouncementIds.has(String(a.id)) ? (
+                      <span className="badge badgeSuccess">Added to To-Do</span>
+                    ) : todoForm.status === "added" ? (
+                      <span className="badge badgeSuccess">Added!</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTodoFormById((prev) => ({
+                            ...prev,
+                            [a.id]: prev[a.id]?.open ? {} : { open: true, date: "" },
+                          }));
+                        }}
+                        title="Add this announcement as a to-do item"
+                      >
+                        {todoForm.open ? "Cancel" : "Add to To-Do"}
+                      </button>
+                    )}
+                  </div>
+                  {todoForm.open ? (
+                    <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+                      <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        Due date:
+                        <input
+                          type="date"
+                          value={todoForm.date || ""}
+                          onChange={(e) =>
+                            setTodoFormById((prev) => ({
+                              ...prev,
+                              [a.id]: { ...prev[a.id], date: e.target.value },
+                            }))
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={!todoForm.date}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const dueAt = todoForm.date
+                            ? new Date(todoForm.date + "T00:00:00").toISOString()
+                            : null;
+                          const newTodo = {
+                            id: makeTodoId(),
+                            title: a.title || "Untitled announcement",
+                            notes: stripHtml(a.message || "").slice(0, 300),
+                            due_at: dueAt,
+                            completed: false,
+                            recurrence: "none",
+                            series_id: null,
+                            occurrence_index: 0,
+                            anchor_due_at: dueAt,
+                            workload_reset_mode: "none",
+                            source: `announcement:${a.id}`,
+                            createdAt: new Date().toISOString(),
+                          };
+                          try {
+                            await createTodoItem(newTodo);
+                            setTodoFormById((prev) => ({
+                              ...prev,
+                              [a.id]: { status: "added" },
+                            }));
+                            setTimeout(() => {
+                              setTodoFormById((prev) => {
+                                const next = { ...prev };
+                                delete next[a.id];
+                                return next;
+                              });
+                            }, 2500);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
 
               return (
                 <li key={a.id} className="listItem">
@@ -516,6 +623,7 @@ export function MyInformation() {
                     ) : (
                       <div className="muted">No message body provided.</div>
                     )}
+
                   </Expandable>
                 </li>
               );
