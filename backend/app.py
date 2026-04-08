@@ -2406,7 +2406,9 @@ def upsert_grade_scale_preference_endpoint(
 # === Personal Todos ===
 
 @app.get("/api/todos")
+@limiter.limit("60/minute")
 def get_todos_endpoint(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -2415,7 +2417,9 @@ def get_todos_endpoint(
 
 
 @app.post("/api/todos")
+@limiter.limit("30/minute")
 def create_todo_endpoint(
+    request: Request,
     body: TodoItemPayload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2460,7 +2464,9 @@ def create_todo_endpoint(
 
 
 @app.put("/api/todos/{todo_id}")
+@limiter.limit("30/minute")
 def update_todo_endpoint(
+    request: Request,
     todo_id: str,
     body: TodoItemPayload,
     current_user: User = Depends(get_current_user),
@@ -2520,7 +2526,9 @@ def update_todo_endpoint(
 
 
 @app.delete("/api/todos/{todo_id}")
+@limiter.limit("30/minute")
 def delete_todo_endpoint(
+    request: Request,
     todo_id: str,
     delete_scope: str = Query(default="this-occurrence"),
     current_user: User = Depends(get_current_user),

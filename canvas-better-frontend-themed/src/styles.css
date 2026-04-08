@@ -1,5 +1,11 @@
+/* ===== Font preference ===== */
+html[data-font="system"] { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+html[data-font="times"]  { font-family: "Times New Roman", Times, serif; }
+html[data-font="georgia"] { font-family: Georgia, "Times New Roman", serif; }
+html[data-font="inter"]  { font-family: Inter, ui-sans-serif, sans-serif; }
+html[data-font="mono"]   { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
 :root {
-  font-family: "Times New Roman", Times, serif;
   line-height: 1.4;
 
   /* ===== Theme tokens (defaults = classic) ===== */
@@ -418,6 +424,7 @@ ol {
   text-decoration: none;
   color: var(--text);
   font-weight: 700;
+  font-family: "Times New Roman", Times, serif;
   cursor: pointer;
   transition: opacity 120ms ease;
 }

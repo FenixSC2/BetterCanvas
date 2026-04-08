@@ -1466,6 +1466,9 @@ class CanvasTokenStatus(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+# SQL injection safety: all todo database operations use SQLAlchemy ORM with
+# parameterized queries (db.query(TodoItem).filter(...), ORM object creation).
+# Do NOT introduce raw SQL string concatenation with user-supplied values here.
 class TodoItemPayload(BaseModel):
     id: str
     title: str

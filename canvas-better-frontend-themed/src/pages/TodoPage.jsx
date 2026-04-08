@@ -715,6 +715,7 @@ function DeleteRecurringTodoModal({ todo, onClose, onConfirm }) {
         aria-modal="true"
         aria-label="Delete recurring to-do"
         onMouseDown={(e) => e.stopPropagation()}
+        style={{ width: "min(440px, 95vw)", height: "auto", minHeight: "unset" }}
       >
         <div className="modalHeader">
           <div>
@@ -754,35 +755,92 @@ function DeleteRecurringTodoModal({ todo, onClose, onConfirm }) {
           </button>
         </div>
 
-        <div className="modalBody" style={{ display: "grid", gap: 16 }}>
-          <div>
-            <div style={{ fontWeight: 700 }}>{todo.title}</div>
-            <div className="muted" style={{ marginTop: 4, fontSize: "var(--fontSm)" }}>
-              {recurrenceLabel(todo.recurrence)}{todo.due_at ? ` • ${fmtDue(todo.due_at)}` : ""}
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Todo summary */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              padding: "10px 12px",
+              background: "var(--surface2)",
+              borderRadius: "var(--radius)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              style={{ color: "var(--accent)", flexShrink: 0, marginTop: 2 }}
+            >
+              <path
+                d="M17 2v4M7 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M7 14h.01M12 14h.01M17 14h.01M7 18h.01M12 18h.01"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div>
+              <div style={{ fontWeight: 700, lineHeight: 1.3 }}>{todo.title}</div>
+              <div className="muted" style={{ marginTop: 3, fontSize: "var(--fontSm)" }}>
+                {recurrenceLabel(todo.recurrence)}{todo.due_at ? ` • ${fmtDue(todo.due_at)}` : ""}
+              </div>
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
+          {/* Delete options */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button
               type="button"
               className="btn btnDanger"
               onClick={() => onConfirm("this-occurrence")}
-              style={{ justifyContent: "flex-start" }}
+              style={{ flexDirection: "column", alignItems: "flex-start", gap: 2, padding: "10px 14px" }}
             >
-              Delete this occurrence only
+              <span style={{ fontWeight: 700 }}>Delete this occurrence only</span>
+              <span style={{ fontWeight: 400, fontSize: "var(--fontSm)", opacity: 0.8 }}>
+                Only removes this date's entry; future ones remain.
+              </span>
             </button>
             <button
               type="button"
               className="btn btnDanger"
               onClick={() => onConfirm("this-and-future")}
-              style={{ justifyContent: "flex-start" }}
+              style={{ flexDirection: "column", alignItems: "flex-start", gap: 2, padding: "10px 14px" }}
             >
-              Delete this and future occurrences
-            </button>
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
+              <span style={{ fontWeight: 700 }}>Delete this and future occurrences</span>
+              <span style={{ fontWeight: 400, fontSize: "var(--fontSm)", opacity: 0.8 }}>
+                Removes this entry and all upcoming ones in the series.
+              </span>
             </button>
           </div>
+
+          {/* Cancel */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--muted)",
+              fontSize: "var(--fontSm)",
+              padding: "4px 0",
+              textAlign: "center",
+            }}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -797,6 +855,7 @@ export function TodoPage() {
   const [focusedTodoId, setFocusedTodoId] = useState("");
   const [pendingDeleteTodo, setPendingDeleteTodo] = useState(null);
   const [workloadTick, setWorkloadTick] = useState(0);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   // Keep in sync when another tab or the planner writes to the store
   useEffect(() => {
@@ -1175,32 +1234,40 @@ export function TodoPage() {
 
       {/* Completed */}
       {completed.length > 0 ? (
-        <details style={{ marginTop: 4 }}>
-          <summary
+        <div style={{ marginTop: 4 }}>
+          <button
+            type="button"
             className="muted"
+            onClick={() => setCompletedExpanded((v) => !v)}
             style={{
+              background: "none",
+              border: "none",
               cursor: "pointer",
               fontWeight: 700,
               fontSize: "var(--fontSm)",
               paddingBottom: 8,
+              paddingLeft: 0,
               userSelect: "none",
+              color: "inherit",
             }}
           >
-            Completed ({completed.length}) — click to expand
-          </summary>
-          <div className="stack" style={{ marginTop: 8 }}>
-            {completed.map((t) => (
-              <TodoCard
-                key={t.id}
-                todo={t}
-                onToggleComplete={handleToggleComplete}
-                onEdit={handleEdit}
-                onDelete={handleRequestDelete}
-                isFocused={String(focusedTodoId) === String(t.id)}
-              />
-            ))}
-          </div>
-        </details>
+            Completed ({completed.length}) — click to {completedExpanded ? "hide" : "expand"}
+          </button>
+          {completedExpanded && (
+            <div className="stack" style={{ marginTop: 8 }}>
+              {completed.map((t) => (
+                <TodoCard
+                  key={t.id}
+                  todo={t}
+                  onToggleComplete={handleToggleComplete}
+                  onEdit={handleEdit}
+                  onDelete={handleRequestDelete}
+                  isFocused={String(focusedTodoId) === String(t.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       ) : null}
 
       {/* Footer note if everything is done */}

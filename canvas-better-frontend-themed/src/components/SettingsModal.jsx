@@ -31,6 +31,14 @@ const DENSITY_OPTIONS = [
   { key: "compact", label: "Compact", desc: "Smaller text & tighter spacing" },
 ];
 
+const FONT_OPTIONS = [
+  { key: "system", label: "System UI", css: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
+  { key: "times",  label: "Times New Roman", css: '"Times New Roman", Times, serif' },
+  { key: "georgia", label: "Georgia", css: "Georgia, serif" },
+  { key: "inter",  label: "Inter", css: "Inter, ui-sans-serif, sans-serif" },
+  { key: "mono",   label: "Monospace", css: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
+];
+
 // Helper function to determine urgency badge
 function getAssignmentBadge(assignment) {
   if (!assignment) return { label: "Unknown", variant: "neutral" };
@@ -66,7 +74,7 @@ export function SettingsModal({
   demoMode = false,
   onExitDemo = null,
 }) {
-  const { theme, density, setTheme, setDensity } = useTheme();
+  const { theme, density, font, setTheme, setDensity, setFont } = useTheme();
   const { user, logout, setTokenStatus } = useAuth();
   const [activeSection, setActiveSection] = useState("general");
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -421,6 +429,35 @@ export function SettingsModal({
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="cardBody">
+                    <div className="settingsSectionHeader">
+                      <div className="h3">Font</div>
+                      <div className="muted">Choose the typeface used throughout the app.</div>
+                    </div>
+                    <select
+                      value={font}
+                      onChange={(e) => setFont(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 2.5rem 8px 10px",
+                        borderRadius: "var(--radiusSm)",
+                        border: "1px solid var(--border2)",
+                        background: "var(--surface2)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: "var(--fontBase)",
+                      }}
+                    >
+                      {FONT_OPTIONS.map((opt) => (
+                        <option key={opt.key} value={opt.key} style={{ fontFamily: opt.css }}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
