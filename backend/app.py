@@ -67,6 +67,9 @@ from auth import (
     get_assignment_weight_overrides,
     upsert_assignment_weight_override,
     delete_assignment_weight_override,
+    get_personal_assignment_dates,
+    upsert_personal_assignment_date,
+    delete_personal_assignment_date,
     get_grade_scale_preferences,
     upsert_grade_scale_preference,
     UserCreate,
@@ -316,6 +319,10 @@ class WorkloadEstimateRequest(BaseModel):
 
 class AssignmentWeightOverrideRequest(BaseModel):
     weight_points: float = Field(default=0.0, ge=0.0, le=100000.0)
+
+
+class PersonalAssignmentDateRequest(BaseModel):
+    due_at: str
 
 
 class GradeScalePreferenceRequest(BaseModel):
@@ -1785,6 +1792,40 @@ def api_courses_summary(
             pass
     return get_course_summaries(next_limit=next_limit, missing_limit=missing_limit, mode=cache, token=token, user_id=user_id, db=db)
 
+@app.get("/api/courses/attendance-tabs")
+def api_courses_attendance_tabs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return which of the user's active courses have an enabled attendance tab in Canvas."""
+    token = get_canvas_token(current_user.id, db)
+    if not token:
+        raise HTTPException(status_code=403, detail="Canvas token required")
+
+    courses = get_courses(mode=CacheMode.auto, token=token, user_id=current_user.id)
+
+    def get_attendance_url(course_id: int) -> Optional[str]:
+        try:
+            tabs = canvas_get_paginated(f"/courses/{course_id}/tabs", token=token)
+            for tab in tabs:
+                if "attendance" in tab.get("label", "").lower() and not tab.get("hidden", False):
+                    return tab.get("full_url") or tab.get("html_url") or None
+            return None
+        except Exception:
+            return None
+
+    from concurrent.futures import ThreadPoolExecutor
+    course_ids = [c.id for c in courses]
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        urls = list(executor.map(get_attendance_url, course_ids))
+
+    return {
+        "attendance": {
+            str(cid): url for cid, url in zip(course_ids, urls) if url
+        }
+    }
+
+
 @app.get("/api/overview", response_model=OverviewResponse)
 def api_overview(
     cache: CacheMode = Query(CacheMode.auto),
@@ -2372,6 +2413,46 @@ def delete_assignment_weight_override_endpoint(
 ):
     """Delete a saved effective weight/points override for one assignment."""
     delete_assignment_weight_override(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
+
+
+@app.get("/api/personal-assignment-dates")
+def get_personal_assignment_dates_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all personal due dates set by the authenticated user for undated assignments."""
+    return {"dates": get_personal_assignment_dates(current_user.id, db)}
+
+
+@app.put("/api/personal-assignment-dates/{course_id}/{assignment_id}")
+def upsert_personal_assignment_date_endpoint(
+    course_id: int,
+    assignment_id: int,
+    body: PersonalAssignmentDateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a personal due date for an undated assignment."""
+    try:
+        due_at = dateparser.parse(body.due_at)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid due_at format.")
+    if due_at is None:
+        raise HTTPException(status_code=422, detail="Could not parse due_at.")
+    upsert_personal_assignment_date(current_user.id, course_id, assignment_id, due_at, db)
+    return {"success": True}
+
+
+@app.delete("/api/personal-assignment-dates/{course_id}/{assignment_id}")
+def delete_personal_assignment_date_endpoint(
+    course_id: int,
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a personal due date for an undated assignment."""
+    delete_personal_assignment_date(current_user.id, course_id, assignment_id, db)
     return {"success": True}
 
 

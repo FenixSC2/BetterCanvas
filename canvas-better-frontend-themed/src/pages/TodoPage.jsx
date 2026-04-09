@@ -452,9 +452,11 @@ function TodoItemForm({
 
 /* ---------- TodoCard ---------- */
 
-function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false }) {
+function TodoCard({ todo, onToggleComplete, onEdit, onDelete, onCreate, isFocused = false }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [repeating, setRepeating] = useState(false);
+  const [repeatDueAt, setRepeatDueAt] = useState("");
   const isFavorited = isAssignmentFavorited({
     courseId: TODO_COURSE_ID,
     assignmentId: todo.id,
@@ -576,6 +578,16 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
 
           {/* Action buttons */}
           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            {todo.completed ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => { setRepeating((v) => !v); setRepeatDueAt(""); }}
+                style={{ fontSize: "var(--fontSm)", padding: "4px 10px" }}
+              >
+                Repeat
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn"
@@ -594,6 +606,65 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, isFocused = false 
             </button>
           </div>
         </div>
+
+        {/* Repeat inline UI */}
+        {repeating ? (
+          <div
+            style={{
+              marginTop: 10,
+              paddingLeft: 26,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span className="muted" style={{ fontSize: "var(--fontSm)", fontWeight: 700 }}>
+              New due date:
+            </span>
+            <input
+              type="datetime-local"
+              value={repeatDueAt}
+              onChange={(e) => setRepeatDueAt(e.target.value)}
+              style={{ fontSize: "var(--fontSm)" }}
+            />
+            <button
+              type="button"
+              className="btn"
+              style={{ fontSize: "var(--fontSm)", padding: "4px 10px" }}
+              onClick={async () => {
+                const dueAt = repeatDueAt
+                  ? (repeatDueAt.length === 16 ? `${repeatDueAt}:00` : repeatDueAt)
+                  : null;
+                await onCreate({
+                  id: makeTodoId(),
+                  title: todo.title,
+                  notes: todo.notes || "",
+                  due_at: dueAt,
+                  completed: false,
+                  recurrence: "none",
+                  series_id: null,
+                  occurrence_index: 0,
+                  anchor_due_at: dueAt,
+                  workload_reset_mode: todo.workload_reset_mode || "none",
+                  task_items: [],
+                  import_strategy: "replace",
+                });
+                setRepeating(false);
+              }}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              className="btn"
+              style={{ fontSize: "var(--fontSm)", padding: "4px 10px" }}
+              onClick={() => setRepeating(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
 
         {/* Notes (collapsible) */}
         {hasNotes ? (
@@ -1192,6 +1263,7 @@ export function TodoPage() {
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
               onDelete={handleRequestDelete}
+              onCreate={handleCreate}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -1209,6 +1281,7 @@ export function TodoPage() {
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
               onDelete={handleRequestDelete}
+              onCreate={handleCreate}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -1226,6 +1299,7 @@ export function TodoPage() {
               onToggleComplete={handleToggleComplete}
               onEdit={handleEdit}
               onDelete={handleRequestDelete}
+              onCreate={handleCreate}
               isFocused={String(focusedTodoId) === String(t.id)}
             />
           ))}
@@ -1262,6 +1336,7 @@ export function TodoPage() {
                   onToggleComplete={handleToggleComplete}
                   onEdit={handleEdit}
                   onDelete={handleRequestDelete}
+                  onCreate={handleCreate}
                   isFocused={String(focusedTodoId) === String(t.id)}
                 />
               ))}

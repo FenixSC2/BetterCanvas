@@ -290,6 +290,21 @@ export function UpcomingAssignments() {
     { ttlMs: 60 * 1000 } // undated can be refreshed fairly often
   );
 
+  const [personalDatesById, setPersonalDatesById] = useState({});
+  const [addingDateFor, setAddingDateFor] = useState(null); // "course_id:assignment_id"
+  const [addingDateInput, setAddingDateInput] = useState("");
+
+  useEffect(() => {
+    canvasApi.getPersonalAssignmentDates().then((res) => {
+      if (!res?.dates) return;
+      const byId = {};
+      for (const d of res.dates) {
+        byId[`${d.course_id}:${d.assignment_id}`] = d.due_at;
+      }
+      setPersonalDatesById(byId);
+    }).catch(() => {});
+  }, []);
+
   // Keep a stable ref to the latest refresh so intervals/mount effects
   // don't capture a stale closure (useCachedAsync recreates refresh each render)
   const refreshRef = useRef(null);
@@ -440,9 +455,22 @@ export function UpcomingAssignments() {
     };
   }, [canvasItems, canvasUndatedItems]);
 
+  // Undated Canvas assignments that have a user-set personal date — injected into dated section
+  const personallyDatedItems = useMemo(
+    () =>
+      canvasUndatedItems
+        .filter((a) => personalDatesById[`${a.course_id}:${a.id}`])
+        .map((a) => ({
+          ...a,
+          due_at: personalDatesById[`${a.course_id}:${a.id}`],
+          _personalDate: true,
+        })),
+    [canvasUndatedItems, personalDatesById]
+  );
+
   const items = useMemo(
-    () => [...canvasItems, ...datedTodoItems],
-    [canvasItems, datedTodoItems]
+    () => [...canvasItems, ...personallyDatedItems, ...datedTodoItems],
+    [canvasItems, personallyDatedItems, datedTodoItems]
   );
 
   // Apply same loading logic as announcements
@@ -656,7 +684,10 @@ export function UpcomingAssignments() {
         assignmentId: a.id,
       });
 
-    let undatedItems = [...canvasUndatedItems, ...undatedTodoItems];
+    let undatedItems = [
+      ...canvasUndatedItems.filter((a) => !personalDatesById[`${a.course_id}:${a.id}`]),
+      ...undatedTodoItems,
+    ];
 
     if (filterMode === "todo") {
       undatedItems = undatedItems.filter(isTodo);
@@ -698,6 +729,7 @@ export function UpcomingAssignments() {
   }, [
     canvasUndatedItems,
     undatedTodoItems,
+    personalDatesById,
     blend,
     filterMode,
     canvasPointStats,
@@ -1087,6 +1119,8 @@ export function UpcomingAssignments() {
                                 <span className="badge badgeNeutral">
                                   {a.source?.startsWith("announcement") ? "Announcement" : "Personal"}
                                 </span>
+                              ) : a._personalDate ? (
+                                <span className="badge badgeNeutral">Personal date</span>
                               ) : typeof a.points_possible === "number" ? (
                                 <span className="muted assignmentPts">
                                   <span className="mono">
@@ -1172,6 +1206,23 @@ export function UpcomingAssignments() {
                           >
                             Open in Canvas
                           </a>
+                        ) : null}
+
+                        {a._personalDate ? (
+                          <button
+                            className="btn"
+                            style={{ fontSize: "var(--fontSm)" }}
+                            onClick={async () => {
+                              await canvasApi.deletePersonalAssignmentDate(a.course_id, a.id);
+                              setPersonalDatesById((prev) => {
+                                const next = { ...prev };
+                                delete next[`${a.course_id}:${a.id}`];
+                                return next;
+                              });
+                            }}
+                          >
+                            Remove date
+                          </button>
                         ) : null}
                       </div>
                     </div>
@@ -1360,19 +1411,65 @@ export function UpcomingAssignments() {
                               View TO-DO
                             </button>
                           </div>
-                        ) : a.html_url ? (
-                          <div className="assignmentActions" style={{ minWidth: 0 }}>
-                            <a
-                              className="btn"
-                              href={a.html_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Open assignment in Canvas"
-                            >
-                              Open in Canvas
-                            </a>
+                        ) : (
+                          <div className="assignmentActions" style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                            {a.html_url ? (
+                              <a
+                                className="btn"
+                                href={a.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Open assignment in Canvas"
+                              >
+                                Open in Canvas
+                              </a>
+                            ) : null}
+                            {addingDateFor === focusId ? (
+                              <>
+                                <input
+                                  type="datetime-local"
+                                  value={addingDateInput}
+                                  onChange={(e) => setAddingDateInput(e.target.value)}
+                                  style={{ fontSize: "var(--fontSm)" }}
+                                />
+                                <button
+                                  className="btn"
+                                  style={{ fontSize: "var(--fontSm)" }}
+                                  onClick={async () => {
+                                    if (!addingDateInput) return;
+                                    const due_at = addingDateInput.length === 16
+                                      ? `${addingDateInput}:00`
+                                      : addingDateInput;
+                                    await canvasApi.upsertPersonalAssignmentDate(a.course_id, a.id, due_at);
+                                    setPersonalDatesById((prev) => ({
+                                      ...prev,
+                                      [`${a.course_id}:${a.id}`]: due_at,
+                                    }));
+                                    setAddingDateFor(null);
+                                    setAddingDateInput("");
+                                  }}
+                                >
+                                  Save date
+                                </button>
+                                <button
+                                  className="btn"
+                                  style={{ fontSize: "var(--fontSm)" }}
+                                  onClick={() => { setAddingDateFor(null); setAddingDateInput(""); }}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="btn"
+                                style={{ fontSize: "var(--fontSm)" }}
+                                onClick={() => { setAddingDateFor(focusId); setAddingDateInput(""); }}
+                              >
+                                Add date
+                              </button>
+                            )}
                           </div>
-                        ) : null}
+                        )}
                       </div>
                     </li>
                   );

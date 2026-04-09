@@ -198,6 +198,13 @@ export function MyCourses() {
   const loading = state.loading;
   const err = state.error;
 
+  const attendanceState = useCachedAsync(
+    "courses:attendance-tabs",
+    ({ signal }) => canvasApi.getAttendanceTabs({ signal }),
+    { ttlMs: 10 * 60 * 1000 }
+  );
+  const attendanceUrls = attendanceState.data?.attendance ?? {};
+
   const sorted = useMemo(() => {
     const copy = [...summaries];
     copy.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -243,7 +250,7 @@ export function MyCourses() {
     setGradeVisibleById(updates);
   }
 
-  if (loading && summaries.length === 0)
+  if ((loading || state.refreshing) && summaries.length === 0)
     return <Loading label="Loading course summaries…" />;
   if (err && summaries.length === 0) return <ErrorBox error={err} />;
 
@@ -289,7 +296,7 @@ export function MyCourses() {
 
       {err ? <ErrorBox error={err} /> : null}
 
-      {sorted.length === 0 ? (
+      {sorted.length === 0 && !loading && !state.refreshing ? (
         <div className="muted">No active courses found.</div>
       ) : null}
 
@@ -392,6 +399,17 @@ export function MyCourses() {
                     rel="noreferrer"
                   >
                     Open Course in Canvas
+                  </a>
+                ) : null}
+
+                {attendanceUrls[String(c.id)] ? (
+                  <a
+                    className="btn"
+                    href={attendanceUrls[String(c.id)]}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Attendance
                   </a>
                 ) : null}
               </div>

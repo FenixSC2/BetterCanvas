@@ -94,8 +94,22 @@ export const canvasApi = {
     );
   },
   getUndatedAssignments: (opts) => request("/api/undated-assignments", opts),
+  getPersonalAssignmentDates: (opts) => request("/api/personal-assignment-dates", opts),
+  upsertPersonalAssignmentDate: (courseId, assignmentId, due_at, opts) =>
+    request(`/api/personal-assignment-dates/${courseId}/${assignmentId}`, {
+      ...opts,
+      method: "PUT",
+      body: { due_at },
+    }),
+  deletePersonalAssignmentDate: (courseId, assignmentId, opts) =>
+    request(`/api/personal-assignment-dates/${courseId}/${assignmentId}`, {
+      ...opts,
+      method: "DELETE",
+    }),
   getDashboard: (upcomingLimit = 20, opts) =>
     request(`/api/dashboard?upcoming_limit=${upcomingLimit}`, opts),
+
+  getAttendanceTabs: (opts) => request("/api/courses/attendance-tabs", opts),
 
   // Aggregated view for MyCourses
   getCourseSummaries: (nextLimit = 3, missingLimit = 10, opts) =>

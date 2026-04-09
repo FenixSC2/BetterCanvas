@@ -465,6 +465,7 @@ export function GradePerformance({ demoMode = false }) {
   const [useLetterTarget, setUseLetterTarget] = useState(true);
   const [finalWeight, setFinalWeight] = useState("20");
   const [predictedFinalExamScore, setPredictedFinalExamScore] = useState("88");
+  const [usePredictedInFinalCalc, setUsePredictedInFinalCalc] = useState(false);
   const [showGrades, setShowGrades] = useHydratedStateFromCache(
     "grade-performance:show-grades",
     true,
@@ -741,7 +742,9 @@ export function GradePerformance({ demoMode = false }) {
   ]);
 
   const weightedFinalCalc = useMemo(() => {
-    const current = Number(selectedCourse?.current_score);
+    const current = usePredictedInFinalCalc
+      ? Number(stats?.projectedPercent ?? selectedCourse?.current_score)
+      : Number(selectedCourse?.current_score);
     if (!Number.isFinite(current)) return null;
 
     const w = clampPercent(finalWeight, 0) / 100;
@@ -771,6 +774,8 @@ export function GradePerformance({ demoMode = false }) {
     targetLetter,
     targetPercent,
     scaleConfig,
+    usePredictedInFinalCalc,
+    stats,
   ]);
 
   const filteredOverrideCount = useMemo(
@@ -1772,6 +1777,18 @@ export function GradePerformance({ demoMode = false }) {
             </label>
           </div>
 
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              className="themeCheckbox"
+              checked={usePredictedInFinalCalc}
+              onChange={(e) => setUsePredictedInFinalCalc(e.target.checked)}
+            />
+            <span className="muted" style={{ fontSize: "var(--fontSm)" }}>
+              Use predicted scores as current grade
+            </span>
+          </label>
+
           {weightedFinalCalc ? (
             <>
               <div className="rowWrap">
@@ -1788,10 +1805,12 @@ export function GradePerformance({ demoMode = false }) {
                 </span>
               </div>
               <div className="muted gradeCalcBasis">
-                Calculation basis: Canvas current score for the selected class
+                Calculation basis:{" "}
+                {usePredictedInFinalCalc
+                  ? "Projected grade (Canvas scores + your predictions)"
+                  : "Canvas current score for the selected class"}{" "}
                 plus a manual final-exam weight of{" "}
-                {fmtPct(weightedFinalCalc.weightPct)}. This block does not use
-                assignment-level prediction rows.
+                {fmtPct(weightedFinalCalc.weightPct)}.
               </div>
             </>
           ) : (

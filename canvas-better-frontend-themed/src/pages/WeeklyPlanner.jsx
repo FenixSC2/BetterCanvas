@@ -861,6 +861,17 @@ export function WeeklyPlanner() {
   );
   const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
+  const [personalDatesById, setPersonalDatesById] = useState({});
+  useEffect(() => {
+    canvasApi.getPersonalAssignmentDates().then((data) => {
+      const map = {};
+      for (const entry of (data.dates || [])) {
+        map[`${entry.course_id}:${entry.assignment_id}`] = entry.due_at;
+      }
+      setPersonalDatesById(map);
+    }).catch(() => {});
+  }, []);
+
   // Stable refs so event handlers always call the latest refresh
   const plannerRefreshRef = useRef(null);
   plannerRefreshRef.current = plannerQ.refresh;
@@ -1350,6 +1361,19 @@ export function WeeklyPlanner() {
     closeSplitPopover();
   }
 
+  async function removePersonalDate(courseId, assignmentId) {
+    try {
+      await canvasApi.deletePersonalAssignmentDate(courseId, assignmentId);
+      setPersonalDatesById((prev) => {
+        const next = { ...prev };
+        delete next[`${courseId}:${assignmentId}`];
+        return next;
+      });
+    } catch {
+      // silently ignore
+    }
+  }
+
   // ---- One badge rule helper ----
   function renderSingleStatusBadge({ missing, submitted, complete }) {
     if (missing) return <span className="badge badgeDanger">Missing</span>;
@@ -1519,7 +1543,27 @@ export function WeeklyPlanner() {
 
     for (const a of undatedItems || []) {
       if (!settings.showCompleted && a.submitted) continue;
-      pushUndated(a);
+      const pKey = `${a.course_id}:${a.id}`;
+      const personalDueAt = personalDatesById[pKey];
+      if (personalDueAt) {
+        const due = new Date(personalDueAt);
+        if (Number.isFinite(due.getTime()) && due >= start && due < end) {
+          const dayIdx = Math.floor(
+            (startOfDay(due).getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          const list = buckets.get(dayIdx) || [];
+          list.push({
+            __kind: "base",
+            assignment: { ...a, due_at: personalDueAt, _personalDate: true },
+            splitAway: splitSum(a.course_id, a.id),
+          });
+          buckets.set(dayIdx, list);
+        }
+        // If personal date falls outside the current week, it won't appear here —
+        // it'll show when the user navigates to that week.
+      } else {
+        pushUndated(a);
+      }
     }
 
     // Planned totals now tied to workload estimate state (same data as widget)
@@ -1634,6 +1678,7 @@ export function WeeklyPlanner() {
     effortKeyMap,
     sortMode,
     todos,
+    personalDatesById,
   ]);
 
   const nextUp = useMemo(() => {
@@ -2553,6 +2598,7 @@ export function WeeklyPlanner() {
                                     courseId={a.course_id}
                                     assignmentId={a.id}
                                     compactLabels={true}
+                                    onRemoveDate={a._personalDate ? () => removePersonalDate(a.course_id, a.id) : null}
                                   />
                                 </div>
 

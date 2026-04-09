@@ -298,6 +298,24 @@ class GradeScalePreference(Base):
         UniqueConstraint("user_id", "course_id", name="uq_grade_scale_preference"),
     )
 
+class PersonalAssignmentDate(Base):
+    __tablename__ = "personal_assignment_dates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    assignment_id = Column(Integer)
+    due_at = Column(DateTime, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint('user_id', 'course_id', 'assignment_id', name='uq_personal_assignment_date'),
+    )
+
+
 class TodoItem(Base):
     __tablename__ = "todo_items"
 
@@ -728,6 +746,74 @@ def delete_assignment_weight_override(
         AssignmentWeightOverride.user_id == user_id,
         AssignmentWeightOverride.course_id == course_id,
         AssignmentWeightOverride.assignment_id == assignment_id,
+    ).first()
+    if row:
+        db.delete(row)
+        db.commit()
+        return True
+    return False
+
+
+def get_personal_assignment_dates(user_id: int, db: Session) -> list:
+    """Get all personal due dates set by a user for undated assignments."""
+    rows = (
+        db.query(PersonalAssignmentDate)
+        .filter(PersonalAssignmentDate.user_id == user_id)
+        .all()
+    )
+    return [
+        {
+            "course_id": row.course_id,
+            "assignment_id": row.assignment_id,
+            "due_at": row.due_at.isoformat() if row.due_at else None,
+        }
+        for row in rows
+    ]
+
+
+def upsert_personal_assignment_date(
+    user_id: int,
+    course_id: int,
+    assignment_id: int,
+    due_at: datetime,
+    db: Session,
+) -> PersonalAssignmentDate:
+    """Create or update a personal due date for an undated assignment."""
+    existing = db.query(PersonalAssignmentDate).filter(
+        PersonalAssignmentDate.user_id == user_id,
+        PersonalAssignmentDate.course_id == course_id,
+        PersonalAssignmentDate.assignment_id == assignment_id,
+    ).first()
+
+    if existing:
+        existing.due_at = due_at
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = PersonalAssignmentDate(
+        user_id=user_id,
+        course_id=course_id,
+        assignment_id=assignment_id,
+        due_at=due_at,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_personal_assignment_date(
+    user_id: int,
+    course_id: int,
+    assignment_id: int,
+    db: Session,
+) -> bool:
+    """Delete a personal due date for an assignment."""
+    row = db.query(PersonalAssignmentDate).filter(
+        PersonalAssignmentDate.user_id == user_id,
+        PersonalAssignmentDate.course_id == course_id,
+        PersonalAssignmentDate.assignment_id == assignment_id,
     ).first()
     if row:
         db.delete(row)

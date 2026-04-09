@@ -284,6 +284,7 @@ export function WorkloadEstimateControl({
   assignmentId,
   compactLabels = false,
   compactChecklist = false,
+  onRemoveDate = null,
 }) {
   const [tick, setTick] = useState(0);
 
@@ -1368,6 +1369,20 @@ export function WorkloadEstimateControl({
                 </span>
               </label>
             </div>
+
+            {onRemoveDate ? (
+              <div style={{ marginTop: 12 }}>
+                <div className="effortDivider" style={{ marginBottom: 12 }} />
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ width: "100%" }}
+                  onClick={() => { onRemoveDate(); closePopover(); }}
+                >
+                  Remove personal date
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </AnchoredPopover>
