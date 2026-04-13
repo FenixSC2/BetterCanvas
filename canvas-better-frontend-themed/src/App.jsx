@@ -132,6 +132,15 @@ function DashboardApp() {
   return <DashboardContent demoMode={false} onExitDemo={null} />;
 }
 
+const PAGES = [
+  { key: "info",     El: MyInformation },
+  { key: "courses",  El: MyCourses },
+  { key: "upcoming", El: UpcomingAssignments },
+  { key: "planner",  El: WeeklyPlanner },
+  { key: "todo",     El: TodoPage },
+  { key: "grades",   El: GradePerformance },
+];
+
 function DashboardContent({ demoMode = false, onExitDemo = null }) {
   const tabs = useMemo(
     () => [
@@ -146,6 +155,8 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
   );
 
   const [active, setActive] = useState("info");
+  // Track which tabs have been visited so we can keep them mounted (lazy-mount + CSS hide)
+  const [mounted, setMounted] = useState(() => new Set(["info"]));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(false);
   const headerCompactRef = useRef(false);
@@ -155,6 +166,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
     function onNav(e) {
       const tab = e?.detail?.tab;
       if (tab) {
+        setMounted(prev => { const s = new Set(prev); s.add(tab); return s; });
         setActive(tab);
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -242,6 +254,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
   }, [active]);
 
   function handleTabChange(tab) {
+    setMounted(prev => { const s = new Set(prev); s.add(tab); return s; });
     setActive(tab);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -273,12 +286,13 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           className={`main ${active === "planner" ? "mainWide" : ""}`} 
           style={demoMode ? { paddingBottom: "60px" } : {}}
         >
-          {active === "info" ? <MyInformation /> : null}
-          {active === "courses" ? <MyCourses /> : null}
-          {active === "upcoming" ? <UpcomingAssignments /> : null}
-          {active === "planner" ? <WeeklyPlanner /> : null}
-          {active === "todo" ? <TodoPage /> : null}
-          {active === "grades" ? <GradePerformance demoMode={demoMode} /> : null}
+          {PAGES.map(({ key, El }) =>
+            mounted.has(key) ? (
+              <div key={key} style={{ display: active === key ? undefined : "none" }}>
+                <El {...(key === "grades" ? { demoMode } : {})} />
+              </div>
+            ) : null
+          )}
         </main>
 
         <footer className="footer muted" style={demoMode ? { position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100 } : {}}>

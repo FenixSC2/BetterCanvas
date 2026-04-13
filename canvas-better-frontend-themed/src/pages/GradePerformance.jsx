@@ -493,7 +493,7 @@ export function GradePerformance({ demoMode = false }) {
   const summariesQ = useCachedAsync(
     "grade-performance:courses:summary",
     ({ signal }) => canvasApi.getCourseSummaries(3, 5, { signal }),
-    { ttlMs: 2 * 60 * 1000 },
+    { ttlMs: 5 * 60 * 1000 },
   );
 
   const summaries = Array.isArray(summariesQ.data) ? summariesQ.data : [];
@@ -537,7 +537,7 @@ export function GradePerformance({ demoMode = false }) {
       );
       return responses.flat();
     },
-    { ttlMs: 60 * 1000 },
+    { ttlMs: 5 * 60 * 1000 },
   );
 
   const allAssignments = Array.isArray(allAssignmentsQ.data)
@@ -550,7 +550,7 @@ export function GradePerformance({ demoMode = false }) {
       demoMode
         ? Promise.resolve({ overrides: [] })
         : canvasApi.getAssignmentWeightOverrides({ signal }),
-    { ttlMs: 60 * 1000 },
+    { ttlMs: 5 * 60 * 1000 },
   );
 
   const scalePrefsQ = useCachedAsync(
@@ -559,7 +559,7 @@ export function GradePerformance({ demoMode = false }) {
       demoMode
         ? Promise.resolve({ scales: [] })
         : canvasApi.getGradeScalePreferences({ signal }),
-    { ttlMs: 60 * 1000 },
+    { ttlMs: 5 * 60 * 1000 },
   );
 
   const [weightOverridesById, setWeightOverridesById] = useState({});

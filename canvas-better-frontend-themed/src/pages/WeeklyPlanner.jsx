@@ -861,16 +861,21 @@ export function WeeklyPlanner() {
   );
   const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
 
+  const personalDatesQ = useCachedAsync(
+    "personal-assignment-dates",
+    ({ signal }) => canvasApi.getPersonalAssignmentDates({ signal }),
+    { ttlMs: 5 * 60 * 1000 }
+  );
+
   const [personalDatesById, setPersonalDatesById] = useState({});
   useEffect(() => {
-    canvasApi.getPersonalAssignmentDates().then((data) => {
-      const map = {};
-      for (const entry of (data.dates || [])) {
-        map[`${entry.course_id}:${entry.assignment_id}`] = entry.due_at;
-      }
-      setPersonalDatesById(map);
-    }).catch(() => {});
-  }, []);
+    if (!personalDatesQ.data?.dates) return;
+    const map = {};
+    for (const entry of personalDatesQ.data.dates) {
+      map[`${entry.course_id}:${entry.assignment_id}`] = entry.due_at;
+    }
+    setPersonalDatesById(map);
+  }, [personalDatesQ.data]);
 
   // Stable refs so event handlers always call the latest refresh
   const plannerRefreshRef = useRef(null);

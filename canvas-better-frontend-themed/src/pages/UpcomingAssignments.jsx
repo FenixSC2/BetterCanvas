@@ -5,7 +5,7 @@ import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
-import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
+import { useCachedAsync } from "../hooks/useCachedAsync";
 import { loadTodos, syncTodos, updateTodoItem } from "../lib/todoStore";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 
@@ -275,19 +275,25 @@ export function UpcomingAssignments() {
   const upcomingQ = useCachedAsync(
     "upcoming:list",
     ({ signal }) => canvasApi.getUpcoming({ signal }),
-    { ttlMs: 60 * 1000 } // upcoming can be refreshed fairly often
+    { ttlMs: 3 * 60 * 1000 }
   );
 
   const upcomingCrossCheckQ = useCachedAsync(
     "upcoming:cross-check",
     ({ signal }) => canvasApi.getUpcomingCrossCheck({ signal }),
-    { ttlMs: 60 * 1000 }
+    { ttlMs: 3 * 60 * 1000 }
   );
 
   const undatedQ = useCachedAsync(
     "undated:list",
     ({ signal }) => canvasApi.getUndatedAssignments({ signal }),
-    { ttlMs: 60 * 1000 } // undated can be refreshed fairly often
+    { ttlMs: 3 * 60 * 1000 }
+  );
+
+  const personalDatesQ = useCachedAsync(
+    "personal-assignment-dates",
+    ({ signal }) => canvasApi.getPersonalAssignmentDates({ signal }),
+    { ttlMs: 5 * 60 * 1000 }
   );
 
   const [personalDatesById, setPersonalDatesById] = useState({});
@@ -295,15 +301,13 @@ export function UpcomingAssignments() {
   const [addingDateInput, setAddingDateInput] = useState("");
 
   useEffect(() => {
-    canvasApi.getPersonalAssignmentDates().then((res) => {
-      if (!res?.dates) return;
-      const byId = {};
-      for (const d of res.dates) {
-        byId[`${d.course_id}:${d.assignment_id}`] = d.due_at;
-      }
-      setPersonalDatesById(byId);
-    }).catch(() => {});
-  }, []);
+    if (!personalDatesQ.data?.dates) return;
+    const byId = {};
+    for (const d of personalDatesQ.data.dates) {
+      byId[`${d.course_id}:${d.assignment_id}`] = d.due_at;
+    }
+    setPersonalDatesById(byId);
+  }, [personalDatesQ.data]);
 
   // Keep a stable ref to the latest refresh so intervals/mount effects
   // don't capture a stale closure (useCachedAsync recreates refresh each render)
@@ -316,11 +320,8 @@ export function UpcomingAssignments() {
   const undatedRefreshRef = useRef(null);
   undatedRefreshRef.current = undatedQ.refresh;
 
-  // Clear upcoming cache once on mount, then kick off the first fetch
+  // Kick off the first fetch on mount
   useEffect(() => {
-    clearCachedAsync("upcoming:");
-    clearCachedAsync("upcoming:cross-check");
-    clearCachedAsync("undated:");
     refreshRef.current?.();
     crossCheckRefreshRef.current?.();
     undatedRefreshRef.current?.();
