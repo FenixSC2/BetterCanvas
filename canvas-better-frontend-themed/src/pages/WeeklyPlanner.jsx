@@ -1470,10 +1470,31 @@ export function WeeklyPlanner() {
 
         const xTodoLike = x.__kind === "todo" || x.__kind === "todo-placeholder";
         const yTodoLike = y.__kind === "todo" || y.__kind === "todo-placeholder";
+
+        // Get a comparable due time for any entry kind
+        const entryDueTime = (e) => {
+          if (e.__kind === "todo" || e.__kind === "todo-placeholder") {
+            const raw = e.due_at || e.todo?.due_at;
+            return raw ? new Date(raw).getTime() : Infinity;
+          }
+          if (e.__kind === "base") {
+            return e.assignment?.due_at ? new Date(e.assignment.due_at).getTime() : Infinity;
+          }
+          return Infinity;
+        };
+
         if (xTodoLike || yTodoLike) {
-          if (xTodoLike !== yTodoLike) return x.__kind === "base" ? -1 : 1;
-          const xt = x.due_at ? new Date(x.due_at).getTime() : x.todo?.due_at ? new Date(x.todo.due_at).getTime() : Infinity;
-          const yt = y.due_at ? new Date(y.due_at).getTime() : y.todo?.due_at ? new Date(y.todo.due_at).getTime() : Infinity;
+          if (xTodoLike !== yTodoLike) {
+            // Mixed todo / Canvas — sort by due time so urgent todos aren't buried
+            const xt = entryDueTime(x);
+            const yt = entryDueTime(y);
+            if (xt !== yt) return xt - yt;
+            // Same time: Canvas items first as tiebreaker
+            return xTodoLike ? 1 : -1;
+          }
+          // Both todo-like: sort by time, then placeholder after concrete, then title
+          const xt = entryDueTime(x);
+          const yt = entryDueTime(y);
           if (xt !== yt) return xt - yt;
           if (x.__kind !== y.__kind) return x.__kind === "todo" ? -1 : 1;
           return String(x.todo?.title || "").localeCompare(
@@ -1584,8 +1605,20 @@ export function WeeklyPlanner() {
           continue;
         }
 
+        if (entry.__kind === "todo" || entry.__kind === "todo-placeholder") {
+          const t = entry.todo;
+          if (!t) continue;
+          const assignmentId =
+            entry.__kind === "todo-placeholder" && entry.previewAssignmentId
+              ? entry.previewAssignmentId
+              : t.id;
+          const rem = workloadRemainingHours("todo", assignmentId);
+          total += rem;
+          continue;
+        }
+
         const a = entry.assignment;
-        if (a?.submitted) continue;
+        if (!a || a?.submitted) continue;
 
         const rem = workloadRemainingHours(a.course_id, a.id);
         const planned = Math.max(0, rem - (entry.splitAway || 0));
@@ -1688,21 +1721,32 @@ export function WeeklyPlanner() {
 
   const nextUp = useMemo(() => {
     const after = view.end.getTime();
-    const upcoming = (items || [])
+
+    const canvasEntries = (items || [])
       .filter((a) => a?.due_at)
-      .map((a) => ({ a, t: new Date(a.due_at).getTime() }))
+      .map((a) => ({ item: a, t: new Date(a.due_at).getTime(), isTodo: false }))
       .filter((x) => Number.isFinite(x.t) && x.t >= after)
-      .filter((x) => (settings.showCompleted ? true : !x.a.submitted))
-      .sort((x, y) => {
-        const xf = workloadIsFavorite(x.a.course_id, x.a.id);
-        const yf = workloadIsFavorite(y.a.course_id, y.a.id);
-        if (xf !== yf) return xf ? -1 : 1;
-        return x.t - y.t;
-      })
-      .slice(0, UI.NEXT_UP_LIMIT) // ✅ limit
-      .map((x) => x.a);
-    return upcoming;
-  }, [items, view.end, settings.showCompleted, storageTick]);
+      .filter((x) => (settings.showCompleted ? true : !x.item.submitted));
+
+    const todoEntries = settings.showPersonalTodos
+      ? (todos || [])
+          .filter((t) => !t.completed && t.due_at)
+          .map((t) => ({ item: { ...t, __kind: "todo", course_name: "TO-DO's" }, t: new Date(t.due_at).getTime(), isTodo: true }))
+          .filter((x) => Number.isFinite(x.t) && x.t >= after)
+      : [];
+
+    const combined = [...canvasEntries, ...todoEntries];
+    combined.sort((x, y) => {
+      const courseIdX = x.isTodo ? "todo" : x.item.course_id;
+      const courseIdY = y.isTodo ? "todo" : y.item.course_id;
+      const xf = workloadIsFavorite(courseIdX, x.item.id);
+      const yf = workloadIsFavorite(courseIdY, y.item.id);
+      if (xf !== yf) return xf ? -1 : 1;
+      return x.t - y.t;
+    });
+
+    return combined.slice(0, UI.NEXT_UP_LIMIT).map((x) => x.item);
+  }, [items, todos, view.end, settings.showCompleted, settings.showPersonalTodos, storageTick]);
 
   useEffect(() => {
     if (!settings.showPersonalTodos) return;
@@ -2724,18 +2768,53 @@ export function WeeklyPlanner() {
                 style={{ marginTop: UI.DAY_LIST_MARGIN_TOP_PX, flex: 1, minHeight: 0 }}
               >
                 {nextUp.map((a) => {
+                  const isTodoEntry = a.__kind === "todo";
                   const dueTime = fmtTime(a.due_at);
                   const dueDate = fmtShortDate(a.due_at);
-                  const courseLabel = a.course_name ?? "Unknown Course";
-                  const variant = getPlannerBarVariant({
-                    isSplit: false,
-                    assignment: a,
-                  });
+                  const courseLabel = isTodoEntry ? "TO-DO's" : (a.course_name ?? "Unknown Course");
 
+                  if (isTodoEntry) {
+                    const isFavorited = workloadIsFavorite("todo", a.id);
+                    return (
+                      <div key={`next-todo-${a.id}`} className="card">
+                        <div className="cardBody" style={{ padding: 0 }}>
+                          <div className="plannerCard">
+                            <div className="plannerBar plannerBar-todo" />
+                            <div className="plannerContent" style={{ padding: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                <div className="plannerTitle" title={a.title} style={{ fontWeight: 900 }}>
+                                  <span className="plannerTitleWrap">
+                                    {isFavorited ? <FavoriteMarker /> : null}
+                                    <span>{a.title}</span>
+                                  </span>
+                                </div>
+                                <span className="badge badgeNeutral">
+                                  {a.source?.startsWith("announcement") ? "Announcement" : "Personal"}
+                                </span>
+                              </div>
+                              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                <span className="mono">{courseLabel}</span>
+                              </div>
+                              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                <span style={{ fontWeight: 900 }}>Due on:</span>{" "}
+                                <span className="mono">{dueDate || "—"} {dueTime || ""}</span>
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <button className="btn" onClick={() => navigateToTodoItem(a.id)}>
+                                  View to-do
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const variant = getPlannerBarVariant({ isSplit: false, assignment: a });
                   const missing = isMissing(a);
                   const submitted = !!a.submitted;
-                  const complete =
-                    !submitted && isWorkloadComplete(a.course_id, a.id);
+                  const complete = !submitted && isWorkloadComplete(a.course_id, a.id);
                   const isFavorited = workloadIsFavorite(a.course_id, a.id);
 
                   return (
