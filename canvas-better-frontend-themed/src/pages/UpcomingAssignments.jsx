@@ -354,6 +354,23 @@ export function UpcomingAssignments() {
   const [todos, setTodos] = useState(() => loadTodos());
   const [workloadTick, setWorkloadTick] = useState(0);
 
+  // Tracks which graded-but-unsubmitted assignments the user has accepted/dismissed
+  const ACCEPTED_GRADES_KEY = "upcoming:acceptedGrades";
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(ACCEPTED_GRADES_KEY) || "[]"));
+    } catch { return new Set(); }
+  });
+  function acceptGrade(courseId, assignmentId) {
+    const key = `${courseId}:${assignmentId}`;
+    setAcceptedGradeKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      try { localStorage.setItem(ACCEPTED_GRADES_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
   const primaryCanvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
   const crossCheckCanvasItems = Array.isArray(upcomingCrossCheckQ.data)
     ? upcomingCrossCheckQ.data
@@ -563,8 +580,12 @@ export function UpcomingAssignments() {
         ? getSyntheticTodoWeight(a)
         : normalizePoints(a?.points_possible);
 
+    const isGradeAccepted = (a) =>
+      !isTodoItem(a) && acceptedGradeKeys.has(`${a.course_id}:${a.id}`);
+
     const isMissing = (a) => {
       if (isCompletedItem(a)) return false;
+      if (isGradeAccepted(a)) return false;
       const h = hoursUntil(a.due_at);
       return h != null && h < 0;
     };
@@ -575,7 +596,7 @@ export function UpcomingAssignments() {
       return h != null && h >= 0;
     };
 
-    const isCompleted = (a) => isCompletedItem(a);
+    const isCompleted = (a) => isCompletedItem(a) || isGradeAccepted(a);
     const isTodo = (a) => isTodoItem(a);
     const isFavorite = (a) =>
       isAssignmentFavorited({
@@ -649,7 +670,7 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [items, filterMode, blend, canvasPointStats, workloadTick]);
+  }, [items, filterMode, blend, canvasPointStats, workloadTick, acceptedGradeKeys]);
 
   // Separate list for undated assignments (for the undated section)
   const undatedSorted = useMemo(() => {
@@ -1037,6 +1058,7 @@ export function UpcomingAssignments() {
 
                 const isMissing =
                   !isCompletedItem(a) &&
+                  !acceptedGradeKeys.has(`${a.course_id}:${a.id}`) &&
                   a.due_at &&
                   hoursUntil(a.due_at) != null &&
                   hoursUntil(a.due_at) < 0;
@@ -1207,6 +1229,21 @@ export function UpcomingAssignments() {
                           >
                             Open in Canvas
                           </a>
+                        ) : null}
+
+                        {/* Accept grade button for assignments that are graded but not submitted */}
+                        {!todoItem &&
+                          a.graded_at &&
+                          !a.submitted &&
+                          !acceptedGradeKeys.has(`${a.course_id}:${a.id}`) ? (
+                          <button
+                            className="btn"
+                            style={{ fontSize: "var(--fontSm)" }}
+                            title="Accept current grade and stop showing as missing"
+                            onClick={() => acceptGrade(a.course_id, a.id)}
+                          >
+                            Accept grade
+                          </button>
                         ) : null}
 
                         {a._personalDate ? (

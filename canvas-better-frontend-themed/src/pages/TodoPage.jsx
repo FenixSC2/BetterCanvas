@@ -1345,8 +1345,8 @@ export function TodoPage() {
         </div>
       ) : null}
 
-      {/* Footer note if everything is done */}
-      {todos.length > 0 && totalActive === 0 ? (
+      {/* Footer note if everything is done and the completed list is collapsed */}
+      {todos.length > 0 && totalActive === 0 && !completedExpanded ? (
         <div className="card">
           <div
             className="cardBody muted"
