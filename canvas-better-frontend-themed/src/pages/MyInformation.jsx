@@ -152,6 +152,24 @@ export function MyInformation() {
     return () => window.removeEventListener("canvassist:todos:changed", onTodosChanged);
   }, []);
 
+  // Personal todos due within 24 hours
+  const [todos, setTodos] = useState(() => loadTodos());
+  useEffect(() => {
+    function onTodosChanged() { setTodos(loadTodos()); }
+    window.addEventListener("canvassist:todos:changed", onTodosChanged);
+    return () => window.removeEventListener("canvassist:todos:changed", onTodosChanged);
+  }, []);
+  const todosDue24h = useMemo(() => {
+    const now = Date.now();
+    const cutoff = now + 24 * 60 * 60 * 1000;
+    return (todos || []).filter((t) => {
+      if (t.completed) return false;
+      if (!t.due_at) return false;
+      const ms = new Date(t.due_at).getTime();
+      return Number.isFinite(ms) && ms >= now && ms <= cutoff;
+    }).sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
+  }, [todos]);
+
   const SHOW_GPA_KEY = "myinfo:showGpaInCollapsed";
   const [showGpaCollapsed, setShowGpaCollapsed] = useState(() => {
     try {
@@ -209,7 +227,8 @@ export function MyInformation() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const missingCount = overview?.missing_count ?? 0;
-  const due24Count = overview?.due_next_24h_count ?? 0;
+  const canvasDue24Count = overview?.due_next_24h_count ?? 0;
+  const due24Count = canvasDue24Count + todosDue24h.length;
   const gpa = overview?.gpa;
 
   // GPA info tooltip (portal-based to escape overflow:hidden containers)
@@ -227,6 +246,10 @@ export function MyInformation() {
     typeof window !== "undefined"
       ? window.isSecureContext || window.location.hostname === "localhost"
       : false;
+
+  // Track whether the announcements expandable is open so we can re-mark seen
+  // when announcements finish loading while the dropdown is already open.
+  const [annIsOpen, setAnnIsOpen] = useState(false);
 
   // NEW badge count — based on DB high-water mark so it persists across sessions
   const newAnnouncementCount = useMemo(() => {
@@ -266,6 +289,14 @@ export function MyInformation() {
       canvasApi.setAnnouncementLastSeen(newestId).catch(() => {});
     }
   }
+
+  // If the dropdown is already open when announcements finish loading, mark them seen.
+  // This handles the case where the user opens the section before the fetch completes.
+  useEffect(() => {
+    if (annIsOpen && announcements?.length) {
+      markAllAnnouncementsSeen();
+    }
+  }, [announcements]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load seenIds after mount
   useEffect(() => {
@@ -460,7 +491,8 @@ export function MyInformation() {
             <span className="muted">None found</span>
           )
         }
-        onOpen={markAllAnnouncementsSeen}
+        onOpen={() => { setAnnIsOpen(true); markAllAnnouncementsSeen(); }}
+        onClose={() => setAnnIsOpen(false)}
       >
         {annErr ? <ErrorBox error={annErr} /> : null}
 
@@ -659,7 +691,8 @@ export function MyInformation() {
           </div>
         ) : (
           <ul className="list listSpaced">
-            {overview.due_next_24h.map((a) => {
+            {/* Canvas assignments */}
+            {(overview?.due_next_24h || []).map((a) => {
               const titleText = a?.name || "Untitled assignment";
 
               const subtitle = (
@@ -719,6 +752,52 @@ export function MyInformation() {
                       </div>
                     ) : (
                       <div className="muted">No description available.</div>
+                    )}
+                  </Expandable>
+                </li>
+              );
+            })}
+            {/* Personal todos due within 24h */}
+            {todosDue24h.map((t) => {
+              const subtitle = (
+                <span className="muted">
+                  <span className="mono">TO-DO's</span>
+                  {" • "}Due: <span className="mono">{fmtDue(t.due_at)}</span>
+                </span>
+              );
+              const right = (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      window.dispatchEvent(
+                        new CustomEvent("canvasbetter:navigate", {
+                          detail: { tab: "todo" },
+                        })
+                      )
+                    }
+                  >
+                    View to-do
+                  </button>
+                  <WorkloadEstimateControl
+                    courseId="todo"
+                    assignmentId={t.id}
+                    compactLabels={true}
+                  />
+                </div>
+              );
+              return (
+                <li key={`todo-${t.id}`} className="listItem">
+                  <Expandable
+                    title={t.title || "Untitled to-do"}
+                    subtitle={subtitle}
+                    right={right}
+                  >
+                    {t.description ? (
+                      <div className="desc preserveWhitespace">{t.description}</div>
+                    ) : (
+                      <div className="muted">No description.</div>
                     )}
                   </Expandable>
                 </li>
