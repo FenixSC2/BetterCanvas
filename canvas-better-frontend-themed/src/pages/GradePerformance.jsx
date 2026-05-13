@@ -167,6 +167,20 @@ function normalizeWeightOverrides(data) {
   return out;
 }
 
+function normalizeGroupWeightOverrides(data) {
+  const list = Array.isArray(data?.overrides) ? data.overrides : [];
+  const out = {};
+  for (const item of list) {
+    const courseId = String(item?.course_id ?? "");
+    const groupId = String(item?.group_id ?? "");
+    const pct = Number(item?.weight_pct);
+    if (!courseId || !groupId || !Number.isFinite(pct)) continue;
+    if (!out[courseId]) out[courseId] = {};
+    out[courseId][groupId] = pct;
+  }
+  return out;
+}
+
 function normalizeScoreOverrides(raw) {
   if (!raw || typeof raw !== "object") return {};
   const out = {};
@@ -392,6 +406,8 @@ function AnchoredPopover({
       if (!anchorEl) return;
       const rect = anchorEl.getBoundingClientRect();
       const margin = 10;
+      const panelHeight = panelRef.current?.offsetHeight || 0;
+      const vh = window.innerHeight;
 
       let left = rect.right + gap;
       if (left + width + margin > window.innerWidth) {
@@ -402,8 +418,17 @@ function AnchoredPopover({
         Math.min(left, window.innerWidth - width - margin),
       );
 
+      const heightForClamp = panelHeight > 0 ? panelHeight : 40;
       let top = rect.top;
-      top = Math.max(margin, Math.min(top, window.innerHeight - margin - 40));
+      if (top + heightForClamp + margin > vh) {
+        const flippedTop = rect.bottom - heightForClamp;
+        if (flippedTop >= margin) {
+          top = flippedTop;
+        } else {
+          top = Math.max(margin, vh - margin - heightForClamp);
+        }
+      }
+      top = Math.max(margin, Math.min(top, vh - margin - heightForClamp));
 
       setPos({ top, left });
     }
@@ -421,11 +446,19 @@ function AnchoredPopover({
     }
 
     recompute();
+    const raf = requestAnimationFrame(recompute);
+    let observer = null;
+    if (typeof ResizeObserver !== "undefined" && panelRef.current) {
+      observer = new ResizeObserver(recompute);
+      observer.observe(panelRef.current);
+    }
     window.addEventListener("resize", recompute);
     window.addEventListener("scroll", recompute, true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onMouseDown);
     return () => {
+      cancelAnimationFrame(raf);
+      if (observer) observer.disconnect();
       window.removeEventListener("resize", recompute);
       window.removeEventListener("scroll", recompute, true);
       window.removeEventListener("keydown", onKey);
@@ -463,6 +496,9 @@ export function GradePerformance({ demoMode = false }) {
   const [targetLetter, setTargetLetter] = useState("A-");
   const [selectedNeedAssignmentId, setSelectedNeedAssignmentId] = useState("");
   const [useLetterTarget, setUseLetterTarget] = useState(true);
+  const [predictPointsMode, setPredictPointsMode] = useState(false);
+  const [useOtherPredictionsInMinNeeded, setUseOtherPredictionsInMinNeeded] =
+    useState(true);
   const [finalWeight, setFinalWeight] = useState("20");
   const [predictedFinalExamScore, setPredictedFinalExamScore] = useState("88");
   const [usePredictedInFinalCalc, setUsePredictedInFinalCalc] = useState(false);
@@ -562,11 +598,36 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 5 * 60 * 1000 },
   );
 
+  const groupsQ = useCachedAsync(
+    `grade-performance:assignment-groups:${selectedCourseId || "none"}:${demoMode ? "demo" : "live"}`,
+    ({ signal }) => {
+      if (!selectedCourseId || demoMode) return Promise.resolve({ groups: [] });
+      return canvasApi.getCourseAssignmentGroups(selectedCourseId, { signal });
+    },
+    { ttlMs: 5 * 60 * 1000 },
+  );
+
+  const groupOverridesQ = useCachedAsync(
+    `grade-performance:assignment-group-weight-overrides:${demoMode ? "demo" : "live"}`,
+    ({ signal }) =>
+      demoMode
+        ? Promise.resolve({ overrides: [] })
+        : canvasApi.getAssignmentGroupWeightOverrides({ signal }),
+    { ttlMs: 5 * 60 * 1000 },
+  );
+
   const [weightOverridesById, setWeightOverridesById] = useState({});
+  const [groupWeightOverrides, setGroupWeightOverrides] = useState({});
+  const [savingGroupKey, setSavingGroupKey] = useState("");
+  const [groupWeightMessage, setGroupWeightMessage] = useState("");
 
   useEffect(() => {
     setWeightOverridesById(normalizeWeightOverrides(overridesQ.data));
   }, [overridesQ.data]);
+
+  useEffect(() => {
+    setGroupWeightOverrides(normalizeGroupWeightOverrides(groupOverridesQ.data));
+  }, [groupOverridesQ.data]);
 
   useEffect(() => {
     if (demoMode) {
@@ -708,8 +769,10 @@ export function GradePerformance({ demoMode = false }) {
         row.key === selectedKey
       )
         continue;
-      otherPredictedEarned += row.predictionEarned || 0;
-      otherPredictedPossible += row.effectivePoints;
+      if (useOtherPredictionsInMinNeeded) {
+        otherPredictedEarned += row.predictionEarned || 0;
+        otherPredictedPossible += row.effectivePoints;
+      }
       otherPredictedCount += 1;
     }
 
@@ -739,6 +802,7 @@ export function GradePerformance({ demoMode = false }) {
     targetLetter,
     targetPercent,
     scaleConfig,
+    useOtherPredictionsInMinNeeded,
   ]);
 
   const weightedFinalCalc = useMemo(() => {
@@ -835,6 +899,132 @@ export function GradePerformance({ demoMode = false }) {
 
   const displayedProjectedPercent =
     stats.projectedPercent ?? stats.currentKnownPercent;
+
+  const courseGroups = useMemo(() => {
+    const raw = Array.isArray(groupsQ.data?.groups) ? groupsQ.data.groups : [];
+    return raw
+      .slice()
+      .sort((a, b) => (a?.position ?? 0) - (b?.position ?? 0));
+  }, [groupsQ.data]);
+
+  const selectedCourseGroupOverrides = useMemo(() => {
+    if (!selectedCourseId) return {};
+    return groupWeightOverrides?.[String(selectedCourseId)] || {};
+  }, [groupWeightOverrides, selectedCourseId]);
+
+  const groupWeightedProjection = useMemo(() => {
+    if (!courseGroups.length) return null;
+    const rowsForCourse = stats.rows.filter(
+      (r) => String(r.assignment?.course_id) === String(selectedCourseId),
+    );
+    if (!rowsForCourse.length) return null;
+
+    const aggByGroup = new Map();
+    for (const r of rowsForCourse) {
+      const gid = r.assignment?.assignment_group_id;
+      if (gid == null) continue;
+      if (!r.hasEffectivePoints) continue;
+      let agg = aggByGroup.get(String(gid));
+      if (!agg) {
+        agg = { earned: 0, possible: 0, count: 0 };
+        aggByGroup.set(String(gid), agg);
+      }
+      if (r.countedAsGraded) {
+        agg.earned += r.score;
+        agg.possible += r.effectivePoints;
+        agg.count += 1;
+      } else if (r.predicted) {
+        agg.earned += r.predictionEarned || 0;
+        agg.possible += r.effectivePoints;
+        agg.count += 1;
+      }
+    }
+
+    let weightedSum = 0;
+    let totalWeight = 0;
+    let usedAnyOverride = false;
+    for (const g of courseGroups) {
+      const gid = String(g.id);
+      const overridePct = selectedCourseGroupOverrides[gid];
+      const hasOverride = Number.isFinite(overridePct);
+      if (hasOverride) usedAnyOverride = true;
+      const canvasWeight = Number(g.group_weight);
+      const weight = hasOverride
+        ? overridePct
+        : Number.isFinite(canvasWeight)
+          ? canvasWeight
+          : 0;
+      if (!Number.isFinite(weight) || weight <= 0) continue;
+      const agg = aggByGroup.get(gid);
+      if (!agg || agg.possible <= 0) continue;
+      const groupPct = (agg.earned / agg.possible) * 100;
+      weightedSum += groupPct * weight;
+      totalWeight += weight;
+    }
+
+    if (totalWeight <= 0) return null;
+    return {
+      percent: weightedSum / totalWeight,
+      usedAnyOverride,
+      totalWeight,
+    };
+  }, [
+    courseGroups,
+    selectedCourseGroupOverrides,
+    selectedCourseId,
+    stats.rows,
+  ]);
+
+  async function commitGroupWeightOverride(courseId, groupId, raw) {
+    if (!courseId || groupId == null) return;
+    const cKey = String(courseId);
+    const gKey = String(groupId);
+    const trimmed = String(raw ?? "").trim();
+    setSavingGroupKey(`${cKey}:${gKey}`);
+    setGroupWeightMessage("");
+    try {
+      if (trimmed === "") {
+        if (!demoMode) {
+          await canvasApi.deleteAssignmentGroupWeightOverride(cKey, gKey);
+        }
+        setGroupWeightOverrides((prev) => {
+          const next = { ...(prev || {}) };
+          if (next[cKey]) {
+            const copy = { ...next[cKey] };
+            delete copy[gKey];
+            if (Object.keys(copy).length === 0) {
+              delete next[cKey];
+            } else {
+              next[cKey] = copy;
+            }
+          }
+          return next;
+        });
+        setGroupWeightMessage("Reset to Canvas weight.");
+      } else {
+        const pct = Number(trimmed);
+        if (!Number.isFinite(pct) || pct < 0) {
+          setGroupWeightMessage("Enter a non-negative number.");
+          return;
+        }
+        if (!demoMode) {
+          await canvasApi.upsertAssignmentGroupWeightOverride(cKey, gKey, pct);
+        }
+        setGroupWeightOverrides((prev) => {
+          const next = { ...(prev || {}) };
+          next[cKey] = { ...(next[cKey] || {}), [gKey]: pct };
+          return next;
+        });
+        setGroupWeightMessage("Saved custom group weight.");
+      }
+    } catch (err) {
+      setGroupWeightMessage(
+        err?.message ? `Could not save: ${err.message}` : "Could not save.",
+      );
+    } finally {
+      setSavingGroupKey("");
+    }
+  }
 
   useEffect(() => {
     setLastProjectionDelta(null);
@@ -1589,6 +1779,123 @@ export function GradePerformance({ demoMode = false }) {
           ) : null}
 
           <Expandable
+            title="Custom Group Weights"
+            subtitle={
+              courseGroups.length
+                ? `${courseGroups.length} Canvas group${courseGroups.length === 1 ? "" : "s"}${
+                    Object.keys(selectedCourseGroupOverrides).length
+                      ? ` • ${Object.keys(selectedCourseGroupOverrides).length} overridden`
+                      : ""
+                  }`
+                : groupsQ.loading
+                  ? "Loading groups..."
+                  : "No groups available"
+            }
+          >
+            {groupsQ.error ? (
+              <div className="muted">
+                Could not load assignment groups for this course.
+              </div>
+            ) : courseGroups.length === 0 ? (
+              <div className="muted">
+                {demoMode
+                  ? "Custom group weights are not available in demo mode."
+                  : "Canvas did not return assignment groups for this course."}
+              </div>
+            ) : (
+              <>
+                <div className="muted gradeCalcBasis">
+                  Override the Canvas-reported weight (%) for any group. Leave
+                  blank to use Canvas&apos;s value.
+                </div>
+                <ul className="gradeCalcList">
+                  {courseGroups.map((g) => {
+                    const gKey = String(g.id);
+                    const overrideVal = selectedCourseGroupOverrides[gKey];
+                    const hasOverride = Number.isFinite(overrideVal);
+                    const canvasWeight = Number(g.group_weight);
+                    const isSaving =
+                      savingGroupKey === `${String(selectedCourseId)}:${gKey}`;
+                    return (
+                      <li key={gKey} className="gradeCalcListItem">
+                        <div className="gradeCalcListMain">
+                          <div className="gradeCalcItemTitleRow">
+                            <span className="gradeCalcItemTitle">{g.name}</span>
+                            {hasOverride ? (
+                              <span className="badge badgeNeutral">
+                                Custom weight
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="muted">
+                            Canvas weight:{" "}
+                            {Number.isFinite(canvasWeight)
+                              ? `${canvasWeight}%`
+                              : "Not set"}
+                          </div>
+                        </div>
+                        <div className="gradeCalcListControls">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={hasOverride ? overrideVal : ""}
+                            placeholder={
+                              Number.isFinite(canvasWeight)
+                                ? String(canvasWeight)
+                                : ""
+                            }
+                            onBlur={(e) =>
+                              commitGroupWeightOverride(
+                                selectedCourseId,
+                                g.id,
+                                e.currentTarget.value,
+                              )
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitGroupWeightOverride(
+                                  selectedCourseId,
+                                  g.id,
+                                  e.currentTarget.value,
+                                );
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            disabled={isSaving}
+                          />
+                          <span className="muted">%</span>
+                          {hasOverride ? (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() =>
+                                commitGroupWeightOverride(
+                                  selectedCourseId,
+                                  g.id,
+                                  "",
+                                )
+                              }
+                              disabled={isSaving}
+                              title="Reset to Canvas weight"
+                            >
+                              Reset
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {groupWeightMessage ? (
+                  <div className="muted">{groupWeightMessage}</div>
+                ) : null}
+              </>
+            )}
+          </Expandable>
+
+          <Expandable
             title="Recently Graded (Last 5)"
             subtitle={
               recentGradedRows.length
@@ -1860,6 +2167,31 @@ export function GradePerformance({ demoMode = false }) {
               </div>
             </div>
 
+            <div className="gradeCalcInlineControl gradeCalcInlineControlGroup">
+              <span className="muted gradeCalcInlineHeading">Predict in</span>
+              <div className="gradeCalcScopeToggleRow">
+                <span
+                  className={`muted gradeCalcInlineValue ${!predictPointsMode ? "gradeCalcScopeLabelActive" : ""}`}
+                >
+                  Percent
+                </span>
+                <Toggle
+                  checked={predictPointsMode}
+                  onChange={(checked) => setPredictPointsMode(!!checked)}
+                  label={
+                    predictPointsMode
+                      ? "Entering predictions as points"
+                      : "Entering predictions as percent"
+                  }
+                />
+                <span
+                  className={`muted gradeCalcInlineValue ${predictPointsMode ? "gradeCalcScopeLabelActive" : ""}`}
+                >
+                  Points
+                </span>
+              </div>
+            </div>
+
             <label className="gradeCalcInlineControl gradeCalcInlineControlGroup">
               <span className="gradeCalcFieldLabel gradeCalcInlineHeading">
                 <span className="muted">Default prediction (%)</span>
@@ -1900,6 +2232,19 @@ export function GradePerformance({ demoMode = false }) {
               Projected with predictions:{" "}
               {displayGrade(fmtPct(displayedProjectedPercent))}
             </span>
+            {groupWeightedProjection ? (
+              <span
+                className={gradeSensitiveBadgeClass("badgeSuccess")}
+                title={
+                  groupWeightedProjection.usedAnyOverride
+                    ? "Group-weighted projection (uses your custom group weights)"
+                    : "Group-weighted projection (uses Canvas group weights)"
+                }
+              >
+                Group-weighted:{" "}
+                {displayGrade(fmtPct(groupWeightedProjection.percent))}
+              </span>
+            ) : null}
             <span
               className={`badge ${
                 !showGrades
@@ -2051,51 +2396,84 @@ export function GradePerformance({ demoMode = false }) {
                             )}
                           </span>
                         ) : editingPredictionKey === key ? (
-                          <div className="gradeCalcPredictInputRow">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              autoFocus
-                              value={draftPredictValue}
-                              placeholder={String(
-                                clampPercent(defaultPrediction, 85),
-                              )}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setPredictionDraftById((prev) => ({
-                                  ...(prev || {}),
-                                  [key]: next,
-                                }));
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  commitPredictionDraft(key, e.currentTarget.value);
-                                  setEditingPredictionKey(null);
-                                } else if (e.key === "Escape") {
-                                  setEditingPredictionKey(null);
-                                }
-                              }}
-                            />
-                            <button
-                              type="button"
-                              className="btn gradeCalcApplyBtn"
-                              onClick={() => {
-                                commitPredictionDraft(key, draftPredictValue);
-                                setEditingPredictionKey(null);
-                              }}
-                            >
-                              Apply
-                            </button>
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => setEditingPredictionKey(null)}
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                          (() => {
+                            const pointsModeForRow =
+                              predictPointsMode &&
+                              Number.isFinite(effectivePoints) &&
+                              effectivePoints > 0;
+                            const defaultPct = clampPercent(defaultPrediction, 85);
+                            const placeholderVal = pointsModeForRow
+                              ? ((defaultPct / 100) * effectivePoints).toFixed(2)
+                              : String(defaultPct);
+                            const commit = (raw) => {
+                              const trimmed = String(raw ?? "").trim();
+                              if (!trimmed) {
+                                commitPredictionDraft(key, "");
+                                return;
+                              }
+                              if (pointsModeForRow) {
+                                const n = Number(trimmed);
+                                if (!Number.isFinite(n)) return;
+                                const pct = (n / effectivePoints) * 100;
+                                commitPredictionDraft(key, String(pct));
+                              } else {
+                                commitPredictionDraft(key, trimmed);
+                              }
+                            };
+                            return (
+                              <div className="gradeCalcPredictInputRow">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={
+                                    pointsModeForRow
+                                      ? String(effectivePoints)
+                                      : "100"
+                                  }
+                                  step="0.01"
+                                  autoFocus
+                                  value={draftPredictValue}
+                                  placeholder={placeholderVal}
+                                  onChange={(e) => {
+                                    const next = e.target.value;
+                                    setPredictionDraftById((prev) => ({
+                                      ...(prev || {}),
+                                      [key]: next,
+                                    }));
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commit(e.currentTarget.value);
+                                      setEditingPredictionKey(null);
+                                    } else if (e.key === "Escape") {
+                                      setEditingPredictionKey(null);
+                                    }
+                                  }}
+                                />
+                                <span className="muted gradeCalcPredictUnit">
+                                  {pointsModeForRow ? "pts" : "%"}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn gradeCalcApplyBtn"
+                                  onClick={() => {
+                                    commit(draftPredictValue);
+                                    setEditingPredictionKey(null);
+                                  }}
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  onClick={() => setEditingPredictionKey(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            );
+                          })()
                         ) : (
                           <div className="gradeCalcPredictPillRow">
                             {predictValue ? (
@@ -2103,15 +2481,39 @@ export function GradePerformance({ demoMode = false }) {
                                 type="button"
                                 className="gradeCalcPredictPill"
                                 onClick={() => {
+                                  const pointsModeForRow =
+                                    predictPointsMode &&
+                                    Number.isFinite(effectivePoints) &&
+                                    effectivePoints > 0;
+                                  const seed = pointsModeForRow
+                                    ? (
+                                        (Number(predictValue) / 100) *
+                                        effectivePoints
+                                      ).toFixed(2)
+                                    : predictValue;
                                   setPredictionDraftById((prev) => ({
                                     ...(prev || {}),
-                                    [key]: predictValue,
+                                    [key]: seed,
                                   }));
                                   setEditingPredictionKey(key);
                                 }}
                                 title="Click to edit prediction"
                               >
-                                {displayGrade(fmtPct(Number(predictValue)))}
+                                {(() => {
+                                  const pct = Number(predictValue);
+                                  if (
+                                    predictPointsMode &&
+                                    Number.isFinite(effectivePoints) &&
+                                    effectivePoints > 0 &&
+                                    Number.isFinite(pct)
+                                  ) {
+                                    const pts = (pct / 100) * effectivePoints;
+                                    return displayGrade(
+                                      `${fmtPoints(pts)} / ${fmtPoints(effectivePoints)} pts`,
+                                    );
+                                  }
+                                  return displayGrade(fmtPct(pct));
+                                })()}
                               </button>
                             ) : (
                               <button
@@ -2232,6 +2634,19 @@ export function GradePerformance({ demoMode = false }) {
             </label>
           </div>
 
+          <label className="gradeCalcInlineControl">
+            <input
+              type="checkbox"
+              checked={useOtherPredictionsInMinNeeded}
+              onChange={(e) =>
+                setUseOtherPredictionsInMinNeeded(e.target.checked)
+              }
+            />
+            <span className="muted">
+              Include other predicted assignments in this calculation
+            </span>
+          </label>
+
           {needCalculator ? (
             <>
               <div className="rowWrap">
@@ -2265,7 +2680,11 @@ export function GradePerformance({ demoMode = false }) {
                 Calculation basis: {stats.gradedCount} graded items, selected
                 item weight {fmtPoints(needCalculator.selected.effectivePoints)}{" "}
                 pts, {needCalculator.otherPredictedCount} other predicted items
-                in the selected class, and{" "}
+                in the selected class{" "}
+                {useOtherPredictionsInMinNeeded
+                  ? "(included)"
+                  : "(excluded from this calc)"}
+                , and{" "}
                 {Math.max(
                   0,
                   stats.excludedCount - needCalculator.otherPredictedCount - 1,

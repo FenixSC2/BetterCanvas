@@ -67,6 +67,9 @@ from auth import (
     get_assignment_weight_overrides,
     upsert_assignment_weight_override,
     delete_assignment_weight_override,
+    get_assignment_group_weight_overrides,
+    upsert_assignment_group_weight_override,
+    delete_assignment_group_weight_override,
     get_personal_assignment_dates,
     upsert_personal_assignment_date,
     delete_personal_assignment_date,
@@ -253,6 +256,7 @@ class Assignment(BaseModel):
     submitted: Optional[bool] = None
     score: Optional[float] = None
     graded_at: Optional[datetime] = None
+    assignment_group_id: Optional[int] = None
 
 # === Grade aggregation and missing detection models ===
 class MissingItem(BaseModel):
@@ -319,6 +323,10 @@ class WorkloadEstimateRequest(BaseModel):
 
 class AssignmentWeightOverrideRequest(BaseModel):
     weight_points: float = Field(default=0.0, ge=0.0, le=100000.0)
+
+
+class AssignmentGroupWeightRequest(BaseModel):
+    weight_pct: float = Field(default=0.0, ge=0.0, le=1000.0)
 
 
 class PersonalAssignmentDateRequest(BaseModel):
@@ -1009,6 +1017,7 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
                 submitted=submitted,
                 score=score,
                 graded_at=graded_at,
+                assignment_group_id=ra.get("assignment_group_id"),
             )
         )
 
@@ -1099,6 +1108,7 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
                 submitted=submitted,
                 score=score,
                 graded_at=graded_at,
+                assignment_group_id=d.get("assignment_group_id"),
             )
         )
 
@@ -2430,6 +2440,75 @@ def delete_assignment_weight_override_endpoint(
 ):
     """Delete a saved effective weight/points override for one assignment."""
     delete_assignment_weight_override(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
+
+
+@app.get("/api/courses/{course_id}/assignment-groups")
+def get_course_assignment_groups_endpoint(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch Canvas assignment groups (with group_weight) for a course."""
+    token = get_canvas_token(current_user.id, db)
+    raw = canvas_get_paginated(
+        f"/courses/{course_id}/assignment_groups",
+        params={"per_page": 100},
+        token=token,
+    )
+    groups = []
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            continue
+        gid = entry.get("id")
+        if gid is None:
+            continue
+        groups.append({
+            "id": gid,
+            "name": entry.get("name") or "Group",
+            "group_weight": entry.get("group_weight"),
+            "position": entry.get("position"),
+        })
+    return {"groups": groups}
+
+
+@app.get("/api/assignment-group-weight-overrides")
+def get_assignment_group_weight_overrides_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all saved per-group weight overrides for the authenticated user."""
+    return {"overrides": get_assignment_group_weight_overrides(current_user.id, db)}
+
+
+@app.put("/api/assignment-group-weight-overrides/{course_id}/{group_id}")
+def upsert_assignment_group_weight_override_endpoint(
+    course_id: int,
+    group_id: int,
+    body: AssignmentGroupWeightRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a per-group weight override (%) for one assignment group."""
+    upsert_assignment_group_weight_override(
+        current_user.id,
+        course_id,
+        group_id,
+        body.weight_pct,
+        db,
+    )
+    return {"success": True}
+
+
+@app.delete("/api/assignment-group-weight-overrides/{course_id}/{group_id}")
+def delete_assignment_group_weight_override_endpoint(
+    course_id: int,
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a per-group weight override for one assignment group."""
+    delete_assignment_group_weight_override(current_user.id, course_id, group_id, db)
     return {"success": True}
 
 

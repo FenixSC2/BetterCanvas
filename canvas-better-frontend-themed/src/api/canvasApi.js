@@ -170,6 +170,25 @@ export const canvasApi = {
         method: "DELETE",
       }),
 
+    getCourseAssignmentGroups: (courseId, opts) =>
+      request(`/api/courses/${courseId}/assignment-groups`, opts),
+
+    getAssignmentGroupWeightOverrides: (opts) =>
+      request("/api/assignment-group-weight-overrides", opts),
+
+    upsertAssignmentGroupWeightOverride: (courseId, groupId, weight_pct, opts) =>
+      request(`/api/assignment-group-weight-overrides/${courseId}/${groupId}`, {
+        ...opts,
+        method: "PUT",
+        body: { weight_pct },
+      }),
+
+    deleteAssignmentGroupWeightOverride: (courseId, groupId, opts) =>
+      request(`/api/assignment-group-weight-overrides/${courseId}/${groupId}`, {
+        ...opts,
+        method: "DELETE",
+      }),
+
     getGradeScalePreferences: (opts) =>
       request("/api/grade-scale-preferences", opts),
 

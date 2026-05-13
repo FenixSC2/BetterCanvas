@@ -280,6 +280,27 @@ class AssignmentWeightOverride(Base):
     )
 
 
+class AssignmentGroupWeightOverride(Base):
+    __tablename__ = "assignment_group_weight_overrides"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    course_id = Column(Integer)
+    group_id = Column(Integer)
+    weight_pct = Column(Float, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            'user_id', 'course_id', 'group_id',
+            name='uq_assignment_group_weight_override',
+        ),
+    )
+
+
 class GradeScalePreference(Base):
     __tablename__ = "grade_scale_preferences"
 
@@ -749,6 +770,76 @@ def delete_assignment_weight_override(
         AssignmentWeightOverride.user_id == user_id,
         AssignmentWeightOverride.course_id == course_id,
         AssignmentWeightOverride.assignment_id == assignment_id,
+    ).first()
+    if row:
+        db.delete(row)
+        db.commit()
+        return True
+    return False
+
+
+def get_assignment_group_weight_overrides(user_id: int, db: Session) -> list:
+    """Get all per-group weight overrides for a user."""
+    rows = (
+        db.query(AssignmentGroupWeightOverride)
+        .filter(AssignmentGroupWeightOverride.user_id == user_id)
+        .all()
+    )
+    return [
+        {
+            "course_id": row.course_id,
+            "group_id": row.group_id,
+            "weight_pct": row.weight_pct,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in rows
+    ]
+
+
+def upsert_assignment_group_weight_override(
+    user_id: int,
+    course_id: int,
+    group_id: int,
+    weight_pct: float,
+    db: Session,
+) -> AssignmentGroupWeightOverride:
+    """Create or update a user override for assignment-group weight (%)."""
+    existing = db.query(AssignmentGroupWeightOverride).filter(
+        AssignmentGroupWeightOverride.user_id == user_id,
+        AssignmentGroupWeightOverride.course_id == course_id,
+        AssignmentGroupWeightOverride.group_id == group_id,
+    ).first()
+
+    if existing:
+        existing.weight_pct = weight_pct
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = AssignmentGroupWeightOverride(
+        user_id=user_id,
+        course_id=course_id,
+        group_id=group_id,
+        weight_pct=weight_pct,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_assignment_group_weight_override(
+    user_id: int,
+    course_id: int,
+    group_id: int,
+    db: Session,
+) -> bool:
+    """Delete a per-group weight override for a user."""
+    row = db.query(AssignmentGroupWeightOverride).filter(
+        AssignmentGroupWeightOverride.user_id == user_id,
+        AssignmentGroupWeightOverride.course_id == course_id,
+        AssignmentGroupWeightOverride.group_id == group_id,
     ).first()
     if row:
         db.delete(row)
