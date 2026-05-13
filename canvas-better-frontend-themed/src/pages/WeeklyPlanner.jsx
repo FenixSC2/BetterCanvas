@@ -557,15 +557,26 @@ function loadSplits() {
           s.dateISO &&
           s.hours != null,
       )
-      .map((s) => ({
-        id: String(s.id),
-        courseId: Number(s.courseId),
-        assignmentId: Number(s.assignmentId),
-        dateISO: String(s.dateISO),
-        hours: Number(s.hours),
-        completed: !!s.completed,
-        effortApplied: !!s.effortApplied,
-      }))
+      .map((s) => {
+        const hours = Number(s.hours);
+        const safeHours = Number.isFinite(hours) ? hours : 0;
+        const rawCompleted = Number(s.completedHours);
+        const completedHours = Number.isFinite(rawCompleted)
+          ? Math.max(0, Math.min(safeHours, rawCompleted))
+          : s.completed
+            ? safeHours
+            : 0;
+        return {
+          id: String(s.id),
+          courseId: Number(s.courseId),
+          assignmentId: Number(s.assignmentId),
+          dateISO: String(s.dateISO),
+          hours,
+          completedHours,
+          completed: safeHours > 0 && completedHours >= safeHours,
+          effortApplied: !!s.effortApplied,
+        };
+      })
       .filter(
         (s) =>
           Number.isFinite(s.courseId) &&
@@ -1249,6 +1260,7 @@ export function WeeklyPlanner() {
           dateISO: targetISO,
           hours: Math.round(hours * 100) / 100,
           completed: false,
+          completedHours: 0,
           effortApplied: false,
         },
       ]);
@@ -1263,7 +1275,19 @@ export function WeeklyPlanner() {
 
   const toggleSplitCompleted = (splitId, checked) => {
     setSplits((prev) =>
-      prev.map((s) => (s.id === splitId ? { ...s, completed: !!checked } : s)),
+      prev.map((s) =>
+        s.id === splitId
+          ? {
+              ...s,
+              completed: !!checked,
+              completedHours: checked
+                ? Number.isFinite(s.hours)
+                  ? s.hours
+                  : 0
+                : 0,
+            }
+          : s,
+      ),
     );
 
     const s = splits.find((x) => x.id === splitId);
@@ -1297,6 +1321,97 @@ export function WeeklyPlanner() {
       prev.map((x) => (x.id === splitId ? { ...x, effortApplied: false } : x)),
     );
     setStorageTick((t) => t + 1);
+  };
+
+  const setSplitCompletedHours = (splitId, rawValue) => {
+    const target = splits.find((x) => x.id === splitId);
+    if (!target) return;
+    const totalHours = Number.isFinite(target.hours) ? target.hours : 0;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return;
+    const nextCompleted = Math.max(0, Math.min(totalHours, parsed));
+    const isNowFull = totalHours > 0 && nextCompleted >= totalHours;
+    const wasFull = !!target.completed;
+
+    setSplits((prev) =>
+      prev.map((s) =>
+        s.id === splitId
+          ? {
+              ...s,
+              completedHours: nextCompleted,
+              completed: isNowFull,
+            }
+          : s,
+      ),
+    );
+
+    if (isNowFull && !wasFull) {
+      if (totalHours > 0 && !target.effortApplied) {
+        addCompletedHours(
+          { courseId: target.courseId, assignmentId: target.assignmentId },
+          totalHours,
+        );
+        setSplits((prev) =>
+          prev.map((x) =>
+            x.id === splitId ? { ...x, effortApplied: true } : x,
+          ),
+        );
+        setStorageTick((t) => t + 1);
+      }
+    } else if (!isNowFull && wasFull && target.effortApplied) {
+      const st = getEffortState({
+        courseId: target.courseId,
+        assignmentId: target.assignmentId,
+      });
+      const cur = Number.isFinite(st?.completedHours) ? st.completedHours : 0;
+      const next = Math.max(0, cur - totalHours);
+      setCompletedHours(
+        { courseId: target.courseId, assignmentId: target.assignmentId },
+        next,
+      );
+      setSplits((prev) =>
+        prev.map((x) =>
+          x.id === splitId ? { ...x, effortApplied: false } : x,
+        ),
+      );
+      setStorageTick((t) => t + 1);
+    }
+  };
+
+  const completeAllSplitsForAssignment = (courseId, assignmentId) => {
+    const siblings = splits.filter(
+      (s) =>
+        s.courseId === courseId &&
+        s.assignmentId === assignmentId &&
+        !s.completed,
+    );
+    if (!siblings.length) return;
+
+    let totalToApply = 0;
+    for (const s of siblings) {
+      const h = Number.isFinite(s.hours) ? s.hours : 0;
+      if (h > 0 && !s.effortApplied) totalToApply += h;
+    }
+
+    setSplits((prev) =>
+      prev.map((s) =>
+        s.courseId === courseId &&
+        s.assignmentId === assignmentId &&
+        !s.completed
+          ? {
+              ...s,
+              completed: true,
+              completedHours: Number.isFinite(s.hours) ? s.hours : 0,
+              effortApplied: true,
+            }
+          : s,
+      ),
+    );
+
+    if (totalToApply > 0) {
+      addCompletedHours({ courseId, assignmentId }, totalToApply);
+      setStorageTick((t) => t + 1);
+    }
   };
 
   function openSplitPopover(e, assignment) {
@@ -1599,9 +1714,15 @@ export function WeeklyPlanner() {
 
       for (const entry of list) {
         if (entry.__kind === "split") {
-          if (!entry.split.completed) {
-            total += Number.isFinite(entry.split.hours) ? entry.split.hours : 0;
-          }
+          const splitHours = Number.isFinite(entry.split.hours)
+            ? entry.split.hours
+            : 0;
+          const done = Number.isFinite(entry.split.completedHours)
+            ? entry.split.completedHours
+            : entry.split.completed
+              ? splitHours
+              : 0;
+          total += Math.max(0, splitHours - done);
           continue;
         }
 
@@ -2461,70 +2582,167 @@ export function WeeklyPlanner() {
                                     </span>
                                   </div>
 
-                                  <div
-                                    style={{
-                                      marginTop: 10,
-                                      display: "flex",
-                                      gap: 10,
-                                      alignItems: "center",
-                                      flexWrap: "wrap",
-                                    }}
-                                  >
-                                    <label
-                                      className="muted"
-                                      style={{
-                                        fontSize: 12,
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={!!s.completed}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) =>
-                                          toggleSplitCompleted(
-                                            s.id,
-                                            e.target.checked,
+                                  {(() => {
+                                    const totalHours = Number.isFinite(s.hours)
+                                      ? s.hours
+                                      : 0;
+                                    const doneHours = Number.isFinite(
+                                      s.completedHours,
+                                    )
+                                      ? s.completedHours
+                                      : s.completed
+                                        ? totalHours
+                                        : 0;
+                                    const remaining = Math.max(
+                                      0,
+                                      totalHours - doneHours,
+                                    );
+                                    const pct =
+                                      totalHours > 0
+                                        ? Math.min(
+                                            100,
+                                            (doneHours / totalHours) * 100,
                                           )
-                                        }
-                                      />
-                                      Completed
-                                    </label>
+                                        : 0;
+                                    return (
+                                      <div
+                                        style={{
+                                          marginTop: 10,
+                                          display: "flex",
+                                          gap: 10,
+                                          alignItems: "center",
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <label
+                                          className="muted"
+                                          style={{
+                                            fontSize: 12,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={!!s.completed}
+                                            onClick={(e) =>
+                                              e.stopPropagation()
+                                            }
+                                            onChange={(e) =>
+                                              toggleSplitCompleted(
+                                                s.id,
+                                                e.target.checked,
+                                              )
+                                            }
+                                          />
+                                          Completed
+                                        </label>
 
-                                    <div
-                                      className="muted"
-                                      style={{ fontSize: 12 }}
-                                    >
-                                      Planned:{" "}
-                                      <span className="mono">
-                                        {(s.completed ? 0 : s.hours).toFixed(1)}
-                                        h
-                                      </span>{" "}
-                                      on{" "}
-                                      <span className="mono">{s.dateISO}</span>
-                                    </div>
+                                        <label
+                                          className="muted"
+                                          style={{
+                                            fontSize: 12,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 6,
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          Done:
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            max={totalHours}
+                                            step="0.25"
+                                            value={doneHours}
+                                            onChange={(e) =>
+                                              setSplitCompletedHours(
+                                                s.id,
+                                                e.target.value,
+                                              )
+                                            }
+                                            style={{ width: 64 }}
+                                          />
+                                          /{" "}
+                                          <span className="mono">
+                                            {totalHours.toFixed(2)}
+                                          </span>
+                                          h
+                                        </label>
 
-                                    <button
-                                      className="btn btnDanger"
-                                      onClick={() => removeSplit(s.id)}
-                                    >
-                                      Remove
-                                    </button>
+                                        {totalHours > 0 ? (
+                                          <div
+                                            aria-hidden="true"
+                                            style={{
+                                              flex: "0 0 80px",
+                                              height: 6,
+                                              background: "var(--bc-bar-bg, rgba(127,127,127,0.25))",
+                                              borderRadius: 3,
+                                              overflow: "hidden",
+                                            }}
+                                            title={`${pct.toFixed(0)}% complete`}
+                                          >
+                                            <div
+                                              style={{
+                                                width: `${pct}%`,
+                                                height: "100%",
+                                                background:
+                                                  "var(--bc-bar-fg, var(--accent, #4ade80))",
+                                                transition: "width 120ms ease",
+                                              }}
+                                            />
+                                          </div>
+                                        ) : null}
 
-                                    <button
-                                      className="btn"
-                                      onClick={() =>
-                                        navigateToAssignment(
-                                          s.courseId,
-                                          s.assignmentId,
-                                        )
-                                      }
-                                    >
-                                      View assignment
-                                    </button>
-                                  </div>
+                                        <div
+                                          className="muted"
+                                          style={{ fontSize: 12 }}
+                                        >
+                                          Remaining:{" "}
+                                          <span className="mono">
+                                            {remaining.toFixed(2)}h
+                                          </span>{" "}
+                                          on{" "}
+                                          <span className="mono">
+                                            {s.dateISO}
+                                          </span>
+                                        </div>
+
+                                        <button
+                                          className="btn"
+                                          onClick={() =>
+                                            completeAllSplitsForAssignment(
+                                              s.courseId,
+                                              s.assignmentId,
+                                            )
+                                          }
+                                          title="Mark all splits for this assignment as fully complete"
+                                        >
+                                          Complete assignment
+                                        </button>
+
+                                        <button
+                                          className="btn btnDanger"
+                                          onClick={() => removeSplit(s.id)}
+                                        >
+                                          Remove
+                                        </button>
+
+                                        <button
+                                          className="btn"
+                                          onClick={() =>
+                                            navigateToAssignment(
+                                              s.courseId,
+                                              s.assignmentId,
+                                            )
+                                          }
+                                        >
+                                          View assignment
+                                        </button>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>

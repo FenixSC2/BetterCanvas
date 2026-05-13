@@ -402,6 +402,17 @@ export function MyCourses() {
                   </a>
                 ) : null}
 
+                {courseUrl ? (
+                  <a
+                    className="btn"
+                    href={`${courseUrl}/grades`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Grades
+                  </a>
+                ) : null}
+
                 {attendanceUrls[String(c.id)] ? (
                   <a
                     className="btn"
