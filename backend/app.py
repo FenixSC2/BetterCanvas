@@ -257,6 +257,7 @@ class Assignment(BaseModel):
     score: Optional[float] = None
     graded_at: Optional[datetime] = None
     assignment_group_id: Optional[int] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 # === Grade aggregation and missing detection models ===
 class MissingItem(BaseModel):
@@ -980,6 +981,25 @@ def get_active_courses(token: Optional[str] = None) -> List[Course]:
     cleaned = filter_courses_to_latest_term(cleaned)
     return cleaned
 
+def _parse_attachments(raw_attachments: Any) -> Optional[List[Dict[str, Any]]]:
+    if not isinstance(raw_attachments, list):
+        return None
+    out: List[Dict[str, Any]] = []
+    for att in raw_attachments:
+        if not isinstance(att, dict):
+            continue
+        url = att.get("url") or att.get("preview_url")
+        if not url:
+            continue
+        out.append({
+            "display_name": att.get("display_name") or att.get("filename") or "Attachment",
+            "filename": att.get("filename"),
+            "url": url,
+            "content_type": att.get("content-type") or att.get("content_type"),
+        })
+    return out or None
+
+
 def get_course_assignments(course_id: int, include_submission=True, limit: Optional[int] = None, token: Optional[str] = None) -> List[Assignment]:
     params = {"include[]": "submission"} if include_submission else None
     try:
@@ -1018,6 +1038,7 @@ def get_course_assignments(course_id: int, include_submission=True, limit: Optio
                 score=score,
                 graded_at=graded_at,
                 assignment_group_id=ra.get("assignment_group_id"),
+                attachments=_parse_attachments(ra.get("attachments")),
             )
         )
 
@@ -1109,6 +1130,7 @@ def get_upcoming_assignments(limit: int = 50, days_ahead: int = 30, mode: CacheM
                 score=score,
                 graded_at=graded_at,
                 assignment_group_id=d.get("assignment_group_id"),
+                attachments=_parse_attachments(d.get("attachments")),
             )
         )
 

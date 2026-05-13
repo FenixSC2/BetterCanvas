@@ -20,6 +20,59 @@ function stripHtml(html) {
   return html.replace(/<[^>]*>/g, "").trim();
 }
 
+function decodeHtmlEntities(s) {
+  if (!s) return "";
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function collectAttachmentLinks(assignment) {
+  const out = [];
+  const seen = new Set();
+
+  function push(name, url, contentType) {
+    if (!url) return;
+    const key = url.split("?")[0];
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      name: name || "Attachment",
+      url,
+      isPdf:
+        (contentType && /pdf/i.test(contentType)) ||
+        /\.pdf(\?|$)/i.test(key),
+    });
+  }
+
+  const atts = Array.isArray(assignment?.attachments)
+    ? assignment.attachments
+    : [];
+  for (const att of atts) {
+    push(att?.display_name || att?.filename, att?.url, att?.content_type);
+  }
+
+  const html = typeof assignment?.description === "string"
+    ? assignment.description
+    : "";
+  if (html && /</.test(html)) {
+    const anchorRe = /<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = anchorRe.exec(html)) !== null) {
+      const url = decodeHtmlEntities(m[1]);
+      if (!/\.pdf(\?|$)/i.test(url) && !/\/files\/\d+/.test(url)) continue;
+      const inner = stripHtml(m[2]).trim() || url.split("/").pop();
+      push(decodeHtmlEntities(inner), url, null);
+    }
+  }
+
+  return out;
+}
+
 function hoursUntil(dt) {
   if (!dt) return null;
   const t = new Date(dt).getTime();
@@ -251,6 +304,35 @@ function mergeAssignmentsByIdentity(primary, crossCheck) {
   }
 
   return out;
+}
+
+function AttachmentsList({ assignment }) {
+  const links = collectAttachmentLinks(assignment);
+  if (!links.length) return null;
+  return (
+    <div className="attachmentsList stack">
+      <div className="muted">Attachments</div>
+      <ul className="stack">
+        {links.map((l) => (
+          <li key={l.url}>
+            <a
+              href={l.url}
+              target="_blank"
+              rel="noreferrer"
+              title={l.isPdf ? "Open PDF in new tab" : "Open file in new tab"}
+            >
+              {l.name}
+              {l.isPdf ? (
+                <span className="badge badgeNeutral" style={{ marginLeft: 8 }}>
+                  PDF
+                </span>
+              ) : null}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function FavoriteMarker() {
@@ -1201,6 +1283,7 @@ export function UpcomingAssignments() {
                                   No description provided.
                                 </div>
                               )}
+                              {!todoItem ? <AttachmentsList assignment={a} /> : null}
                             </div>
                           </Expandable>
                         </div>
@@ -1434,6 +1517,7 @@ export function UpcomingAssignments() {
                                       : "No description provided."}
                                   </div>
                                 )}
+                                {!todoItem ? <AttachmentsList assignment={a} /> : null}
                               </div>
                             </Expandable>
                           </div>
