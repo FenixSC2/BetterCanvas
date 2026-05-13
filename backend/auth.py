@@ -541,11 +541,14 @@ def get_canvas_token(user_id: int, db: Session) -> Optional[str]:
     """Retrieve and decrypt a Canvas token for a user."""
     db_token = db.query(CanvasToken).filter(CanvasToken.user_id == user_id).first()
     if not db_token:
+        logger.info("[DBG-AUTH] get_canvas_token: NO token row in DB for user_id=%s", user_id)
         return None
     try:
-        return decrypt_token(db_token.token_encrypted)
+        token = decrypt_token(db_token.token_encrypted)
+        logger.info("[DBG-AUTH] get_canvas_token: decrypted OK for user_id=%s", user_id)
+        return token
     except Exception as e:
-        logger.error(f"Failed to decrypt token for user {user_id}: {e}")
+        logger.error("[DBG-AUTH] get_canvas_token: decryption FAILED for user_id=%s: %s", user_id, e)
         return None
 
 def revoke_canvas_token(user_id: int, db: Session) -> bool:
@@ -1420,6 +1423,7 @@ def create_session(user_id: int, db: Session, days_valid: int = 30) -> str:
 def get_session_user_id(raw_token: str, db: Session) -> Optional[int]:
     """Return user id for a valid auth session token, else None."""
     if not raw_token:
+        logger.info("[DBG-AUTH] get_session_user_id: raw_token is empty/None")
         return None
 
     row = (
@@ -1428,11 +1432,14 @@ def get_session_user_id(raw_token: str, db: Session) -> Optional[int]:
         .first()
     )
     if not row:
+        logger.info("[DBG-AUTH] get_session_user_id: token hash not found in DB (token=%s...)", raw_token[:8])
         return None
     if _is_expired(row.expires_at):
+        logger.info("[DBG-AUTH] get_session_user_id: token EXPIRED for user_id=%s (expires_at=%s)", row.user_id, row.expires_at)
         db.delete(row)
         db.commit()
         return None
+    logger.info("[DBG-AUTH] get_session_user_id: OK → user_id=%s", row.user_id)
     return int(row.user_id)
 
 

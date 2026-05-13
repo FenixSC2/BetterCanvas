@@ -214,8 +214,7 @@ export function TokenEntry() {
               <button
                 type="button"
                 onClick={() => {
-                  // Manually navigate by reloading or wait for context update
-                  window.location.reload();
+                  setTokenStatus(true);
                 }}
                 className="authButton"
                 style={{

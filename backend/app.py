@@ -357,9 +357,14 @@ def _raise_canvas_http(r: requests.Response, url: str):
     except Exception:
         detail = r.text
 
-    if r.status_code in (401, 403):
-        logger.error(f"Canvas auth error {r.status_code} on {url}: {detail}")
-        raise HTTPException(status_code=r.status_code, detail=detail)
+    logger.info("[DBG-CANVAS] Canvas returned %s for %s — detail: %s", r.status_code, url, str(detail)[:200])
+
+    if r.status_code == 401:
+        logger.error("[DBG-CANVAS] Canvas 401 → returning app 403 (token invalid/expired)")
+        raise HTTPException(status_code=403, detail="Canvas token invalid or expired. Please re-submit your Canvas API token.")
+    if r.status_code == 403:
+        logger.error("[DBG-CANVAS] Canvas 403 → returning app 403")
+        raise HTTPException(status_code=403, detail=detail)
 
     logger.error(f"Canvas error {r.status_code} on {url}: {detail}")
     raise HTTPException(status_code=r.status_code, detail=detail)
@@ -517,6 +522,7 @@ def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Se
 def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Any:
     """Make a single Canvas API request. Requires a user token."""
     if not token:
+        logger.info("[DBG-CANVAS] canvas_get_single: no token → 403 (path=%s)", path)
         raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
     
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
@@ -534,6 +540,7 @@ def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token:
 def canvas_get_paginated(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> List[Any]:
     """Make a paginated Canvas API request. Requires a user token."""
     if not token:
+        logger.info("[DBG-CANVAS] canvas_get_paginated: no token → 403 (path=%s)", path)
         raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
     
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
@@ -1522,10 +1529,12 @@ def api_upcoming(
     db: Session = Depends(get_db),
 ):
     """Get upcoming assignments. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
+    logger.info("[DBG-UPCOMING] session_id=%s", "present(" + session_id[:8] + "...)" if session_id else "MISSING")
+
     # Check for demo mode
     if session_id and is_demo_session(session_id):
         return mock_upcoming(limit=limit or 50)
-    
+
     token = None
     user_id = None
     if session_id:
@@ -1535,6 +1544,8 @@ def api_upcoming(
                 token = get_canvas_token(user_id, db)
         except Exception:
             pass
+
+    logger.info("[DBG-UPCOMING] resolved: user_id=%s, token=%s", user_id, "present" if token else "MISSING")
     
     lim = limit or 50
     key = f"upcoming:{user_id or 0}:v3:limit={lim}:days={days_ahead}"
@@ -2174,7 +2185,13 @@ def auth_logout(
         invalidate_session(session_id, db)
     
     response = JSONResponse({"success": True})
-    response.delete_cookie("session_id")
+    response.delete_cookie(
+        "session_id",
+        path="/",
+        secure=SECURE_COOKIES,
+        httponly=True,
+        samesite="none" if SECURE_COOKIES else "lax",
+    )
     return response
 
 @app.get("/api/auth/me", response_model=UserResponse)
@@ -2221,7 +2238,7 @@ def auth_token_status(current_user: User = Depends(get_current_user), db: Sessio
     if not token:
         revoke_canvas_token(current_user.id, db)
         return CanvasTokenStatus(has_token=False)
-    
+
     return CanvasTokenStatus(has_token=True, updated_at=db_token.updated_at)
 
 @app.delete("/api/auth/token")

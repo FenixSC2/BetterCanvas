@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback, useContext } from "react";
+import { createContext, useState, useEffect, useCallback, useContext, useRef } from "react";
 import { clearCachedAsync } from "./useCachedAsync";
 import { clearDemoMode, clearMockSessionData } from "../lib/storagePolicy";
 
@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hasToken, setHasToken] = useState(false);
+  const loggingInRef = useRef(false);
 
   // Check if user is logged in on mount
   useEffect(() => {
@@ -29,9 +30,17 @@ export function AuthProvider({ children }) {
   // Listen for 401 unauthorized events from API
   useEffect(() => {
     function handleUnauthorized() {
-      setUser(null);
+      // Don't interfere with an in-progress login attempt
+      if (loggingInRef.current) return;
+      setUser((prev) => {
+        // Only show "session expired" if the user was actually logged in;
+        // background requests on page load should not show this error.
+        if (prev !== null) {
+          setError("Your session has expired. Please log in again.");
+        }
+        return null;
+      });
       setHasToken(false);
-      setError("Your session has expired. Please log in again.");
     }
 
     window.addEventListener("auth:unauthorized", handleUnauthorized);
@@ -61,17 +70,20 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setHasToken(false);
+        setError(null);
       }
     } catch (err) {
       console.error("Auth check failed:", err);
       setUser(null);
       setHasToken(false);
+      setError(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   const login = useCallback(async (email, password) => {
+    loggingInRef.current = true;
     setError(null);
     setLoading(true);
 
@@ -137,6 +149,7 @@ export function AuthProvider({ children }) {
       setError(err.message);
       throw err;
     } finally {
+      loggingInRef.current = false;
       setLoading(false);
     }
   }, []);
