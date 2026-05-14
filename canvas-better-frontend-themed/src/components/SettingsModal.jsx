@@ -7,6 +7,10 @@ import {
   setDefaultEffortMode,
   setEffortSnapMinutes,
 } from "../lib/workloadEstimates";
+import {
+  isEffortTrackingEnabled,
+  setEffortTrackingEnabled,
+} from "./WorkloadEstimateControl";
 import { useAuth } from "../hooks/useAuth";
 import { canvasApi } from "../api/canvasApi";
 import { clearDemoMode } from "../lib/storagePolicy";
@@ -84,6 +88,9 @@ export function SettingsModal({
   const [defaultModeDraft, setDefaultModeDraft] = useState(() =>
     getDefaultEffortMode(),
   );
+  const [effortEnabledDraft, setEffortEnabledDraft] = useState(() =>
+    isEffortTrackingEnabled(),
+  );
 
   // Weekly planner settings
   const [plannerSettings, setPlannerSettings] = useState(() => {
@@ -130,6 +137,7 @@ export function SettingsModal({
     if (!open) return;
     setSnapDraft(getEffortSnapMinutes());
     setDefaultModeDraft(getDefaultEffortMode());
+    setEffortEnabledDraft(isEffortTrackingEnabled());
   }, [open]);
 
   // Load hidden assignments when opening the hidden assignments section
@@ -546,6 +554,35 @@ export function SettingsModal({
                       <div className="h3">Effort</div>
                       <div className="muted">
                         Controls how workload tracking behaves by default.
+                      </div>
+                    </div>
+
+                    <div
+                      className="rowWrap"
+                      style={{ alignItems: "center", marginBottom: 18 }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={effortEnabledDraft}
+                          onChange={(e) => {
+                            const next = e.target.checked;
+                            setEffortEnabledDraft(next);
+                            setEffortTrackingEnabled(next);
+                          }}
+                        />
+                        <span style={{ fontWeight: 800 }}>
+                          Show effort tracking widgets
+                        </span>
+                      </label>
+                      <div className="muted">
+                        Hide all workload/hour/progress widgets across every tab.
                       </div>
                     </div>
 

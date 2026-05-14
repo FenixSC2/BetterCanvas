@@ -8,6 +8,7 @@ import {
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { Expandable } from "../components/Expandable";
+import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 
 const STANDARD_SCALE = [
   { label: "A", value: "A", min: 93 },
@@ -2548,6 +2549,14 @@ export function GradePerformance({ demoMode = false }) {
                             Saving weight...
                           </span>
                         ) : null}
+                      </div>
+
+                      <div className="gradeCalcRowEffort">
+                        <WorkloadEstimateControl
+                          courseId={assignment.course_id}
+                          assignmentId={assignment.id}
+                          compactLabels={true}
+                        />
                       </div>
 
                       <div className="gradeCalcRowActions">

@@ -18,6 +18,36 @@ import { canvasApi } from "../api/canvasApi";
 
 const CHECKLIST_MODE = "checklist";
 
+const EFFORT_ENABLED_KEY = "bc.effort.enabled";
+const EFFORT_ENABLED_EVENT = "canvassist:effort-enabled:changed";
+
+function readEffortEnabled() {
+  try {
+    const raw = localStorage.getItem(EFFORT_ENABLED_KEY);
+    if (raw == null) return true;
+    return raw !== "false";
+  } catch {
+    return true;
+  }
+}
+
+export function setEffortTrackingEnabled(next) {
+  try {
+    localStorage.setItem(EFFORT_ENABLED_KEY, next ? "true" : "false");
+  } catch {
+    // ignore
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(EFFORT_ENABLED_EVENT));
+  } catch {
+    // ignore
+  }
+}
+
+export function isEffortTrackingEnabled() {
+  return readEffortEnabled();
+}
+
 // remaining hours helper (formats to minutes when less than 1 hour, otherwise hours with 1 decimal)
 function fmtRemaining(hrs) {
   const h = Number(hrs);
@@ -287,6 +317,22 @@ export function WorkloadEstimateControl({
   onRemoveDate = null,
 }) {
   const [tick, setTick] = useState(0);
+  const [effortEnabled, setEffortEnabled] = useState(() => readEffortEnabled());
+
+  useEffect(() => {
+    function onEnabledChanged() {
+      setEffortEnabled(readEffortEnabled());
+    }
+    function onStorage(e) {
+      if (e?.key === EFFORT_ENABLED_KEY) onEnabledChanged();
+    }
+    window.addEventListener(EFFORT_ENABLED_EVENT, onEnabledChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(EFFORT_ENABLED_EVENT, onEnabledChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   // popover state
   const [open, setOpen] = useState(false);
@@ -562,6 +608,8 @@ export function WorkloadEstimateControl({
       window.removeEventListener("blur", up);
     };
   }, []);
+
+  if (!effortEnabled) return null;
 
   return (
     <div className="effortWidget">

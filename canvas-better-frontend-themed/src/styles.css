@@ -1611,16 +1611,16 @@ details.expandable > .cardBody,
 }
 
 .effortBarFill.isRed {
-  background: rgba(220, 60, 60, 0.9);
+  background: var(--effort-bar-red, rgba(220, 60, 60, 0.9));
 }
 .effortBarFill.isYellow {
-  background: rgba(235, 180, 60, 0.95);
+  background: var(--effort-bar-yellow, rgba(235, 180, 60, 0.95));
 }
 .effortBarFill.isYellowGreen {
-  background: rgba(140, 200, 70, 0.95);
+  background: var(--effort-bar-yellow-green, rgba(140, 200, 70, 0.95));
 }
 .effortBarFill.isGreen {
-  background: rgba(30, 180, 90, 0.95);
+  background: var(--effort-bar-green, rgba(30, 180, 90, 0.95));
 }
 
 .effortBarMeta {

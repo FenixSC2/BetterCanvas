@@ -5,6 +5,47 @@ import { getNotificationPermission, notifyOnce, notificationsSupported } from ".
 import { dueWithinHours, isMissing } from "../lib/urgency";
 import { loadTodos, syncTodos } from "../lib/todoStore";
 
+const GRADE_THRESHOLDS_KEY = "bc.notifications.gradeThresholds";
+const LAST_KNOWN_GRADES_KEY = "bc.notifications.lastKnownGrades";
+
+export function loadGradeThresholds() {
+  try {
+    const raw = localStorage.getItem(GRADE_THRESHOLDS_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveGradeThresholds(map) {
+  try {
+    localStorage.setItem(GRADE_THRESHOLDS_KEY, JSON.stringify(map || {}));
+  } catch {
+    // ignore
+  }
+}
+
+function loadLastKnownGrades() {
+  try {
+    const raw = localStorage.getItem(LAST_KNOWN_GRADES_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLastKnownGrades(map) {
+  try {
+    localStorage.setItem(LAST_KNOWN_GRADES_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
 export function useDesktopNotifications(hasToken = false) {
   const supported = notificationsSupported();
   const [permission, setPermission] = useState(getNotificationPermission());
@@ -109,6 +150,43 @@ export function useDesktopNotifications(hasToken = false) {
             body: `${todo.title || "Untitled to-do"} • Due ${new Date(todo.due_at).toLocaleTimeString()}`,
             cooldownMs: 6 * 60 * 60 * 1000,
           });
+        }
+
+        // 6) Grade-drop below user-set threshold per course
+        const thresholds = loadGradeThresholds();
+        if (Object.keys(thresholds).length > 0) {
+          try {
+            const profile = await canvasApi.getProfile();
+            const grades = Array.isArray(profile?.grades) ? profile.grades : [];
+            const lastKnown = loadLastKnownGrades();
+            const nextKnown = { ...lastKnown };
+            for (const g of grades) {
+              const courseId = g?.course_id ?? g?.id;
+              if (courseId == null) continue;
+              const courseKey = String(courseId);
+              const score = Number(g?.current_score);
+              if (!Number.isFinite(score)) continue;
+              const threshold = Number(thresholds[courseKey]);
+              if (!Number.isFinite(threshold)) {
+                nextKnown[courseKey] = score;
+                continue;
+              }
+              const prev = Number(lastKnown[courseKey]);
+              const prevAbove = !Number.isFinite(prev) || prev >= threshold;
+              if (prevAbove && score < threshold) {
+                notifyOnce({
+                  dedupeKey: `grade-drop:${courseKey}:${threshold}:${score.toFixed(2)}`,
+                  title: "Grade dropped below threshold",
+                  body: `${g?.course_name || `Course ${courseKey}`} • ${score.toFixed(1)}% (threshold ${threshold}%)`,
+                  cooldownMs: 12 * 60 * 60 * 1000,
+                });
+              }
+              nextKnown[courseKey] = score;
+            }
+            saveLastKnownGrades(nextKnown);
+          } catch {
+            // silent fail
+          }
         }
       } catch {
         // silent fail — notifications should never crash the UI

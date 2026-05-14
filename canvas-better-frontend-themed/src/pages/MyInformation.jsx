@@ -12,7 +12,11 @@ import { makeTodoId, createTodoItem, loadTodos } from "../lib/todoStore";
 import { useAuth } from "../hooks/useAuth";
 
 // desktop notifications
-import { useDesktopNotifications } from "../hooks/useDesktopNotifications";
+import {
+  useDesktopNotifications,
+  loadGradeThresholds,
+  saveGradeThresholds,
+} from "../hooks/useDesktopNotifications";
 import {
   requestNotificationPermission,
   clearNotificationHistory,
@@ -23,6 +27,108 @@ function fmtDue(dt) {
   if (!dt) return "No due date";
   const d = new Date(dt);
   return d.toLocaleString();
+}
+
+function GradeThresholdsPanel({ grades }) {
+  const [thresholds, setThresholds] = useState(() => loadGradeThresholds());
+
+  if (!Array.isArray(grades) || grades.length === 0) {
+    return (
+      <Expandable
+        title="Grade-drop thresholds"
+        subtitle={
+          <span className="muted">No grades available to configure</span>
+        }
+      >
+        <div className="muted">
+          Grade-drop notifications need at least one course with a current
+          score. Check back after Canvas reports your grades.
+        </div>
+      </Expandable>
+    );
+  }
+
+  const setThreshold = (courseId, raw) => {
+    const next = { ...thresholds };
+    const key = String(courseId);
+    const n = Number(raw);
+    if (raw === "" || !Number.isFinite(n)) {
+      delete next[key];
+    } else {
+      next[key] = Math.max(0, Math.min(100, n));
+    }
+    setThresholds(next);
+    saveGradeThresholds(next);
+  };
+
+  const activeCount = Object.keys(thresholds).length;
+
+  return (
+    <Expandable
+      title="Grade-drop thresholds"
+      subtitle={
+        <span className="muted">
+          {activeCount
+            ? `${activeCount} threshold${activeCount === 1 ? "" : "s"} set`
+            : "Notify me when a course grade drops below a target"}
+        </span>
+      }
+    >
+      <div className="stack">
+        <div className="muted">
+          You&apos;ll get a one-time notification when a course&apos;s current
+          score crosses below your threshold. Leave blank to disable for that
+          course.
+        </div>
+        <ul className="list listSpaced">
+          {grades.map((g) => {
+            const courseId = g.course_id ?? g.id;
+            const key = String(courseId);
+            const currentScore = Number(g.current_score);
+            return (
+              <li key={key} className="rowWrap" style={{ alignItems: "center" }}>
+                <div style={{ flex: "1 1 220px", minWidth: 180 }}>
+                  <div style={{ fontWeight: 700 }}>
+                    {g.course_name || `Course ${key}`}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    Current:{" "}
+                    <span className="mono">
+                      {Number.isFinite(currentScore)
+                        ? `${currentScore.toFixed(1)}%`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+                <label
+                  className="muted"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  Threshold:
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    placeholder="—"
+                    value={thresholds[key] ?? ""}
+                    onChange={(e) => setThreshold(courseId, e.target.value)}
+                    style={{ width: 80 }}
+                  />
+                  %
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </Expandable>
+  );
 }
 
 function stripHtml(html) {
@@ -1121,9 +1227,12 @@ export function MyInformation() {
               <div className="muted">
                 Alerts can trigger for: <span className="mono">Overdue</span>,{" "}
                 <span className="mono">Due within 12 hours</span>,{" "}
-                <span className="mono">high-point due within 24 hours</span>,
-                and <span className="mono">new announcements</span>.
+                <span className="mono">high-point due within 24 hours</span>,{" "}
+                <span className="mono">new announcements</span>, and{" "}
+                <span className="mono">grade drops below a threshold</span>.
               </div>
+
+              <GradeThresholdsPanel grades={profile?.grades || []} />
 
               <Expandable
                 title="Troubleshooting notifications"
