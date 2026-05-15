@@ -665,10 +665,24 @@ export function WorkloadEstimateControl({
                 <span className="mono">{fmt1(estimate)}h</span>
               </span>
 
-              <span className="effortPill">
-                <span className="muted">{L.rem}</span>{" "}
-                <span className="mono">{fmtRemaining(remaining)}</span>
-              </span>
+              {!(compactLabels && isComplete) && (
+                <span className="effortPill">
+                  <span className="muted">{L.rem}</span>{" "}
+                  <span className="mono">{fmtRemaining(remaining)}</span>
+                </span>
+              )}
+
+              {compactLabels && isComplete && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, userSelect: "none" }}>
+                  <input
+                    type="checkbox"
+                    className="themeCheckbox"
+                    checked={true}
+                    onChange={(e) => setCompletedChecked(e.target.checked)}
+                  />
+                  <span className="effortDone">Completed</span>
+                </label>
+              )}
             </>
           ) : showInlineEstimate ? (
             <div
@@ -782,7 +796,7 @@ export function WorkloadEstimateControl({
             )
           ) : null}
 
-          {isComplete ? (
+          {isComplete && !compactLabels ? (
             <span className="effortDone">{compactComplete ? "Done" : "Complete"}</span>
           ) : null}
         </div>
@@ -1014,27 +1028,7 @@ export function WorkloadEstimateControl({
       ) : isChecklistMode || estimate <= 0 ? (
         <div className="effortBarWrap">
         </div>
-      ) : compactLabels && isComplete ? (
-        <div className="effortBarWrap">
-          <label
-            style={{
-              gridColumn: "1 / -1",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              userSelect: "none",
-            }}
-          >
-            <input
-              type="checkbox"
-              className="themeCheckbox"
-              checked={true}
-              onChange={(e) => setCompletedChecked(e.target.checked)}
-            />
-            <span className="effortDone">Completed</span>
-          </label>
-        </div>
-      ) : (
+      ) : compactLabels && isComplete ? null : (
         <div className="effortBarWrap">
           {/* your existing draggable bar exactly as-is */}
           <div

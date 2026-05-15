@@ -1,11 +1,12 @@
 // src/pages/MyCourses.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canvasApi } from "../api/canvasApi";
 import { Expandable } from "../components/Expandable";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -198,6 +199,17 @@ export function MyCourses() {
   const loading = state.loading;
   const err = state.error;
 
+  const stateRefreshRef = useRef(null);
+  stateRefreshRef.current = state.refresh;
+
+  useEffect(() => {
+    function onHiddenChanged() {
+      stateRefreshRef.current?.();
+    }
+    window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
+    return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
+  }, []);
+
   const attendanceState = useCachedAsync(
     "courses:attendance-tabs",
     ({ signal }) => canvasApi.getAttendanceTabs({ signal }),
@@ -354,7 +366,7 @@ export function MyCourses() {
         return (
           <Expandable
             key={c.id}
-            title={c.name}
+            title={formatCourseTitle(c.name)}
             subtitle={subtitle}
             right={
               <div className="toggleRow">

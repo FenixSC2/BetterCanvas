@@ -10,6 +10,7 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 import { makeTodoId, createTodoItem, loadTodos } from "../lib/todoStore";
 import { useAuth } from "../hooks/useAuth";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 // desktop notifications
 import {
@@ -37,12 +38,11 @@ function GradeThresholdsPanel({ grades }) {
       <Expandable
         title="Grade-drop thresholds"
         subtitle={
-          <span className="muted">No grades available to configure</span>
+          <span className="muted">No enrolled courses found</span>
         }
       >
         <div className="muted">
-          Grade-drop notifications need at least one course with a current
-          score. Check back after Canvas reports your grades.
+          No active courses were found. Check back once you are enrolled in courses.
         </div>
       </Expandable>
     );
@@ -85,11 +85,13 @@ function GradeThresholdsPanel({ grades }) {
             const courseId = g.course_id ?? g.id;
             const key = String(courseId);
             const currentScore = Number(g.current_score);
+            const shownGrade = g.display_grade ?? g.current_grade ?? null;
+            const isEstimated = !!g.grade_is_estimated;
             return (
               <li key={key} className="rowWrap" style={{ alignItems: "center" }}>
                 <div style={{ flex: "1 1 220px", minWidth: 180 }}>
                   <div style={{ fontWeight: 700 }}>
-                    {g.course_name || `Course ${key}`}
+                    {formatCourseTitle(g.course_name) || `Course ${key}`}
                   </div>
                   <div className="muted" style={{ fontSize: 12 }}>
                     Current:{" "}
@@ -98,6 +100,18 @@ function GradeThresholdsPanel({ grades }) {
                         ? `${currentScore.toFixed(1)}%`
                         : "—"}
                     </span>
+                    {shownGrade && (
+                      <>
+                        {" · "}
+                        <span
+                          className={`gradeBadge ${isEstimated ? "estimated" : "actual"}`}
+                          title={isEstimated ? "Estimated from current score" : "Provided by Canvas"}
+                        >
+                          {shownGrade}
+                          {isEstimated ? " (est.)" : ""}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <label
@@ -161,12 +175,6 @@ function safeJsonParse(raw, fallback) {
   }
 }
 
-function trimCourseName(courseName) {
-  if (!courseName) return courseName;
-  const lastSecIndex = courseName.lastIndexOf("SEC");
-  if (lastSecIndex === -1) return courseName;
-  return courseName.slice(0, lastSecIndex).trim();
-}
 
 export function MyInformation() {
   const { hasToken } = useAuth();
@@ -200,6 +208,17 @@ export function MyInformation() {
     },
     { ttlMs: 3 * 60 * 1000 }
   );
+
+  const overviewRefreshRef = useRef(null);
+  overviewRefreshRef.current = overviewQ.refresh;
+
+  useEffect(() => {
+    function onHiddenChanged() {
+      overviewRefreshRef.current?.();
+    }
+    window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
+    return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
+  }, []);
 
   const annRefreshRef = useRef(null);
   annRefreshRef.current = announcementsQ.refresh;
@@ -448,7 +467,7 @@ export function MyInformation() {
         notifyOnce({
           dedupeKey: `announcement:${a.id}`,
           title: `New announcement${
-            a.course_name ? ` • ${a.course_name}` : ""
+            a.course_name ? ` • ${formatCourseTitle(a.course_name)}` : ""
           }`,
           body: a.title,
           url: a.html_url || window.location.href,
@@ -616,7 +635,7 @@ export function MyInformation() {
               const subtitle = (
                 <span className="muted">
                   {a.course_name ? (
-                    <span className="mono">{trimCourseName(a.course_name)}</span>
+                    <span className="mono">{formatCourseTitle(a.course_name)}</span>
                   ) : null}
                   {a.course_name ? " • " : ""}
                   Posted: <span className="mono">{fmtPosted(a.posted_at)}</span>
@@ -802,15 +821,16 @@ export function MyInformation() {
               const titleText = a?.name || "Untitled assignment";
 
               const subtitle = (
-                <span className="muted">
+                <span className="muted" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {a.course_name ? (
-                    <span className="mono">{trimCourseName(a.course_name)}</span>
+                    <span className="mono">{formatCourseTitle(a.course_name)}</span>
                   ) : null}
-                  {a.course_name ? " • " : ""}
-                  Due: <span className="mono">{fmtDue(a.due_at)}</span>
-                  {typeof a.points_possible === "number"
-                    ? ` • Points: ${a.points_possible}`
-                    : ""}
+                  <span>
+                    Due: <span className="mono">{fmtDue(a.due_at)}</span>
+                    {typeof a.points_possible === "number"
+                      ? ` • Points: ${a.points_possible}`
+                      : ""}
+                  </span>
                 </span>
               );
 
@@ -937,20 +957,24 @@ export function MyInformation() {
         ) : (
           <ul className="list listSpaced">
             {overview.missing.map((m) => {
-              const titleText = m?.name || "Untitled assignment";
+              const titleText = (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {m?.name || "Untitled assignment"}
+                  <span className="badge badgeDanger">Missing</span>
+                </span>
+              );
 
               const subtitle = (
-                <span className="muted dangerMuted">
+                <span className="muted dangerMuted" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   <span className="mono">
-                    {trimCourseName(m.course_name) ?? `Course ${m.course_id}`}
+                    {formatCourseTitle(m.course_name) ?? `Course ${m.course_id}`}
                   </span>
-                  {" • "}
-                  <span className="badge badgeDanger">Missing</span>
-                  {" • "}
-                  Due: <span className="mono">{fmtDue(m.due_at)}</span>
-                  {typeof m.points_possible === "number"
-                    ? ` • Points: ${m.points_possible}`
-                    : ""}
+                  <span>
+                    Due: <span className="mono">{fmtDue(m.due_at)}</span>
+                    {typeof m.points_possible === "number"
+                      ? ` • Points: ${m.points_possible}`
+                      : ""}
+                  </span>
                 </span>
               );
 
@@ -1085,7 +1109,7 @@ export function MyInformation() {
               const shownGrade = g.display_grade ?? g.current_grade ?? "—";
               const isEstimated = !!g.grade_is_estimated;
 
-              const titleText = trimCourseName(g.course_name) || "Untitled course";
+              const titleText = formatCourseTitle(g.course_name) || "Untitled course";
 
               const subtitle = (
                 <span className="muted">
@@ -1232,7 +1256,7 @@ export function MyInformation() {
                 <span className="mono">grade drops below a threshold</span>.
               </div>
 
-              <GradeThresholdsPanel grades={profile?.grades || []} />
+              <GradeThresholdsPanel grades={overview?.grades || []} />
 
               <Expandable
                 title="Troubleshooting notifications"

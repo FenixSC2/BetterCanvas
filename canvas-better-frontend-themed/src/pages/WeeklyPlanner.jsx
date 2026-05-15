@@ -16,6 +16,7 @@ import {
   setCompletedHours,
 } from "../lib/workloadEstimates";
 import { loadTodos, syncTodos } from "../lib/todoStore";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 /* ---------------- UI tuning knobs ---------------- */
 const UI = {
@@ -1157,7 +1158,7 @@ export function WeeklyPlanner() {
     for (const a of [...itemsRaw, ...undatedItemsRaw]) {
       const cid = a?.course_id;
       if (cid == null) continue;
-      const name = a?.course_name || `Course ${cid}`;
+      const name = formatCourseTitle(a?.course_name) || `Course ${cid}`;
       map.set(String(cid), name);
     }
     const arr = Array.from(map.entries()).map(([id, name]) => ({ id, name }));
@@ -1544,14 +1545,14 @@ export function WeeklyPlanner() {
     };
 
     const entryCourseLabel = (entry) => {
-      if (entry.__kind === "base") return entry.assignment?.course_name || "";
+      if (entry.__kind === "base") return formatCourseTitle(entry.assignment?.course_name) || "";
       if (entry.__kind === "todo" || entry.__kind === "todo-placeholder") return "TO-DO's";
       const assignment = (itemsRaw || []).find(
         (it) =>
           it.course_id === entry.split.courseId &&
           it.id === entry.split.assignmentId,
       );
-      return assignment?.course_name || "";
+      return formatCourseTitle(assignment?.course_name) || "";
     };
 
     const isEntryFavorite = (entry) => {
@@ -2499,7 +2500,7 @@ export function WeeklyPlanner() {
 
                         const name = a?.name || `Assignment ${s.assignmentId}`;
                         const courseLabel =
-                          a?.course_name ?? `Course ${s.courseId}`;
+                          formatCourseTitle(a?.course_name) ?? `Course ${s.courseId}`;
                         const dueTime = fmtTime(a?.due_at);
                         const dueDate = fmtShortDate(a?.due_at);
 
@@ -2753,7 +2754,7 @@ export function WeeklyPlanner() {
                       // base assignment cards
                       const a = entry.assignment;
                       const courseLabel =
-                        a.course_name ?? `Course ${a.course_id}`;
+                        formatCourseTitle(a.course_name) ?? `Course ${a.course_id}`;
                       const dueTime = fmtTime(a.due_at);
                       const dueDate = fmtShortDate(a.due_at);
 
@@ -2989,7 +2990,7 @@ export function WeeklyPlanner() {
                   const isTodoEntry = a.__kind === "todo";
                   const dueTime = fmtTime(a.due_at);
                   const dueDate = fmtShortDate(a.due_at);
-                  const courseLabel = isTodoEntry ? "TO-DO's" : (a.course_name ?? "Unknown Course");
+                  const courseLabel = isTodoEntry ? "TO-DO's" : (formatCourseTitle(a.course_name) ?? "Unknown Course");
 
                   if (isTodoEntry) {
                     const isFavorited = workloadIsFavorite("todo", a.id);
@@ -3362,7 +3363,7 @@ export function WeeklyPlanner() {
               </div>
               <ul className="list" style={{ marginTop: 10 }}>
                 {view.undated.slice(0, 10).map((a) => {
-                  const courseLabel = a.course_name ?? "Unknown Course";
+                  const courseLabel = formatCourseTitle(a.course_name) ?? "Unknown Course";
                   const hasDesc = !!stripHtml(a.description);
                   const submitted = !!a.submitted;
                   const status = renderSingleStatusBadge({

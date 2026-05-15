@@ -8,6 +8,7 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { loadTodos, syncTodos, updateTodoItem } from "../lib/todoStore";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -1147,7 +1148,7 @@ export function UpcomingAssignments() {
 
                 const courseLabel = todoItem
                   ? "TO-DO's"
-                  : a.course_name ?? "Unknown Course";
+                  : formatCourseTitle(a.course_name) ?? "Unknown Course";
                 const dueLabel = fmtDue(a.due_at);
 
                 const desc = todoItem
@@ -1403,7 +1404,7 @@ export function UpcomingAssignments() {
 
                   const courseLabel = todoItem
                     ? "TO-DO's"
-                    : a.course_name ?? "Unknown Course";
+                    : formatCourseTitle(a.course_name) ?? "Unknown Course";
 
                   const desc = todoItem
                     ? String(a.description || "").trim()

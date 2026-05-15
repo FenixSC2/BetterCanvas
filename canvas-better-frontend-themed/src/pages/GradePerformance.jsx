@@ -9,6 +9,7 @@ import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { Expandable } from "../components/Expandable";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 const STANDARD_SCALE = [
   { label: "A", value: "A", min: 93 },
@@ -123,23 +124,6 @@ function getScaleConfig(courseId, scaleByCourse) {
   };
 }
 
-function formatCourseLabel(assignment) {
-  const rawName = String(assignment?.course_name || "Unknown course").trim();
-  const rawCode = String(assignment?.course_code || "").trim();
-  const secSource = `${rawName} ${rawCode}`;
-  const secMatch = secSource.match(/\bSEC(?:TION)?\s*([A-Z0-9-]{1,8})\b/i);
-  const section = secMatch ? `SEC ${secMatch[1].toUpperCase()}` : "";
-
-  // Strip the CRN (bare number immediately after the course code) then
-  // strip " SEC ..." and everything that follows (semester, location, etc.).
-  let title = rawName
-    .replace(/^([A-Z]+\d+)\s+\d+\s+/i, "$1 ") // remove CRN between course code and name
-    .replace(/\s+SEC(?:TION)?\s.*/i, "") // remove " SEC XX ..." suffix
-    .trim();
-
-  if (!title) title = rawName || "Unknown course";
-  return section ? `${title} • ${section}` : title;
-}
 
 function parseTimestampMs(raw) {
   if (!raw) return null;
@@ -1630,7 +1614,7 @@ export function GradePerformance({ demoMode = false }) {
                 >
                   {summaries.map((course) => (
                     <option key={course.id} value={String(course.id)}>
-                      {course.name}
+                      {formatCourseTitle(course.name)}
                     </option>
                   ))}
                 </select>
@@ -1918,7 +1902,7 @@ export function GradePerformance({ demoMode = false }) {
                     <div className="gradeCalcListMain recentGradeMain">
                       <div className="gradeCalcItemTitle">{assignment.name}</div>
                       <div className="muted recentGradeCourse">
-                        {formatCourseLabel(assignment)}
+                        {formatCourseTitle(assignment?.course_name)}
                       </div>
                       <div className="recentGradeMeta muted">
                         <span>Graded {fmtDateTime(assignment?.graded_at)}</span>
@@ -2335,7 +2319,7 @@ export function GradePerformance({ demoMode = false }) {
                     scoreOverridesById,
                   ).rows[0];
                 const courseLabel =
-                  searchScope === "all" ? formatCourseLabel(assignment) : null;
+                  searchScope === "all" ? formatCourseTitle(assignment?.course_name) : null;
                 const predictValue = predictedById[key] ?? "";
                 const draftPredictValue = getPredictionDraftValue(key);
                 const effectivePoints = row?.effectivePoints;

@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { canvasApi } from "../api/canvasApi";
 import { clearDemoMode } from "../lib/storagePolicy";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 const THEME_OPTIONS = [
   { key: "classic", label: "Classic", desc: "Clean light theme" },
@@ -743,7 +744,7 @@ export function SettingsModal({
                                             <span className={`badge ${badgeClass}`}>{badge.label}</span>
                                           </div>
                                           <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                                            {a.course_name}
+                                            {formatCourseTitle(a.course_name)}
                                           </div>
                                         </div>
                                         <div
@@ -831,7 +832,7 @@ export function SettingsModal({
                                           <span className={`badge ${badgeClass}`}>{badge.label}</span>
                                         </div>
                                         <div className="muted" style={{ fontSize: "var(--fontSm)" }}>
-                                          {h.course_name}
+                                          {formatCourseTitle(h.course_name)}
                                         </div>
                                       </div>
                                       <div

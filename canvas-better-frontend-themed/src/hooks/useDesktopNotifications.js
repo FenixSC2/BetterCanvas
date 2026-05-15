@@ -4,6 +4,7 @@ import { canvasApi } from "../api/canvasApi";
 import { getNotificationPermission, notifyOnce, notificationsSupported } from "../lib/notifications";
 import { dueWithinHours, isMissing } from "../lib/urgency";
 import { loadTodos, syncTodos } from "../lib/todoStore";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 const GRADE_THRESHOLDS_KEY = "bc.notifications.gradeThresholds";
 const LAST_KNOWN_GRADES_KEY = "bc.notifications.lastKnownGrades";
@@ -87,7 +88,7 @@ export function useDesktopNotifications(hasToken = false) {
           notifyOnce({
             dedupeKey: `missing:${a.course_id}:${a.id}`,
             title: "Overdue assignment",
-            body: `${a.course_name || "Course"} • ${a.name}`,
+            body: `${formatCourseTitle(a.course_name) || "Course"} • ${a.name}`,
             url: a.html_url,
             cooldownMs: 2 * 60 * 60 * 1000, // 2h
           });
@@ -101,7 +102,7 @@ export function useDesktopNotifications(hasToken = false) {
           notifyOnce({
             dedupeKey: `due12h:${a.course_id}:${a.id}`,
             title: "Due soon",
-            body: `${a.course_name || "Course"} • ${a.name} • Due ${new Date(a.due_at).toLocaleTimeString()}`,
+            body: `${formatCourseTitle(a.course_name) || "Course"} • ${a.name} • Due ${new Date(a.due_at).toLocaleTimeString()}`,
             url: a.html_url,
             cooldownMs: 6 * 60 * 60 * 1000, // 6h
           });
@@ -118,7 +119,7 @@ export function useDesktopNotifications(hasToken = false) {
           notifyOnce({
             dedupeKey: `hi24h:${a.course_id}:${a.id}`,
             title: "High-points assignment due soon",
-            body: `${a.course_name || "Course"} • ${a.name} • ${pts} points`,
+            body: `${formatCourseTitle(a.course_name) || "Course"} • ${a.name} • ${pts} points`,
             url: a.html_url,
             cooldownMs: 12 * 60 * 60 * 1000, // 12h
           });
@@ -156,8 +157,8 @@ export function useDesktopNotifications(hasToken = false) {
         const thresholds = loadGradeThresholds();
         if (Object.keys(thresholds).length > 0) {
           try {
-            const profile = await canvasApi.getProfile();
-            const grades = Array.isArray(profile?.grades) ? profile.grades : [];
+            const overviewData = await canvasApi.getOverview();
+            const grades = Array.isArray(overviewData?.grades) ? overviewData.grades : [];
             const lastKnown = loadLastKnownGrades();
             const nextKnown = { ...lastKnown };
             for (const g of grades) {
@@ -177,7 +178,7 @@ export function useDesktopNotifications(hasToken = false) {
                 notifyOnce({
                   dedupeKey: `grade-drop:${courseKey}:${threshold}:${score.toFixed(2)}`,
                   title: "Grade dropped below threshold",
-                  body: `${g?.course_name || `Course ${courseKey}`} • ${score.toFixed(1)}% (threshold ${threshold}%)`,
+                  body: `${formatCourseTitle(g?.course_name) || `Course ${courseKey}`} • ${score.toFixed(1)}% (threshold ${threshold}%)`,
                   cooldownMs: 12 * 60 * 60 * 1000,
                 });
               }

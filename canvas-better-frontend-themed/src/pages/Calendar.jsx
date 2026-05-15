@@ -1,9 +1,10 @@
 // src/pages/Calendar.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canvasApi } from "../api/canvasApi";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 const EVENTS_KEY = "bc.calendar.events";
 
@@ -92,6 +93,17 @@ export function Calendar() {
 
   const assignments = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
 
+  const upcomingRefreshRef = useRef(null);
+  upcomingRefreshRef.current = upcomingQ.refresh;
+
+  useEffect(() => {
+    function onHiddenChanged() {
+      upcomingRefreshRef.current?.();
+    }
+    window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
+    return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
+  }, []);
+
   // Bucket all data into ISO-day strings
   const itemsByDay = useMemo(() => {
     const map = new Map();
@@ -107,7 +119,7 @@ export function Calendar() {
         kind: "assignment",
         id: `${a.course_id}:${a.id}`,
         title: a.name || "Assignment",
-        subtitle: a.course_name || "",
+        subtitle: formatCourseTitle(a.course_name) || "",
         url: a.html_url || null,
         at: d,
       });

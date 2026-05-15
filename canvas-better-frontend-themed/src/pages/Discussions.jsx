@@ -5,6 +5,7 @@ import { useCachedAsync } from "../hooks/useCachedAsync";
 import { Loading } from "../components/Loading";
 import { ErrorBox } from "../components/ErrorBox";
 import { Expandable } from "../components/Expandable";
+import { formatCourseTitle } from "../utils/courseUtils";
 
 const LAST_SEEN_KEY = "bc.discussions.lastSeenByCourse";
 
@@ -85,7 +86,7 @@ function CourseDiscussions({ course, lastSeen, markSeen }) {
 
   return (
     <Expandable
-      title={course.name || `Course ${courseId}`}
+      title={formatCourseTitle(course.name) || `Course ${courseId}`}
       subtitle={
         q.loading ? (
           <span className="muted">Loading discussions...</span>
