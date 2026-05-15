@@ -8,6 +8,7 @@ import { WeeklyPlanner } from "./pages/WeeklyPlanner";
 import { TodoPage } from "./pages/TodoPage";
 import { GradePerformance } from "./pages/GradePerformance";
 import { Calendar } from "./pages/Calendar";
+import { Discussions } from "./pages/Discussions";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { ForgotPassword } from "./pages/ForgotPassword";
@@ -139,6 +140,7 @@ const PAGES = [
   { key: "upcoming", El: UpcomingAssignments },
   { key: "planner",  El: WeeklyPlanner },
   { key: "calendar", El: Calendar },
+  { key: "discussions", El: Discussions },
   { key: "todo",     El: TodoPage },
   { key: "grades",   El: GradePerformance },
 ];
@@ -151,6 +153,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
       { key: "upcoming", label: "Upcoming Assignments" },
       { key: "planner", label: "Weekly Planner" },
       { key: "calendar", label: "Calendar" },
+      { key: "discussions", label: "Discussions" },
       { key: "todo", label: "To-Do's" },
       { key: "grades", label: "Grades" },
     ],

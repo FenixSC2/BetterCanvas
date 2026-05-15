@@ -827,6 +827,99 @@ def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List
     base.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
     return base[:limit] if limit else base
 
+def mock_discussions(course_id: int) -> List[Dict[str, Any]]:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    def iso(dt: datetime) -> str:
+        return dt.isoformat()
+
+    by_course: Dict[int, List[Dict[str, Any]]] = {
+        101: [
+            {
+                "id": 1001,
+                "title": "Week 4 Discussion: Greedy vs Dynamic Programming",
+                "message_html": "<p>Pick a problem from the practice set and argue whether a greedy approach works, or whether DP is required. Reply to at least one classmate with a counterexample or refinement.</p>",
+                "posted_at": iso(now - timedelta(days=2)),
+                "last_reply_at": iso(now - timedelta(hours=5)),
+                "html_url": f"{CANVAS_BASE_URL}/courses/101/discussion_topics/1001",
+                "pinned": True,
+                "locked": False,
+                "read_state": "unread",
+                "unread_count": 4,
+                "discussion_subentry_count": 12,
+                "author_id": 9001,
+                "author_name": "Prof. Alvarez",
+            },
+            {
+                "id": 1002,
+                "title": "Office hours scheduling poll",
+                "message_html": "<p>Vote on the times that work best for additional office hours this week. Comments welcome.</p>",
+                "posted_at": iso(now - timedelta(days=6)),
+                "last_reply_at": iso(now - timedelta(days=1, hours=3)),
+                "html_url": f"{CANVAS_BASE_URL}/courses/101/discussion_topics/1002",
+                "pinned": False,
+                "locked": False,
+                "read_state": "read",
+                "unread_count": 0,
+                "discussion_subentry_count": 8,
+                "author_id": 9001,
+                "author_name": "Prof. Alvarez",
+            },
+        ],
+        202: [
+            {
+                "id": 2001,
+                "title": "Proof technique check-in",
+                "message_html": "<p>Share one proof from this week's reading you'd like to walk through together. Photos of handwritten work are fine.</p>",
+                "posted_at": iso(now - timedelta(days=1, hours=4)),
+                "last_reply_at": iso(now - timedelta(hours=2)),
+                "html_url": f"{CANVAS_BASE_URL}/courses/202/discussion_topics/2001",
+                "pinned": True,
+                "locked": False,
+                "read_state": "unread",
+                "unread_count": 2,
+                "discussion_subentry_count": 5,
+                "author_id": 9002,
+                "author_name": "Dr. Chen",
+            },
+            {
+                "id": 2002,
+                "title": "Study group for Friday's quiz",
+                "message_html": "<p>Anyone want to meet at the library Thursday evening to review combinatorics?</p>",
+                "posted_at": iso(now - timedelta(days=3)),
+                "last_reply_at": iso(now - timedelta(hours=18)),
+                "html_url": f"{CANVAS_BASE_URL}/courses/202/discussion_topics/2002",
+                "pinned": False,
+                "locked": False,
+                "read_state": "read",
+                "unread_count": 0,
+                "discussion_subentry_count": 3,
+                "author_id": 9102,
+                "author_name": "Jordan Lee",
+            },
+        ],
+        303: [
+            {
+                "id": 3001,
+                "title": "Draft swap — short essay round 2",
+                "message_html": "<p>Post your draft as an attachment or pasted text. Pair up in the replies and exchange feedback by Sunday night.</p>",
+                "posted_at": iso(now - timedelta(hours=20)),
+                "last_reply_at": iso(now - timedelta(hours=3)),
+                "html_url": f"{CANVAS_BASE_URL}/courses/303/discussion_topics/3001",
+                "pinned": True,
+                "locked": False,
+                "read_state": "unread",
+                "unread_count": 1,
+                "discussion_subentry_count": 2,
+                "author_id": 9003,
+                "author_name": "Prof. Okafor",
+            },
+        ],
+    }
+
+    return by_course.get(course_id, [])
+
+
 def mock_announcements(days_back: int = 14, limit: int = 30) -> List[Announcement]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     earliest = now - timedelta(days=days_back)
@@ -2463,6 +2556,56 @@ def delete_assignment_weight_override_endpoint(
     """Delete a saved effective weight/points override for one assignment."""
     delete_assignment_weight_override(current_user.id, course_id, assignment_id, db)
     return {"success": True}
+
+
+@app.get("/api/courses/{course_id}/discussions")
+def get_course_discussions_endpoint(
+    course_id: int,
+    limit: int = 30,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Fetch active discussion topics for a course. Demo mode returns mock data."""
+    if session_id and is_demo_session(session_id):
+        return {"discussions": mock_discussions(course_id)[: max(1, int(limit))]}
+
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    uid = get_session_user_id(session_id, db)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = get_canvas_token(uid, db)
+
+    raw = canvas_get_paginated(
+        f"/courses/{course_id}/discussion_topics",
+        params={"per_page": min(100, max(1, int(limit)))},
+        token=token,
+    )
+    out: List[Dict[str, Any]] = []
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            continue
+        tid = entry.get("id")
+        if tid is None:
+            continue
+        author = entry.get("author") if isinstance(entry.get("author"), dict) else {}
+        out.append({
+            "id": tid,
+            "title": entry.get("title") or "Untitled discussion",
+            "message_html": entry.get("message"),
+            "posted_at": entry.get("posted_at") or entry.get("created_at"),
+            "last_reply_at": entry.get("last_reply_at"),
+            "html_url": entry.get("html_url"),
+            "pinned": bool(entry.get("pinned")),
+            "locked": bool(entry.get("locked")),
+            "read_state": entry.get("read_state"),
+            "unread_count": entry.get("unread_count"),
+            "discussion_subentry_count": entry.get("discussion_subentry_count"),
+            "author_id": author.get("id") if author else entry.get("user_id"),
+            "author_name": (author.get("display_name") if author else None)
+                or entry.get("user_name"),
+        })
+    return {"discussions": out[: max(1, int(limit))]}
 
 
 @app.get("/api/courses/{course_id}/assignment-groups")

@@ -182,6 +182,45 @@ export function Calendar() {
     <div className="stack">
       <div className="card">
         <div className="cardBody">
+          <div className="h3">Add an event</div>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Personal calendar events live locally in your browser and aren&apos;t
+            synced to Canvas.
+          </div>
+          <div className="rowWrap" style={{ gap: 8, alignItems: "center" }}>
+            <input
+              type="date"
+              value={composerDate}
+              onChange={(e) => setComposerDate(e.target.value)}
+              style={{ minWidth: 150 }}
+            />
+            <input
+              type="text"
+              placeholder="Event title"
+              value={composerTitle}
+              onChange={(e) => setComposerTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addEvent();
+                }
+              }}
+              style={{ flex: "1 1 220px", minWidth: 200 }}
+            />
+            <button
+              type="button"
+              className="btn"
+              onClick={addEvent}
+              disabled={!composerDate || !composerTitle.trim()}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="cardBody">
           <div
             className="rowWrap"
             style={{ justifyContent: "space-between", alignItems: "center" }}
@@ -345,45 +384,6 @@ export function Calendar() {
                 </div>
               );
             })}
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="cardBody">
-          <div className="h3">Add an event</div>
-          <div className="muted" style={{ marginBottom: 8 }}>
-            Personal calendar events live locally in your browser and aren&apos;t
-            synced to Canvas.
-          </div>
-          <div className="rowWrap" style={{ gap: 8, alignItems: "center" }}>
-            <input
-              type="date"
-              value={composerDate}
-              onChange={(e) => setComposerDate(e.target.value)}
-              style={{ minWidth: 150 }}
-            />
-            <input
-              type="text"
-              placeholder="Event title"
-              value={composerTitle}
-              onChange={(e) => setComposerTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addEvent();
-                }
-              }}
-              style={{ flex: "1 1 220px", minWidth: 200 }}
-            />
-            <button
-              type="button"
-              className="btn"
-              onClick={addEvent}
-              disabled={!composerDate || !composerTitle.trim()}
-            >
-              Add
-            </button>
           </div>
         </div>
       </div>

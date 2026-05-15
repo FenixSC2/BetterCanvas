@@ -173,6 +173,12 @@ export const canvasApi = {
     getCourseAssignmentGroups: (courseId, opts) =>
       request(`/api/courses/${courseId}/assignment-groups`, opts),
 
+    getCourseDiscussions: (courseId, limit = 30, opts) =>
+      request(
+        `/api/courses/${courseId}/discussions?limit=${encodeURIComponent(limit)}`,
+        opts,
+      ),
+
     getAssignmentGroupWeightOverrides: (opts) =>
       request("/api/assignment-group-weight-overrides", opts),
 
