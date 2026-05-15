@@ -114,50 +114,53 @@ function CourseDiscussions({ course, lastSeen, markSeen }) {
       ) : sorted.length === 0 ? (
         <div className="muted">No discussion topics found for this course.</div>
       ) : (
-        <ul className="list listSpaced">
+        <ul className="list listSpaced" style={{ marginTop: -10 }}>
           {sorted.map((t) => {
             const preview = stripHtml(t.message_html);
             const isNew = topicSortKey(t) > lastSeenTs;
             const when = t.last_reply_at || t.posted_at;
             return (
-              <li key={t.id} className="stack" style={{ gap: 4 }}>
-                <div className="rowWrap" style={{ alignItems: "center", gap: 8 }}>
-                  {t.html_url ? (
-                    <a
-                      href={t.html_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ fontWeight: 700 }}
-                    >
-                      {t.title}
-                    </a>
-                  ) : (
+              <li key={t.id} className="listItem">
+                <div className="cardBody stack" style={{ gap: 6, paddingTop: 10 }}>
+                  <div className="rowWrap" style={{ alignItems: "center", gap: 8 }}>
                     <span style={{ fontWeight: 700 }}>{t.title}</span>
-                  )}
-                  {t.pinned ? (
-                    <span className="badge badgeNeutral">Pinned</span>
-                  ) : null}
-                  {t.locked ? (
-                    <span className="badge badgeWarn">Locked</span>
-                  ) : null}
-                  {isNew ? (
-                    <span className="badge badgeSuccess">NEW</span>
-                  ) : null}
-                </div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {t.author_name ? <>By {t.author_name} • </> : null}
-                  {when ? fmtWhen(when) : "Unknown time"}
-                  {typeof t.discussion_subentry_count === "number"
-                    ? ` • ${t.discussion_subentry_count} repl${t.discussion_subentry_count === 1 ? "y" : "ies"}`
-                    : ""}
-                </div>
-                {preview ? (
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {preview.length > 240
-                      ? preview.slice(0, 240) + "…"
-                      : preview}
+                    {t.pinned ? (
+                      <span className="badge badgeNeutral">Pinned</span>
+                    ) : null}
+                    {t.locked ? (
+                      <span className="badge badgeWarn">Locked</span>
+                    ) : null}
+                    {isNew ? (
+                      <span className="badge badgeSuccess">NEW</span>
+                    ) : null}
                   </div>
-                ) : null}
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {t.author_name ? <>By {t.author_name} • </> : null}
+                    {when ? fmtWhen(when) : "Unknown time"}
+                    {typeof t.discussion_subentry_count === "number"
+                      ? ` • ${t.discussion_subentry_count} repl${t.discussion_subentry_count === 1 ? "y" : "ies"}`
+                      : ""}
+                  </div>
+                  {preview ? (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {preview.length > 240
+                        ? preview.slice(0, 240) + "…"
+                        : preview}
+                    </div>
+                  ) : null}
+                  {t.html_url ? (
+                    <div>
+                      <a
+                        className="btn"
+                        href={t.html_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open in Canvas
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
               </li>
             );
           })}
