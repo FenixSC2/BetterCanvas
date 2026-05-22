@@ -167,6 +167,40 @@ function firstLine(text) {
   return line.length > 140 ? line.slice(0, 140) + "…" : line;
 }
 
+function greetingFor(d = new Date()) {
+  const h = d.getHours();
+  if (h < 5) return "Up late";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  if (h < 21) return "Good evening";
+  return "Late night";
+}
+
+function datelineFor(d = new Date()) {
+  try {
+    return d.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return d.toDateString();
+  }
+}
+
+function firstNameOf(p) {
+  if (!p) return "there";
+  const src = (p.short_name || p.name || "").trim();
+  if (!src) return "there";
+  return src.split(/\s+/)[0];
+}
+
+function avatarInitialOf(p) {
+  const src = (p?.short_name || p?.name || "").trim();
+  if (!src) return "S";
+  return src.charAt(0).toUpperCase();
+}
+
 function safeJsonParse(raw, fallback) {
   try {
     return JSON.parse(raw);
@@ -541,50 +575,44 @@ export function MyInformation() {
 
   return (
     <div className="stack">
-      {/* Student card */}
-      <div className="card">
-        <div className="cardBody">
-          <div className="row">
-            {profile.avatar_url ? (
-              <img className="avatar" src={profile.avatar_url} alt="avatar" />
-            ) : (
-              <div className="avatar placeholder" />
-            )}
-
-            <div>
-              <div className="h2">{profile.name || "Unknown name"}</div>
-              <div className="muted">
-                User ID: <span className="mono">{profile.id}</span>
-              </div>
-              {profile.primary_email ? (
-                <div className="muted">
-                  Email: <span className="mono">{profile.primary_email}</span>
-                </div>
-              ) : null}
-              {profile.sortable_name ? (
-                <div className="muted">
-                  Sortable:{" "}
-                  <span className="mono">{profile.sortable_name}</span>
-                </div>
-              ) : null}
-              {profile.short_name ? (
-                <div className="muted">
-                  Short: <span className="mono">{profile.short_name}</span>
-                </div>
-              ) : null}
-
-              {/* subtle background refresh indicator */}
-              {profileQ.refreshing ||
-              overviewQ.refreshing ||
-              announcementsQ.refreshing ? (
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Updating…
-                </div>
-              ) : null}
+      {/* Welcome hero — typographic moment, not a stats template */}
+      <section className="welcomeHero" aria-labelledby="welcomeHeading">
+        <div className="welcomeHeroTop">
+          {profile.avatar_url ? (
+            <img className="welcomeAvatar" src={profile.avatar_url} alt="" />
+          ) : (
+            <div className="welcomeAvatar welcomeAvatarPlaceholder" aria-hidden="true">
+              {avatarInitialOf(profile)}
             </div>
+          )}
+          <div className="welcomeMeta">
+            <span className="welcomeName">{profile.short_name || profile.name || "Student"}</span>
+            {(profileQ.refreshing || overviewQ.refreshing || announcementsQ.refreshing) ? (
+              <span className="welcomeSyncing"><span className="spinner" />Syncing</span>
+            ) : null}
           </div>
         </div>
-      </div>
+
+        <h1 id="welcomeHeading" className="welcomeGreeting">
+          {greetingFor()},{" "}
+          <span className="welcomeGreetingName">{firstNameOf(profile)}.</span>
+        </h1>
+
+        <p className="welcomeSubline">{datelineFor()}</p>
+
+        {(profile.primary_email || profile.sortable_name || profile.short_name || profile.id) ? (
+          <details className="welcomeAccountDetails">
+            <summary>Account details</summary>
+            <dl>
+              {profile.name ? (<><dt>Name</dt><dd>{profile.name}</dd></>) : null}
+              <dt>Canvas ID</dt><dd className="mono">{profile.id}</dd>
+              {profile.primary_email ? (<><dt>Email</dt><dd className="mono">{profile.primary_email}</dd></>) : null}
+              {profile.sortable_name ? (<><dt>Sortable</dt><dd className="mono">{profile.sortable_name}</dd></>) : null}
+              {profile.short_name ? (<><dt>Short</dt><dd className="mono">{profile.short_name}</dd></>) : null}
+            </dl>
+          </details>
+        ) : null}
+      </section>
 
       {/* Announcements */}
       <Expandable

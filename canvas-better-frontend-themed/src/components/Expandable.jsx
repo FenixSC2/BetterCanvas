@@ -10,6 +10,8 @@ export function Expandable({
   onToggle,
   onOpen,
   onClose,
+  className = "",
+  style,
 }) {
   const id = useId();
   const [open, setOpen] = useState(!!defaultOpen);
@@ -28,7 +30,12 @@ export function Expandable({
   }
 
   return (
-    <details className="card expandable" open={open} onToggle={handleToggle}>
+    <details
+      className={`card expandable ${className}`.trim()}
+      open={open}
+      onToggle={handleToggle}
+      style={style}
+    >
       <summary className="cardBody expandableSummary" aria-controls={id}>
         <div
           className="row"

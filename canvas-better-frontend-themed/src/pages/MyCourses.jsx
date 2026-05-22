@@ -7,6 +7,7 @@ import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { formatCourseTitle } from "../utils/courseUtils";
+import { courseColor } from "../utils/courseColor";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -363,9 +364,13 @@ export function MyCourses() {
         const modUrl = modulesUrl(c);
         const courseUrl = c.html_url || "";
 
+        const cc = courseColor(c.id);
+
         return (
           <Expandable
             key={c.id}
+            className="courseRow"
+            style={cc.vars}
             title={formatCourseTitle(c.name)}
             subtitle={subtitle}
             right={
