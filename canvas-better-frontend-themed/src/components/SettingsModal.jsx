@@ -26,6 +26,7 @@ const THEME_OPTIONS = [
   { key: "contrast", label: "Classic Dark", desc: "Clean dark theme" },
   { key: "frog", label: "Frog", desc: "Frog." },
   { key: "cyber", label: "Cyber", desc: "Bright green on dark" },
+  { key: "custom", label: "Custom", desc: "Pick your own colors" },
 ];
 
 const DENSITY_OPTIONS = [
@@ -80,7 +81,7 @@ export function SettingsModal({
   demoMode = false,
   onExitDemo = null,
 }) {
-  const { theme, density, font, setTheme, setDensity, setFont } = useTheme();
+  const { theme, density, font, customColors, setTheme, setDensity, setFont, setCustomColors } = useTheme();
   const { user, logout, setTokenStatus } = useAuth();
   const [activeSection, setActiveSection] = useState("general");
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -404,6 +405,9 @@ export function SettingsModal({
                         >
                           <div
                             className={`themeSwatch themeSwatch-${opt.key}`}
+                            style={opt.key === "custom" ? {
+                              background: `linear-gradient(135deg, ${customColors.primary} 0%, ${customColors.secondary} 100%)`,
+                            } : undefined}
                             aria-hidden="true"
                           />
                           <div className="themeChoiceText">
@@ -413,6 +417,32 @@ export function SettingsModal({
                         </button>
                       ))}
                     </div>
+
+                    {theme === "custom" && (
+                      <div style={{ marginTop: 16, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
+                        <div>
+                          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: "var(--fontSm)" }}>Background</div>
+                          <input
+                            type="color"
+                            value={customColors.primary}
+                            onChange={(e) => setCustomColors({ ...customColors, primary: e.target.value })}
+                            style={{ width: 44, height: 36, border: "1px solid var(--border2)", borderRadius: "var(--radiusSm)", cursor: "pointer", padding: 2, background: "none" }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: "var(--fontSm)" }}>Cards & surfaces</div>
+                          <input
+                            type="color"
+                            value={customColors.secondary}
+                            onChange={(e) => setCustomColors({ ...customColors, secondary: e.target.value })}
+                            style={{ width: 44, height: 36, border: "1px solid var(--border2)", borderRadius: "var(--radiusSm)", cursor: "pointer", padding: 2, background: "none" }}
+                          />
+                        </div>
+                        <div className="muted" style={{ fontSize: "var(--fontXs)", paddingBottom: 4 }}>
+                          Dark background = light text. Highlights are auto-calculated.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

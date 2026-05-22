@@ -119,6 +119,11 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --badge-danger-border-strong: rgba(255, 180, 180, 0.85);
   --badge-danger-text-strong: #ffffff;
 
+  /* bg-relative text tokens — used by elements that sit on the page bg, not on a card */
+  --text-on-bg: var(--text);
+  --muted-on-bg: var(--muted);
+  --muted-strong-on-bg: var(--muted-strong);
+
   /* Shared interaction tokens */
   --interactive-hover-opacity: 0.92;
   --interactive-active-scale: 0.985;
@@ -337,6 +342,20 @@ html[data-theme="frog"] {
   --shadow-lg: 0 28px 60px rgba(17, 46, 6, 0.32);
 }
 
+/* ===== Custom theme: tokens injected at runtime via JS ===== */
+/* This block only provides a safe fallback; deriveCustomTheme() in ThemeProvider
+   overwrites every token below via element.style.setProperty. */
+html[data-theme="custom"] {
+  --accent-500: #6366f1;
+  --accent-600: #4f46e5;
+  --accent: var(--accent-500);
+  --accent-strong: var(--accent-600);
+  --bg: #f5f6fb;
+  --text: #0c0d12;
+  --surface: #ffffff;
+  --surface2: #f3f4f8;
+}
+
 /* ===== Auto theme: follow OS preference ===== */
 @media (prefers-color-scheme: dark) {
   html[data-theme="auto"] {
@@ -396,6 +415,24 @@ html[data-theme="forest"] .toggleTrack.mixed {
   --badge-danger-bg: var(--badge-danger-bg-strong);
   --badge-danger-border: var(--badge-danger-border-strong);
   --badge-danger-text: var(--badge-danger-text-strong);
+}
+
+/* Dark themes: tab indicator gets an accent-tinted ring so it reads against dark surfaces */
+html[data-theme="midnight"] .tabIndicator,
+html[data-theme="forest"] .tabIndicator,
+html[data-theme="cyber"] .tabIndicator,
+html[data-theme="contrast"] .tabIndicator {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    var(--shadow), var(--highlight-inset);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme="auto"] .tabIndicator {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+      var(--shadow), var(--highlight-inset);
+  }
 }
 
 /* Ensure fades on weeekly planner page match the theme */
@@ -671,9 +708,9 @@ ol {
   width: var(--tab-indicator-width, 0px);
   transform: translateX(var(--tab-indicator-x, 0px));
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  box-shadow: var(--shadow-sm), var(--highlight-inset);
+  box-shadow: var(--shadow), var(--highlight-inset);
   transition: transform var(--dur) var(--spring-soft), width var(--dur) var(--ease-out);
   z-index: 0;
   pointer-events: none;
@@ -700,6 +737,7 @@ ol {
 
 .tab.active {
   color: var(--text);
+  font-weight: 700;
   border-color: transparent;
 }
 
@@ -1497,6 +1535,10 @@ details.expandable > .cardBody,
   background: linear-gradient(135deg, #144020 0%, #050a05 100%);
   border-color: #459d45;
   --swatch-accent: #22ff66;
+}
+.themeSwatch-custom {
+  /* overridden at runtime by inline style; this is a fallback */
+  background: conic-gradient(from 180deg, #f43f5e, #f97316, #eab308, #22c55e, #0ea5e9, #6366f1, #a855f7, #f43f5e);
 }
 
 .themeChoiceTitle {
@@ -4006,7 +4048,7 @@ details.expandable > .cardBody,
 .welcomeName {
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
-  color: var(--muted-strong);
+  color: var(--muted-strong-on-bg);
   font-size: var(--fontSm);
 }
 
@@ -4015,7 +4057,7 @@ details.expandable > .cardBody,
   align-items: center;
   gap: 6px;
   font-size: var(--fontXs);
-  color: var(--muted);
+  color: var(--muted-on-bg);
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-glass);
@@ -4035,17 +4077,17 @@ details.expandable > .cardBody,
   letter-spacing: var(--tracking-mega);
   font-size: clamp(34px, 6vw, 56px);
   line-height: 1.02;
-  color: var(--muted-strong);
+  color: var(--muted-strong-on-bg);
 }
 
 .welcomeGreetingName {
-  color: var(--text);
+  color: var(--text-on-bg);
   font-weight: 800;
 }
 
 .welcomeSubline {
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-on-bg);
   font-size: var(--fontBase);
   letter-spacing: var(--tracking-tight);
 }
