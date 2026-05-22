@@ -17,16 +17,16 @@ import { clearDemoMode } from "../lib/storagePolicy";
 import { formatCourseTitle } from "../utils/courseUtils";
 
 const THEME_OPTIONS = [
-  { key: "auto", label: "Auto", desc: "Follows your system light/dark" },
-  { key: "classic", label: "Classic", desc: "Clean light theme" },
-  { key: "midnight", label: "Midnight", desc: "Dark & high contrast" },
-  { key: "ocean", label: "Ocean", desc: "Cool blues" },
-  { key: "forest", label: "Forest", desc: "Soft greens" },
-  { key: "rose", label: "Rose", desc: "Warm pinks" },
+  { key: "auto",     label: "Auto",         desc: "Follows your system light/dark" },
+  { key: "classic",  label: "Classic",      desc: "Clean light theme" },
+  { key: "midnight", label: "Midnight",     desc: "Dark & high contrast" },
   { key: "contrast", label: "Classic Dark", desc: "Clean dark theme" },
-  { key: "frog", label: "Frog", desc: "Frog." },
-  { key: "rainbow", label: "Rainbow", desc: "Multicolor gradient bg" },
-  { key: "custom", label: "Custom", desc: "Pick your own colors" },
+  { key: "ocean",    label: "Ocean",        desc: "Cool blues" },
+  { key: "rose",     label: "Rose",         desc: "Warm pinks" },
+  { key: "forest",   label: "Forest",       desc: "Soft greens" },
+  { key: "frog",     label: "Frog",         desc: "Frog." },
+  { key: "rainbow",  label: "Rainbow",      desc: "Multicolor gradient bg" },
+  { key: "custom",   label: "Custom",       desc: "Pick your own colors" },
 ];
 
 const DENSITY_OPTIONS = [
@@ -81,7 +81,7 @@ export function SettingsModal({
   demoMode = false,
   onExitDemo = null,
 }) {
-  const { theme, density, font, customColors, setTheme, setDensity, setFont, setCustomColors } = useTheme();
+  const { theme, density, font, customColors, rainbowCards, setTheme, setDensity, setFont, setCustomColors, setRainbowCards } = useTheme();
   const { user, logout, setTokenStatus } = useAuth();
   const [activeSection, setActiveSection] = useState("general");
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -417,6 +417,30 @@ export function SettingsModal({
                         </button>
                       ))}
                     </div>
+
+                    {theme === "rainbow" && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 8, fontSize: "var(--fontSm)" }}>Card style</div>
+                        <div className="segmented">
+                          <button
+                            type="button"
+                            className={`segmentedBtn ${rainbowCards === "dark" ? "active" : ""}`}
+                            onClick={() => setRainbowCards("dark")}
+                          >
+                            <div className="segmentedTitle">Dark cards</div>
+                            <div className="segmentedDesc">Near-black surfaces, light text</div>
+                          </button>
+                          <button
+                            type="button"
+                            className={`segmentedBtn ${rainbowCards === "light" ? "active" : ""}`}
+                            onClick={() => setRainbowCards("light")}
+                          >
+                            <div className="segmentedTitle">Light cards</div>
+                            <div className="segmentedDesc">White surfaces, dark text</div>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {theme === "custom" && (
                       <div style={{ marginTop: 16, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>

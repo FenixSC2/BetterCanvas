@@ -355,6 +355,34 @@ html[data-theme="frog"] {
   --shadow-lg: 0 28px 60px rgba(17, 46, 6, 0.32);
 }
 
+/* Rainbow — light card variant */
+html[data-theme="rainbow"][data-rainbow-cards="light"] {
+  --text: #0c0d12;
+  --muted: rgba(12, 13, 18, 0.60);
+  --muted-strong: rgba(12, 13, 18, 0.78);
+  --surface: #ffffff;
+  --surface2: #f3f4f8;
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --surface-glass-strong: rgba(255, 255, 255, 0.88);
+  --border: rgba(12, 13, 18, 0.08);
+  --border2: rgba(12, 13, 18, 0.14);
+  --border-strong: rgba(12, 13, 18, 0.22);
+  --shadow-sm: 0 1px 2px rgba(12, 13, 18, 0.05);
+  --shadow: 0 2px 8px rgba(12, 13, 18, 0.06), 0 1px 2px rgba(12, 13, 18, 0.04);
+  --shadow-md: 0 10px 28px rgba(12, 13, 18, 0.09), 0 2px 6px rgba(12, 13, 18, 0.05);
+  --shadow-lg: 0 24px 60px rgba(12, 13, 18, 0.16), 0 6px 18px rgba(12, 13, 18, 0.08);
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --datePickerIconFilter: none;
+  /* badge danger reverts to light-surface scheme */
+  --badge-danger-bg: color-mix(in srgb, #ef4444 14%, transparent);
+  --badge-danger-border: color-mix(in srgb, #ef4444 32%, transparent);
+  --badge-danger-text: #b91c1c;
+  /* hero text still reads against the dark bg */
+  --text-on-bg: #eef0f7;
+  --muted-on-bg: rgba(238, 240, 247, 0.62);
+  --muted-strong-on-bg: rgba(238, 240, 247, 0.82);
+}
+
 /* ===== Custom theme: tokens injected at runtime via JS ===== */
 /* This block only provides a safe fallback; deriveCustomTheme() in ThemeProvider
    overwrites every token below via element.style.setProperty. */

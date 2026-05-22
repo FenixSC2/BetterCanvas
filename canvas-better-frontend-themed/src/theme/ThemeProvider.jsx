@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   density: "cb_density",
   font: "cb_font",
   customColors: "cb_custom_colors",
+  rainbowCards: "cb_rainbow_cards",
 };
 
 const DEFAULT_THEME = "auto";
@@ -215,6 +216,7 @@ export function ThemeProvider({ children }) {
   const [density, setDensityState] = useState(() => readStored(STORAGE_KEYS.density, "comfortable"));
   const [font, setFontState] = useState(() => readStored(STORAGE_KEYS.font, "system"));
   const [customColors, setCustomColorsState] = useState(readCustomColors);
+  const [rainbowCards, setRainbowCardsState] = useState(() => readStored(STORAGE_KEYS.rainbowCards, "dark"));
 
   useEffect(() => {
     applyToDocument({ theme, density, font });
@@ -239,12 +241,22 @@ export function ThemeProvider({ children }) {
     }
   }, [theme, customColors]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "rainbow") {
+      root.dataset.rainbowCards = rainbowCards;
+    } else {
+      delete root.dataset.rainbowCards;
+    }
+  }, [theme, rainbowCards]);
+
   const api = useMemo(
     () => ({
       theme,
       density,
       font,
       customColors,
+      rainbowCards,
       setTheme: (t) => setThemeState(t),
       setDensity: (d) => setDensityState(d),
       setFont: (f) => setFontState(f),
@@ -256,8 +268,16 @@ export function ThemeProvider({ children }) {
           // ignore
         }
       },
+      setRainbowCards: (v) => {
+        setRainbowCardsState(v);
+        try {
+          localStorage.setItem(STORAGE_KEYS.rainbowCards, v);
+        } catch {
+          // ignore
+        }
+      },
     }),
-    [theme, density, font, customColors]
+    [theme, density, font, customColors, rainbowCards]
   );
 
   return <ThemeContext.Provider value={api}>{children}</ThemeContext.Provider>;

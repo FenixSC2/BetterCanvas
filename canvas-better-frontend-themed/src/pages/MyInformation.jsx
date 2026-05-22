@@ -167,13 +167,75 @@ function firstLine(text) {
   return line.length > 140 ? line.slice(0, 140) + "…" : line;
 }
 
-function greetingFor(d = new Date()) {
+function greetingBucketFor(d = new Date()) {
   const h = d.getHours();
-  if (h < 5) return "Up late";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 21) return "Good evening";
-  return "Late night";
+  if (h < 5) return "lateNight";
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  if (h < 21) return "evening";
+  return "night";
+}
+
+const TIME_BUCKET_GREETINGS = {
+  lateNight: [
+    "Still up",
+    "Burning the midnight oil",
+    "Night owl",
+    "Running late-night mode",
+  ],
+  morning: [
+    "Good morning",
+    "Rise and shine",
+    "Top of the morning",
+    "Morning sunshine",
+  ],
+  afternoon: [
+    "Good afternoon",
+    "Hey",
+    "Whats up",
+    "Hope your day is going well",
+  ],
+  evening: [
+    "Good evening",
+    "Hows your evening going",
+    "Evening vibes",
+    "Nice to see you again",
+  ],
+  night: [
+    "Late night",
+    "Back at it tonight",
+    "One more session",
+    "Quiet-hours grind",
+  ],
+};
+
+const ANYTIME_GREETINGS = [
+  "Welcome back",
+  "Good to see you",
+  "You got this",
+  "Lets do this",
+  "Back in the zone",
+  "Ready when you are",
+  "Lets make some progress",
+];
+
+function greetingOptionsFor(d = new Date()) {
+  const bucket = greetingBucketFor(d);
+  const timeBased = TIME_BUCKET_GREETINGS[bucket] || [];
+  return [...timeBased, ...ANYTIME_GREETINGS];
+}
+
+function pickRandomWithoutRepeat(options, lastValue = "") {
+  if (!Array.isArray(options) || options.length === 0) return "Welcome back";
+  if (options.length === 1) return options[0];
+
+  let pick = options[Math.floor(Math.random() * options.length)];
+  let guard = 0;
+  while (pick === lastValue && guard < 10) {
+    pick = options[Math.floor(Math.random() * options.length)];
+    guard += 1;
+  }
+  return pick;
 }
 
 function datelineFor(d = new Date()) {
@@ -210,9 +272,11 @@ function safeJsonParse(raw, fallback) {
 }
 
 
-export function MyInformation() {
+export function MyInformation({ active = true }) {
   const { hasToken } = useAuth();
   const notif = useDesktopNotifications(hasToken);
+  const [heroGreeting, setHeroGreeting] = useState("");
+  const lastGreetingRef = useRef("");
 
   // ✅ Cached API data (prevents "No info" flash on tab switch)
   const profileQ = useCachedAsync(
@@ -262,6 +326,16 @@ export function MyInformation() {
     clearCachedAsync("myinfo:announcements");
     annRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!active) return;
+    const next = pickRandomWithoutRepeat(
+      greetingOptionsFor(new Date()),
+      lastGreetingRef.current,
+    );
+    lastGreetingRef.current = next;
+    setHeroGreeting(next);
+  }, [active]);
 
   const announcements = announcementsQ.data || [];
   const annErr = announcementsQ.error;
@@ -594,7 +668,7 @@ export function MyInformation() {
         </div>
 
         <h1 id="welcomeHeading" className="welcomeGreeting">
-          {greetingFor()},{" "}
+          {(heroGreeting || "Welcome back")},{" "}
           <span className="welcomeGreetingName">{firstNameOf(profile)}.</span>
         </h1>
 

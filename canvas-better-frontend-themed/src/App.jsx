@@ -301,7 +301,7 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           {PAGES.map(({ key, El }) =>
             mounted.has(key) ? (
               <div key={key} style={{ display: active === key ? undefined : "none" }}>
-                <El {...(key === "grades" ? { demoMode } : {})} />
+                <El active={active === key} {...(key === "grades" ? { demoMode } : {})} />
               </div>
             ) : null
           )}
