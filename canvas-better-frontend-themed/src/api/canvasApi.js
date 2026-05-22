@@ -29,11 +29,27 @@ async function request(path, { signal, method = "GET", body } = {}) {
         throw err;
       }
 
-      // Handle 403 Forbidden - Canvas token required (user is authenticated but needs to add token)
+      // Handle 403 Forbidden - Canvas token required (user is authenticated but needs to add token,
+      // or their existing token has been revoked/expired by Canvas).
       if (res.status === 403) {
-        const err = new Error("Canvas token required. Please add your Canvas API token.");
+        const detail = await res
+          .json()
+          .then((d) => (typeof d?.detail === "string" ? d.detail : ""))
+          .catch(() => "");
+        const expired = /invalid or expired/i.test(detail);
+        if (expired) {
+          window.dispatchEvent(
+            new CustomEvent("canvas:tokenInvalid", { detail: { reason: "expired" } })
+          );
+        }
+        const err = new Error(
+          detail || (expired
+            ? "Canvas token invalid or expired. Please re-submit your Canvas API token."
+            : "Canvas token required. Please add your Canvas API token.")
+        );
         err.status = 403;
         err.needsToken = true;
+        err.tokenExpired = expired;
         throw err;
       }
 
@@ -176,6 +192,12 @@ export const canvasApi = {
     getCourseDiscussions: (courseId, limit = 30, opts) =>
       request(
         `/api/courses/${courseId}/discussions?limit=${encodeURIComponent(limit)}`,
+        opts,
+      ),
+
+    getDiscussionReplies: (courseId, topicId, opts) =>
+      request(
+        `/api/courses/${courseId}/discussions/${encodeURIComponent(topicId)}/replies`,
         opts,
       ),
 

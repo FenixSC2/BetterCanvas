@@ -7,6 +7,7 @@ import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { loadTodos, syncTodos, updateTodoItem } from "../lib/todoStore";
+import { loadAcceptedGradeKeys, acceptedGradeKey } from "../lib/acceptedGrades";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 import { formatCourseTitle } from "../utils/courseUtils";
 
@@ -437,22 +438,20 @@ export function UpcomingAssignments() {
   const [todos, setTodos] = useState(() => loadTodos());
   const [workloadTick, setWorkloadTick] = useState(0);
 
-  // Tracks which graded-but-unsubmitted assignments the user has accepted/dismissed
-  const ACCEPTED_GRADES_KEY = "upcoming:acceptedGrades";
-  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(ACCEPTED_GRADES_KEY) || "[]"));
-    } catch { return new Set(); }
-  });
-  function acceptGrade(courseId, assignmentId) {
-    const key = `${courseId}:${assignmentId}`;
-    setAcceptedGradeKeys((prev) => {
-      const next = new Set(prev);
-      next.add(key);
-      try { localStorage.setItem(ACCEPTED_GRADES_KEY, JSON.stringify([...next])); } catch {}
-      return next;
-    });
-  }
+  // Tracks which graded-but-unsubmitted assignments the user has accepted/dismissed.
+  // The Accept-grade button lives in the Grades tab now (so users can see the actual
+  // grade before accepting). Upcoming still reads the same Set to hide accepted rows.
+  // Refresh on focus so an acceptance in another tab takes effect when the user returns.
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => loadAcceptedGradeKeys());
+  useEffect(() => {
+    function refresh() { setAcceptedGradeKeys(loadAcceptedGradeKeys()); }
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
 
   const primaryCanvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
   const crossCheckCanvasItems = Array.isArray(upcomingCrossCheckQ.data)
@@ -664,7 +663,7 @@ export function UpcomingAssignments() {
         : normalizePoints(a?.points_possible);
 
     const isGradeAccepted = (a) =>
-      !isTodoItem(a) && acceptedGradeKeys.has(`${a.course_id}:${a.id}`);
+      !isTodoItem(a) && acceptedGradeKeys.has(acceptedGradeKey(a.course_id, a.id));
 
     const isMissing = (a) => {
       if (isCompletedItem(a)) return false;
@@ -1141,7 +1140,7 @@ export function UpcomingAssignments() {
 
                 const isMissing =
                   !isCompletedItem(a) &&
-                  !acceptedGradeKeys.has(`${a.course_id}:${a.id}`) &&
+                  !acceptedGradeKeys.has(acceptedGradeKey(a.course_id, a.id)) &&
                   a.due_at &&
                   hoursUntil(a.due_at) != null &&
                   hoursUntil(a.due_at) < 0;
@@ -1315,20 +1314,8 @@ export function UpcomingAssignments() {
                           </a>
                         ) : null}
 
-                        {/* Accept grade button for assignments that are graded but not submitted */}
-                        {!todoItem &&
-                          a.graded_at &&
-                          !a.submitted &&
-                          !acceptedGradeKeys.has(`${a.course_id}:${a.id}`) ? (
-                          <button
-                            className="btn"
-                            style={{ fontSize: "var(--fontSm)" }}
-                            title="Accept current grade and stop showing as missing"
-                            onClick={() => acceptGrade(a.course_id, a.id)}
-                          >
-                            Accept grade
-                          </button>
-                        ) : null}
+                        {/* "Accept grade" lives on the Grades tab now — see GradePerformance.jsx —
+                            so the user can see the actual score before accepting. */}
 
                         {a._personalDate ? (
                           <button

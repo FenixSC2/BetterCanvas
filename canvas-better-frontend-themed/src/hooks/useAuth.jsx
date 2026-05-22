@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hasToken, setHasToken] = useState(false);
+  const [tokenExpired, setTokenExpired] = useState(false);
   const loggingInRef = useRef(false);
 
   // Check if user is logged in on mount
@@ -45,6 +46,18 @@ export function AuthProvider({ children }) {
 
     window.addEventListener("auth:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("auth:unauthorized", handleUnauthorized);
+  }, []);
+
+  // Listen for Canvas token expiry events from API (403 with "invalid or expired" detail)
+  useEffect(() => {
+    function handleTokenInvalid() {
+      setTokenExpired(true);
+      setHasToken(false);
+      // Force any cached Canvas data to be dropped so a new token re-fetches cleanly
+      clearCachedAsync();
+    }
+    window.addEventListener("canvas:tokenInvalid", handleTokenInvalid);
+    return () => window.removeEventListener("canvas:tokenInvalid", handleTokenInvalid);
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -204,6 +217,11 @@ export function AuthProvider({ children }) {
 
   const setTokenStatus = useCallback((status) => {
     setHasToken(status);
+    if (status) setTokenExpired(false);
+  }, []);
+
+  const clearTokenExpired = useCallback(() => {
+    setTokenExpired(false);
   }, []);
 
   const clearError = useCallback(() => {
@@ -247,11 +265,13 @@ export function AuthProvider({ children }) {
     loading,
     error,
     hasToken,
+    tokenExpired,
     login,
     register,
     logout,
     checkAuth,
     setTokenStatus,
+    clearTokenExpired,
     clearError,
     forgotPassword,
     resetPassword,

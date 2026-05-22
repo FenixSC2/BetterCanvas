@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { clearCachedAsync } from "../hooks/useCachedAsync";
 
 export function TokenEntry() {
-  const { user, logout, error: authError, setTokenStatus } = useAuth();
+  const { user, logout, error: authError, setTokenStatus, tokenExpired, clearTokenExpired } = useAuth();
   const [token, setToken] = useState("");
   const [localError, setLocalError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -13,7 +13,8 @@ export function TokenEntry() {
   const API_BASE =
     import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:8000" : "https://api.canvassist.com");
 
-  // Check if token is already stored
+  // Check if token is already stored. When the token has been flagged expired by the API,
+  // skip this check — we know the stored token is no longer valid even if the DB row exists.
   useEffect(() => {
     async function checkToken() {
       try {
@@ -29,10 +30,12 @@ export function TokenEntry() {
       }
     }
 
-    if (user) {
+    if (user && !tokenExpired) {
       checkToken();
+    } else if (tokenExpired) {
+      setHasToken(false);
     }
-  }, [user, API_BASE]);
+  }, [user, API_BASE, tokenExpired]);
 
   async function handleSubmitToken(e) {
     e.preventDefault();
@@ -62,6 +65,7 @@ export function TokenEntry() {
       setSuccess(true);
       setHasToken(true);
       setTokenStatus(true);
+      if (clearTokenExpired) clearTokenExpired();
       
       // Small delay to ensure token is saved before triggering refetch
       setTimeout(() => {
@@ -116,7 +120,7 @@ export function TokenEntry() {
     <div className="authContainer">
       <div className="authPanel" style={{ maxWidth: "600px" }}>
         <div className="authTitleRow">
-          <h1 className="authTitle">Canvas Token</h1>
+          <h1 className="authTitle">{tokenExpired ? "Canvas Token Expired" : "Canvas Token"}</h1>
           <button
             type="button"
             className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
@@ -130,6 +134,13 @@ export function TokenEntry() {
           </button>
         </div>
         <p className="authSubtitle">Logged in as {user.email}</p>
+
+        {tokenExpired && (
+          <div className="authError" style={{ marginBottom: "16px" }}>
+            Your Canvas token has expired or been revoked. Generate a new one in Canvas and paste it
+            below to keep using CanvAssist.
+          </div>
+        )}
 
         {(authError || localError) && (
           <div className="authError" style={{ marginBottom: "16px" }}>

@@ -10,6 +10,11 @@ import { ErrorBox } from "../components/ErrorBox";
 import { Expandable } from "../components/Expandable";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { formatCourseTitle } from "../utils/courseUtils";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  markGradeAccepted,
+} from "../lib/acceptedGrades";
 
 const STANDARD_SCALE = [
   { label: "A", value: "A", min: 93 },
@@ -510,6 +515,11 @@ export function GradePerformance({ demoMode = false }) {
   const [editScoreInput, setEditScoreInput] = useState("");
   const [lastProjectionDelta, setLastProjectionDelta] = useState(null);
   const editAnchorRefs = useRef({});
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => loadAcceptedGradeKeys());
+
+  function acceptGrade(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) => markGradeAccepted(prev, courseId, assignmentId));
+  }
 
   const summariesQ = useCachedAsync(
     "grade-performance:courses:summary",
@@ -2554,6 +2564,18 @@ export function GradePerformance({ demoMode = false }) {
                           >
                             View
                           </a>
+                        ) : null}
+                        {assignment?.graded_at &&
+                        !assignment?.submitted &&
+                        !acceptedGradeKeys.has(acceptedGradeKey(assignment.course_id, assignment.id)) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            title="Accept the current grade and stop showing this as missing in Upcoming"
+                            onClick={() => acceptGrade(assignment.course_id, assignment.id)}
+                          >
+                            Accept grade
+                          </button>
                         ) : null}
                         <button
                           type="button"

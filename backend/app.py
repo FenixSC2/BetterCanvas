@@ -920,6 +920,71 @@ def mock_discussions(course_id: int) -> List[Dict[str, Any]]:
     return by_course.get(course_id, [])
 
 
+def mock_discussion_replies(topic_id: int) -> List[Dict[str, Any]]:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    def iso(dt: datetime) -> str:
+        return dt.isoformat()
+
+    by_topic: Dict[int, List[Dict[str, Any]]] = {
+        1001: [
+            {
+                "id": 50011,
+                "parent_id": None,
+                "author_id": 9101,
+                "author_name": "Sam Patel",
+                "created_at": iso(now - timedelta(hours=10)),
+                "updated_at": iso(now - timedelta(hours=10)),
+                "message_html": "<p>For problem 3 greedy doesn't work — counterexample with a coin denomination set {1, 3, 4} where target = 6 forces 4+1+1 instead of 3+3.</p>",
+                "read_state": "unread",
+            },
+            {
+                "id": 50012,
+                "parent_id": 50011,
+                "author_id": 9102,
+                "author_name": "Jordan Lee",
+                "created_at": iso(now - timedelta(hours=8)),
+                "updated_at": iso(now - timedelta(hours=8)),
+                "message_html": "<p>Good catch — same shape shows up in the change-making subproblem from lecture.</p>",
+                "read_state": "read",
+            },
+            {
+                "id": 50014,
+                "parent_id": 50012,
+                "author_id": 9104,
+                "author_name": "Maya Iyer",
+                "created_at": iso(now - timedelta(hours=7)),
+                "updated_at": iso(now - timedelta(hours=7)),
+                "message_html": "<p>+1 — and the textbook proof on p. 184 uses the same denominations.</p>",
+                "read_state": "read",
+            },
+            {
+                "id": 50013,
+                "parent_id": None,
+                "author_id": 9103,
+                "author_name": "Riya Shah",
+                "created_at": iso(now - timedelta(hours=5)),
+                "updated_at": iso(now - timedelta(hours=5)),
+                "message_html": "<p>I argued the opposite for problem 5; DP is overkill there since the items are sorted and the greedy choice is provably optimal.</p>",
+                "read_state": "unread",
+            },
+        ],
+        2001: [
+            {
+                "id": 60011,
+                "parent_id": None,
+                "author_id": 9201,
+                "author_name": "Alex Kim",
+                "created_at": iso(now - timedelta(hours=4)),
+                "updated_at": iso(now - timedelta(hours=4)),
+                "message_html": "<p>Bring the induction proof from Thursday — the step case still doesn't click for me.</p>",
+                "read_state": "unread",
+            },
+        ],
+    }
+    return by_topic.get(topic_id, [])
+
+
 def mock_announcements(days_back: int = 14, limit: int = 30) -> List[Announcement]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     earliest = now - timedelta(days=days_back)
@@ -2606,6 +2671,68 @@ def get_course_discussions_endpoint(
                 or entry.get("user_name"),
         })
     return {"discussions": out[: max(1, int(limit))]}
+
+
+@app.get("/api/courses/{course_id}/discussions/{topic_id}/replies")
+def get_discussion_replies_endpoint(
+    course_id: int,
+    topic_id: int,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Fetch replies (entries) for a single discussion topic.
+
+    Uses Canvas's /view endpoint which returns participants + entries in one call,
+    so we can resolve author names without a per-entry user lookup.
+    """
+    if session_id and is_demo_session(session_id):
+        return {"replies": mock_discussion_replies(topic_id)}
+
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    uid = get_session_user_id(session_id, db)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = get_canvas_token(uid, db)
+
+    raw = canvas_get_single(
+        f"/courses/{course_id}/discussion_topics/{topic_id}/view",
+        token=token,
+    )
+    if not isinstance(raw, dict):
+        return {"replies": []}
+
+    participants = {}
+    for p in raw.get("participants") or []:
+        if isinstance(p, dict) and p.get("id") is not None:
+            participants[p["id"]] = p.get("display_name") or p.get("name")
+
+    out: List[Dict[str, Any]] = []
+
+    def walk(entry: Dict[str, Any], parent_id: Optional[int]):
+        if not isinstance(entry, dict):
+            return
+        eid = entry.get("id")
+        if eid is None:
+            return
+        uid_ = entry.get("user_id")
+        out.append({
+            "id": eid,
+            "parent_id": parent_id,
+            "author_id": uid_,
+            "author_name": participants.get(uid_) or entry.get("user_name"),
+            "created_at": entry.get("created_at"),
+            "updated_at": entry.get("updated_at"),
+            "message_html": entry.get("message"),
+            "read_state": entry.get("read_state"),
+        })
+        for child in entry.get("replies") or []:
+            walk(child, eid)
+
+    for top in raw.get("view") or []:
+        walk(top, None)
+
+    return {"replies": out}
 
 
 @app.get("/api/courses/{course_id}/assignment-groups")
