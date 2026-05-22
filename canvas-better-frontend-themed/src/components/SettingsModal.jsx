@@ -25,7 +25,7 @@ const THEME_OPTIONS = [
   { key: "rose", label: "Rose", desc: "Warm pinks" },
   { key: "contrast", label: "Classic Dark", desc: "Clean dark theme" },
   { key: "frog", label: "Frog", desc: "Frog." },
-  { key: "cyber", label: "Cyber", desc: "Bright green on dark" },
+  { key: "rainbow", label: "Rainbow", desc: "Multicolor gradient bg" },
   { key: "custom", label: "Custom", desc: "Pick your own colors" },
 ];
 

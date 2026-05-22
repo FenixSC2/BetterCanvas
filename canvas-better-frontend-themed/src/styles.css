@@ -225,35 +225,48 @@ html[data-theme="forest"] {
   --datePickerIconFilter: invert(1);
 }
 
-html[data-theme="cyber"] {
-  --accent-500: #22ff66;
-  --accent-600: #16e055;
+html[data-theme="rainbow"] {
+  --accent-500: #22d3ee;
+  --accent-600: #06b6d4;
   --accent: var(--accent-500);
   --accent-strong: var(--accent-600);
   --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
-  --accent-softer: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 12%, transparent);
 
-  --bg: #050a05;
-  --bg-grad-1: oklch(58% 0.28 135 / 0.40);
-  --bg-grad-2: oklch(48% 0.24 145 / 0.28);
-  --bg-grad-3: oklch(50% 0.26 125 / 0.25);
-  --dot-color: oklch(80% 0.10 135 / 0.18);
-  --text: #c8ffc8;
-  --muted: rgba(180, 255, 180, 0.62);
-  --muted-strong: rgba(200, 255, 200, 0.88);
-  --surface: #0a160a;
-  --surface2: #0e1f0e;
-  --surface-glass: rgba(20, 50, 25, 0.55);
-  --surface-glass-strong: rgba(20, 50, 25, 0.80);
-  --border: rgba(34, 255, 102, 0.16);
-  --border2: rgba(34, 255, 102, 0.30);
-  --border-strong: rgba(34, 255, 102, 0.50);
+  --bg: #08080f;
+  --bg-grad-1: oklch(62% 0.28  25 / 0.70);
+  --bg-grad-2: oklch(62% 0.28 300 / 0.65);
+  --bg-grad-3: oklch(62% 0.28 150 / 0.60);
+  --dot-color: oklch(90% 0.04 264 / 0.08);
+  --dot-opacity: 0.40;
+  --text: #f0f0f8;
+  --muted: rgba(240, 240, 248, 0.60);
+  --muted-strong: rgba(240, 240, 248, 0.82);
+  --surface: #12121e;
+  --surface2: #0d0d18;
+  --surface-glass: rgba(18, 18, 30, 0.62);
+  --surface-glass-strong: rgba(18, 18, 30, 0.82);
+  --border: rgba(240, 240, 248, 0.10);
+  --border2: rgba(240, 240, 248, 0.18);
+  --border-strong: rgba(240, 240, 248, 0.30);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 14px 38px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 30px 70px rgba(0, 0, 0, 0.60), 0 8px 20px rgba(0, 0, 0, 0.4);
-  --highlight-inset: inset 0 1px 0 rgba(34, 255, 102, 0.08);
+  --shadow-md: 0 14px 38px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 30px 70px rgba(0, 0, 0, 0.65), 0 8px 20px rgba(0, 0, 0, 0.5);
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --datePickerIconFilter: invert(1);
+}
+
+/* Rainbow background: 6 hue-spread blobs cover the full spectrum */
+html[data-theme="rainbow"] body::before {
+  background-image:
+    radial-gradient(55vw 50vw at  5% 10%, oklch(62% 0.28  25 / 0.70), transparent 60%),
+    radial-gradient(45vw 55vw at 95%  8%, oklch(62% 0.28 300 / 0.65), transparent 60%),
+    radial-gradient(50vw 45vw at 50%  0%, oklch(62% 0.28 200 / 0.60), transparent 60%),
+    radial-gradient(45vw 50vw at  8% 92%, oklch(62% 0.28  80 / 0.65), transparent 60%),
+    radial-gradient(40vw 45vw at 92% 88%, oklch(62% 0.28 250 / 0.65), transparent 60%),
+    radial-gradient(38vw 40vw at 52% 58%, oklch(62% 0.28 150 / 0.50), transparent 60%);
+  filter: saturate(140%);
 }
 
 html[data-theme="rose"] {
@@ -410,7 +423,7 @@ html[data-theme="forest"] .toggleTrack.mixed {
 /* Dark themes: default danger badge uses strong scheme everywhere */
 [data-theme="midnight"],
 [data-theme="forest"],
-[data-theme="cyber"],
+[data-theme="rainbow"],
 [data-theme="contrast"] {
   --badge-danger-bg: var(--badge-danger-bg-strong);
   --badge-danger-border: var(--badge-danger-border-strong);
@@ -420,7 +433,7 @@ html[data-theme="forest"] .toggleTrack.mixed {
 /* Dark themes: tab indicator gets an accent-tinted ring so it reads against dark surfaces */
 html[data-theme="midnight"] .tabIndicator,
 html[data-theme="forest"] .tabIndicator,
-html[data-theme="cyber"] .tabIndicator,
+html[data-theme="rainbow"] .tabIndicator,
 html[data-theme="contrast"] .tabIndicator {
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
@@ -1531,10 +1544,10 @@ details.expandable > .cardBody,
   background: linear-gradient(135deg, #d6f7b8 0%, #5d8b50 100%);
   --swatch-accent: #84cc16;
 }
-.themeSwatch-cyber {
-  background: linear-gradient(135deg, #144020 0%, #050a05 100%);
-  border-color: #459d45;
-  --swatch-accent: #22ff66;
+.themeSwatch-rainbow {
+  background: conic-gradient(from 0deg at 50% 50%, #f43f5e, #f97316, #eab308, #22c55e, #0ea5e9, #a855f7, #f43f5e);
+  border-color: rgba(255, 255, 255, 0.20);
+  --swatch-accent: #22d3ee;
 }
 .themeSwatch-custom {
   /* overridden at runtime by inline style; this is a fallback */
@@ -4215,7 +4228,7 @@ details.expandable.courseRow .expandableSubtitle .mono {
   html[data-theme="auto"] details.expandable.courseRow,
   html[data-theme="midnight"] details.expandable.courseRow,
   html[data-theme="forest"] details.expandable.courseRow,
-  html[data-theme="cyber"] details.expandable.courseRow,
+  html[data-theme="rainbow"] details.expandable.courseRow,
   html[data-theme="contrast"] details.expandable.courseRow {
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--c-fg, var(--accent)) 18%, transparent) 0%, transparent 110px),
@@ -4224,7 +4237,7 @@ details.expandable.courseRow .expandableSubtitle .mono {
 }
 html[data-theme="midnight"] details.expandable.courseRow,
 html[data-theme="forest"] details.expandable.courseRow,
-html[data-theme="cyber"] details.expandable.courseRow,
+html[data-theme="rainbow"] details.expandable.courseRow,
 html[data-theme="contrast"] details.expandable.courseRow {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--c-fg, var(--accent)) 18%, transparent) 0%, transparent 110px),
