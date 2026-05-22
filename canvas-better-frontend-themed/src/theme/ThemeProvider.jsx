@@ -8,6 +8,10 @@ const STORAGE_KEYS = {
   font: "cb_font",
 };
 
+// Themes that should be presented as "dark" in the auto-mode preview.
+// Used only by the auto theme system; users can still pick any theme explicitly.
+const DEFAULT_THEME = "auto";
+
 function readStored(key, fallback) {
   try {
     const v = localStorage.getItem(key);
@@ -25,7 +29,7 @@ function applyToDocument({ theme, density, font }) {
 }
 
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => readStored(STORAGE_KEYS.theme, "classic"));
+  const [theme, setThemeState] = useState(() => readStored(STORAGE_KEYS.theme, DEFAULT_THEME));
   const [density, setDensityState] = useState(() => readStored(STORAGE_KEYS.density, "comfortable"));
   const [font, setFontState] = useState(() => readStored(STORAGE_KEYS.font, "system"));
 

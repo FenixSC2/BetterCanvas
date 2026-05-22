@@ -17,6 +17,7 @@ import { clearDemoMode } from "../lib/storagePolicy";
 import { formatCourseTitle } from "../utils/courseUtils";
 
 const THEME_OPTIONS = [
+  { key: "auto", label: "Auto", desc: "Follows your system light/dark" },
   { key: "classic", label: "Classic", desc: "Clean light theme" },
   { key: "midnight", label: "Midnight", desc: "Dark & high contrast" },
   { key: "ocean", label: "Ocean", desc: "Cool blues" },

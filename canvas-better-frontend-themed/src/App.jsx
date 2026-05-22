@@ -87,11 +87,16 @@ function DashboardApp() {
           <TopLoadingBar />
           <header className="header">
             <div className="brand">
-              <div className="brandTitle">CanvAssist</div>
-              <div className="brandSub">A student-friendly dashboard</div>
+              <div className="brandLogomark" aria-hidden="true">CA</div>
+              <div className="brandText">
+                <div className="brandTitle">CanvAssist</div>
+                <div className="brandSub">A student-friendly dashboard</div>
+              </div>
             </div>
           </header>
-          <main className="main muted">Loading...</main>
+          <main className="main">
+            <div className="loadingState"><span className="spinner" /> Loading…</div>
+          </main>
           <footer className="footer muted">Loading application...</footer>
         </div>
       </ThemeProvider>
@@ -275,13 +280,14 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
 
         <header className={`header stickyHeader ${headerCompact ? "headerCompact" : ""}`}>
           <div className="brand">
-            <div className="brandTitle">CanvAssist</div>
-            <div className="brandSub">A student-friendly dashboard</div>
-            {demoMode && (
-              <div style={{ fontSize: "var(--fontSm)", color: "var(--warning)", marginTop: "4px", fontWeight: 600 }}>
-                🎭 Viewing demo data
-              </div>
-            )}
+            <div className="brandLogomark" aria-hidden="true">CA</div>
+            <div className="brandText">
+              <div className="brandTitle">CanvAssist</div>
+              <div className="brandSub">A student-friendly dashboard</div>
+              {demoMode && (
+                <div className="brandDemoTag">Viewing demo data</div>
+              )}
+            </div>
           </div>
 
           <Tabs tabs={tabs} activeKey={active} onChange={handleTabChange} />
