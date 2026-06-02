@@ -12,8 +12,12 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { formatCourseTitle } from "../utils/courseUtils";
 import {
   loadAcceptedGradeKeys,
+  loadAcceptedGradeSources,
   acceptedGradeKey,
-  markGradeAccepted,
+  acceptedGradeSourceFor,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+  hydrateAcceptedGradeKeysFromServer,
 } from "../lib/acceptedGrades";
 
 const STANDARD_SCALE = [
@@ -222,6 +226,8 @@ function buildStats(
   predictedById,
   weightOverridesById,
   scoreOverridesById,
+  acceptedGradeKeys,
+  acceptedGradeSources,
 ) {
   let gradedEarned = 0;
   let gradedPossible = 0;
@@ -253,7 +259,21 @@ function buildStats(
         ? overrideScore
         : Number(assignment?.score);
     const hasRawScore = Number.isFinite(score);
-    const submitted = assignment?.submitted === true;
+    const acceptedKey = acceptedGradeKey(assignment?.course_id, assignment?.id);
+    const accepted = acceptedGradeKeys?.has(acceptedKey);
+    const acceptedSource = accepted
+      ? acceptedGradeSourceFor(
+          acceptedGradeSources,
+          assignment?.course_id,
+          assignment?.id,
+        )
+      : null;
+    const hasRealCanvasGrade =
+      assignment?.submitted === true && hasRawScore && score > 0;
+    const keepUngradedMode =
+      accepted && acceptedSource === "manual_ungraded" && !hasRealCanvasGrade;
+    const submitted =
+      assignment?.submitted === true || (accepted && !keepUngradedMode);
     const countedAsGraded =
       hasEffectivePoints && hasRawScore && (submitted || overrideEnabled);
     const pendingScore = hasEffectivePoints && hasRawScore && !submitted;
@@ -294,6 +314,10 @@ function buildStats(
       hasEffectivePoints,
       score,
       hasRawScore,
+      accepted,
+      acceptedSource,
+      hasRealCanvasGrade,
+      keepUngradedMode,
       submitted,
       countedAsGraded,
       pendingScore,
@@ -515,10 +539,76 @@ export function GradePerformance({ demoMode = false }) {
   const [editScoreInput, setEditScoreInput] = useState("");
   const [lastProjectionDelta, setLastProjectionDelta] = useState(null);
   const editAnchorRefs = useRef({});
+  const autoPromoteInFlightRef = useRef(new Set());
   const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => loadAcceptedGradeKeys());
+  const [acceptedGradeSources, setAcceptedGradeSources] = useState(() =>
+    loadAcceptedGradeSources(),
+  );
 
-  function acceptGrade(courseId, assignmentId) {
-    setAcceptedGradeKeys((prev) => markGradeAccepted(prev, courseId, assignmentId));
+  useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (!active) return;
+        setAcceptedGradeKeys(next);
+        setAcceptedGradeSources(loadAcceptedGradeSources());
+      })
+      .catch(() => {
+        // Keep local fallback if server sync fails.
+      });
+
+    function refreshFromLocal() {
+      setAcceptedGradeKeys(loadAcceptedGradeKeys());
+      setAcceptedGradeSources(loadAcceptedGradeSources());
+    }
+
+    window.addEventListener("focus", refreshFromLocal);
+    window.addEventListener("storage", refreshFromLocal);
+    window.addEventListener("canvassist:accepted-grades:changed", refreshFromLocal);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshFromLocal);
+      window.removeEventListener("storage", refreshFromLocal);
+      window.removeEventListener("canvassist:accepted-grades:changed", refreshFromLocal);
+    };
+  }, []);
+
+  async function acceptGrade(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "accepted_grade",
+      );
+    } catch {
+      // Keep optimistic local state; background sync can recover later.
+    }
+  }
+
+  async function markNotGraded(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    setAcceptedGradeSources((prev) => ({
+      ...(prev || {}),
+      [acceptedGradeKey(courseId, assignmentId)]: "manual_ungraded",
+    }));
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_ungraded",
+      );
+      setAcceptedGradeSources(loadAcceptedGradeSources());
+    } catch {
+      // Keep optimistic local state; background sync can recover later.
+    }
   }
 
   const summariesQ = useCachedAsync(
@@ -695,12 +785,16 @@ export function GradePerformance({ demoMode = false }) {
         predictedById,
         weightOverridesById,
         scoreOverridesById,
+        acceptedGradeKeys,
+        acceptedGradeSources,
       ),
     [
       selectedCourseAssignments,
       predictedById,
       weightOverridesById,
       scoreOverridesById,
+      acceptedGradeKeys,
+      acceptedGradeSources,
     ],
   );
 
@@ -872,6 +966,8 @@ export function GradePerformance({ demoMode = false }) {
         predictedById,
         weightOverridesById,
         scoreOverridesById,
+        acceptedGradeKeys,
+        acceptedGradeSources,
       ).rows[0] ||
       null
     );
@@ -882,11 +978,38 @@ export function GradePerformance({ demoMode = false }) {
     predictedById,
     weightOverridesById,
     scoreOverridesById,
+    acceptedGradeKeys,
+    acceptedGradeSources,
   ]);
 
   const canEditUnlockScore =
     !!editingRow?.countedAsGraded ||
     !!scoreOverridesById?.[editingKey]?.enabled;
+
+  useEffect(() => {
+    const rowsToPromote = stats.rows.filter(
+      (row) => row?.acceptedSource === "manual_ungraded" && row?.hasRealCanvasGrade,
+    );
+    if (rowsToPromote.length === 0) return;
+
+    for (const row of rowsToPromote) {
+      const key = acceptedGradeKey(row.assignment?.course_id, row.assignment?.id);
+      if (autoPromoteInFlightRef.current.has(key)) continue;
+      autoPromoteInFlightRef.current.add(key);
+      void markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        row.assignment?.course_id,
+        row.assignment?.id,
+        "manual_completed",
+      )
+        .then(() => {
+          setAcceptedGradeSources(loadAcceptedGradeSources());
+        })
+        .finally(() => {
+          autoPromoteInFlightRef.current.delete(key);
+        });
+    }
+  }, [stats.rows]);
 
   const editingAnchorEl = editingKey
     ? editAnchorRefs.current[editingKey] || null
@@ -1033,6 +1156,19 @@ export function GradePerformance({ demoMode = false }) {
     return `badge ${showGrades ? classWhenShown : "badgeNeutral"}`;
   }
 
+  function shouldTreatAsSubmitted(assignment) {
+    if (assignment?.submitted === true) return true;
+    const key = acceptedGradeKey(assignment?.course_id, assignment?.id);
+    if (!acceptedGradeKeys.has(key)) return false;
+    const source = acceptedGradeSourceFor(
+      acceptedGradeSources,
+      assignment?.course_id,
+      assignment?.id,
+    );
+    if (source !== "manual_ungraded") return true;
+    return assignment?.submitted === true && Number(assignment?.score) > 0;
+  }
+
   function computeDisplayedProjectedPercent(
     assignments,
     nextPredictedById,
@@ -1044,6 +1180,8 @@ export function GradePerformance({ demoMode = false }) {
       nextPredictedById,
       nextWeightOverridesById,
       nextScoreOverridesById,
+      acceptedGradeKeys,
+      acceptedGradeSources,
     );
     return nextStats.projectedPercent ?? nextStats.currentKnownPercent;
   }
@@ -1198,7 +1336,7 @@ export function GradePerformance({ demoMode = false }) {
       const hasEffectivePoints =
         (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
         (Number.isFinite(basePoints) && basePoints > 0);
-      const submitted = assignment?.submitted === true;
+      const submitted = shouldTreatAsSubmitted(assignment);
       const hasScore = Number.isFinite(Number(assignment?.score));
       if (!hasEffectivePoints || (submitted && hasScore)) continue;
       next[key] = String(defaultPred);
@@ -1237,7 +1375,7 @@ export function GradePerformance({ demoMode = false }) {
       const hasEffectivePoints =
         (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
         (Number.isFinite(basePoints) && basePoints > 0);
-      const submitted = assignment?.submitted === true;
+      const submitted = shouldTreatAsSubmitted(assignment);
       const hasScore = Number.isFinite(Number(assignment?.score));
       if (!hasEffectivePoints || (submitted && hasScore)) continue;
       next[key] = String(defaultPred);
@@ -1310,6 +1448,8 @@ export function GradePerformance({ demoMode = false }) {
         predictedById,
         weightOverridesById,
         scoreOverridesById,
+        acceptedGradeKeys,
+        acceptedGradeSources,
       ).rows[0];
     const scoreOverride = scoreOverridesById?.[key];
     const canUnlockScore = !!row?.countedAsGraded || !!scoreOverride?.enabled;
@@ -2327,6 +2467,8 @@ export function GradePerformance({ demoMode = false }) {
                     predictedById,
                     weightOverridesById,
                     scoreOverridesById,
+                    acceptedGradeKeys,
+                    acceptedGradeSources,
                   ).rows[0];
                 const courseLabel =
                   searchScope === "all" ? formatCourseTitle(assignment?.course_name) : null;
@@ -2341,6 +2483,8 @@ export function GradePerformance({ demoMode = false }) {
                 let statusText = "Not submitted or scored";
                 if (row?.countedAsGraded) {
                   statusText = hasScoreOverride ? "Score unlocked" : "Submitted and scored";
+                } else if (row?.keepUngradedMode) {
+                  statusText = "Marked complete, awaiting grade";
                 } else if (row?.pendingScore) {
                   statusText = "Scored but not submitted";
                 } else if (assignment?.submitted === true) {
@@ -2572,9 +2716,27 @@ export function GradePerformance({ demoMode = false }) {
                             type="button"
                             className="btn"
                             title="Accept the current grade and stop showing this as missing in Upcoming"
-                            onClick={() => acceptGrade(assignment.course_id, assignment.id)}
+                            onClick={() => {
+                              void acceptGrade(assignment.course_id, assignment.id);
+                            }}
                           >
                             Accept grade
+                          </button>
+                        ) : null}
+                        {(row?.countedAsGraded ||
+                          assignment?.submitted === true ||
+                          !!assignment?.graded_at) &&
+                        row?.acceptedSource !== "manual_ungraded" &&
+                        (!Number.isFinite(Number(row?.score)) || Number(row?.score) <= 0) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            title="Keep this assignment complete, but treat it as not graded yet"
+                            onClick={() => {
+                              void markNotGraded(assignment.course_id, assignment.id);
+                            }}
+                          >
+                            Mark not graded
                           </button>
                         ) : null}
                         <button

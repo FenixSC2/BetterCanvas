@@ -64,6 +64,9 @@ from auth import (
     SessionLocal,
     upsert_workload_estimate,
     delete_workload_estimate,
+    get_completed_assignment_flags,
+    upsert_completed_assignment_flag,
+    delete_completed_assignment_flag,
     get_assignment_weight_overrides,
     upsert_assignment_weight_override,
     delete_assignment_weight_override,
@@ -321,6 +324,10 @@ class WorkloadEstimateRequest(BaseModel):
     estimate_hours: float = Field(default=0.0, ge=0.0, le=500.0)
     completed_hours: float = Field(default=0.0, ge=0.0, le=500.0)
     completed: bool = False
+
+
+class CompletedAssignmentFlagRequest(BaseModel):
+    status_source: str = Field(default="manual_completed")
 
 class AssignmentWeightOverrideRequest(BaseModel):
     weight_points: float = Field(default=0.0, ge=0.0, le=100000.0)
@@ -2580,6 +2587,46 @@ def delete_workload_estimate_endpoint(
 ):
     """Delete the workload estimate for a specific assignment."""
     delete_workload_estimate(current_user.id, course_id, assignment_id, db)
+    return {"success": True}
+
+
+@app.get("/api/completed-assignments")
+def get_completed_assignments_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all assignment completion flags for the authenticated user."""
+    return {"flags": get_completed_assignment_flags(current_user.id, db)}
+
+
+@app.put("/api/completed-assignments/{course_id}/{assignment_id}")
+def upsert_completed_assignment_endpoint(
+    course_id: int,
+    assignment_id: int,
+    body: CompletedAssignmentFlagRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update an assignment completion flag for one assignment."""
+    upsert_completed_assignment_flag(
+        current_user.id,
+        course_id,
+        assignment_id,
+        body.status_source,
+        db,
+    )
+    return {"success": True}
+
+
+@app.delete("/api/completed-assignments/{course_id}/{assignment_id}")
+def delete_completed_assignment_endpoint(
+    course_id: int,
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an assignment completion flag for one assignment."""
+    delete_completed_assignment_flag(current_user.id, course_id, assignment_id, db)
     return {"success": True}
 
 

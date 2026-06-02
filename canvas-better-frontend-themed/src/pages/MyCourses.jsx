@@ -8,6 +8,13 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { formatCourseTitle } from "../utils/courseUtils";
 import { courseColor } from "../utils/courseColor";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -144,6 +151,51 @@ function TriStateToggle({ state, onChange, label }) {
 }
 
 export function MyCourses() {
+    const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
+      loadAcceptedGradeKeys(),
+    );
+
+    useEffect(() => {
+      let active = true;
+
+      hydrateAcceptedGradeKeysFromServer()
+        .then((next) => {
+          if (active) setAcceptedGradeKeys(next);
+        })
+        .catch(() => {
+          // Keep local fallback if server sync fails.
+        });
+
+      function refreshAccepted() {
+        setAcceptedGradeKeys(loadAcceptedGradeKeys());
+      }
+
+      window.addEventListener("focus", refreshAccepted);
+      window.addEventListener("storage", refreshAccepted);
+      window.addEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+      return () => {
+        active = false;
+        window.removeEventListener("focus", refreshAccepted);
+        window.removeEventListener("storage", refreshAccepted);
+        window.removeEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+      };
+    }, []);
+
+    async function markCompleted(courseId, assignmentId) {
+      setAcceptedGradeKeys((prev) =>
+        markAssignmentCompletedLocal(prev, courseId, assignmentId),
+      );
+      try {
+        await markAssignmentCompletedRemote(
+          loadAcceptedGradeKeys(),
+          courseId,
+          assignmentId,
+          "manual_completed",
+        );
+      } catch {
+        // Keep optimistic local state.
+      }
+    }
   // grade visibility per-course, persisted in localStorage
   const COURSE_GRADE_VIS_KEY = "courses:gradeVisibilityById";
 
@@ -315,8 +367,13 @@ export function MyCourses() {
 
       {sorted.map((c) => {
         const nextAsgs = c.next_assignments || [];
-        const missing = c.missing || [];
-        const missingCount = c.missing_count ?? 0;
+        const missing = (c.missing || []).filter(
+          (m) =>
+            !acceptedGradeKeys.has(
+              acceptedGradeKey(m?.course_id, m?.assignment_id),
+            ),
+        );
+        const missingCount = missing.length;
         const showGrades = isGradeVisible(c.id);
 
         const upcomingCount = countUpcomingWithinDays(nextAsgs, 10);
@@ -599,6 +656,16 @@ export function MyCourses() {
                               Open in Canvas
                             </a>
                           ) : null}
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              void markCompleted(m.course_id, m.assignment_id);
+                            }}
+                            title="Mark completed and stop showing this as missing"
+                          >
+                            Mark completed
+                          </button>
                           <WorkloadEstimateControl
                             courseId={m.course_id}
                             assignmentId={m.assignment_id}

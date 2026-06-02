@@ -7,9 +7,24 @@ import { ErrorBox } from "../components/ErrorBox";
 import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { loadTodos, syncTodos, updateTodoItem } from "../lib/todoStore";
-import { loadAcceptedGradeKeys, acceptedGradeKey } from "../lib/acceptedGrades";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 import { isAssignmentFavorited } from "../lib/workloadEstimates";
 import { formatCourseTitle } from "../utils/courseUtils";
+
+const UPCOMING_SORT_BLEND_KEY = "upcoming:sort:blend";
+
+function loadSortBlend() {
+  const raw = localStorage.getItem(UPCOMING_SORT_BLEND_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 0.35;
+  return Math.max(0, Math.min(1, parsed));
+}
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -444,14 +459,43 @@ export function UpcomingAssignments() {
   // Refresh on focus so an acceptance in another tab takes effect when the user returns.
   const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => loadAcceptedGradeKeys());
   useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (active) setAcceptedGradeKeys(next);
+      })
+      .catch(() => {
+        // local fallback remains active
+      });
+
     function refresh() { setAcceptedGradeKeys(loadAcceptedGradeKeys()); }
     window.addEventListener("focus", refresh);
     window.addEventListener("storage", refresh);
+    window.addEventListener("canvassist:accepted-grades:changed", refresh);
     return () => {
+      active = false;
       window.removeEventListener("focus", refresh);
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("canvassist:accepted-grades:changed", refresh);
     };
   }, []);
+
+  async function markCompleted(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_completed",
+      );
+    } catch {
+      // keep optimistic local state
+    }
+  }
 
   const primaryCanvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
   const crossCheckCanvasItems = Array.isArray(upcomingCrossCheckQ.data)
@@ -581,7 +625,11 @@ export function UpcomingAssignments() {
   const [filterMode, setFilterMode] = useState("all");
 
   // Sorting blend: 0 = date only, 1 = points only
-  const [blend, setBlend] = useState(0.35);
+  const [blend, setBlend] = useState(loadSortBlend);
+
+  useEffect(() => {
+    localStorage.setItem(UPCOMING_SORT_BLEND_KEY, String(blend));
+  }, [blend]);
 
   // Popover state
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1162,15 +1210,6 @@ export function UpcomingAssignments() {
                   assignmentId: a.id,
                 });
 
-                const badgeClass =
-                  badge.variant === "success"
-                    ? "badgeSuccess"
-                    : badge.variant === "danger"
-                    ? "badgeDanger"
-                    : badge.variant === "warning"
-                    ? "badgeWarn"
-                    : "badgeNeutral";
-
                 return (
                   <li
                     id={`asg-${focusId}`}
@@ -1181,7 +1220,7 @@ export function UpcomingAssignments() {
                     style={{ overflow: "hidden" }}
                   >
                     <div
-                      className="assignmentRow"
+                      className={`assignmentRow ${isMissing ? "assignmentRowMissing" : ""}`}
                       style={{ minWidth: 0, width: "100%", maxWidth: "100%" }}
                     >
                       <div
@@ -1250,42 +1289,8 @@ export function UpcomingAssignments() {
                           <WorkloadEstimateControl
                             courseId={todoItem ? "todo" : a.course_id}
                             assignmentId={a.id}
+                            compactLabels={!todoItem && isMissing}
                           />
-                        </div>
-
-                        <div className="assignmentDetails">
-                          <Expandable
-                            title="Details"
-                            defaultOpen={openDetailsKeys.has(focusId)}
-                            subtitle={
-                              hasDesc && !openDetailsKeys.has(focusId) ? (
-                                <span className="muted">{firstLine(desc)}</span>
-                              ) : hasDesc ? (
-                                <span className="muted"> </span>
-                              ) : (
-                                <span className="muted">No description</span>
-                              )
-                            }
-                            onToggle={(isOpen) => {
-                              setOpenDetailsKeys((prev) => {
-                                const next = new Set(prev);
-                                if (isOpen) next.add(focusId);
-                                else next.delete(focusId);
-                                return next;
-                              });
-                            }}
-                          >
-                            <div className="stack">
-                              {hasDesc ? (
-                                <div className="preserveWhitespace">{desc}</div>
-                              ) : (
-                                <div className="muted">
-                                  No description provided.
-                                </div>
-                              )}
-                              {!todoItem ? <AttachmentsList assignment={a} /> : null}
-                            </div>
-                          </Expandable>
                         </div>
                       </div>
 
@@ -1317,6 +1322,18 @@ export function UpcomingAssignments() {
                         {/* "Accept grade" lives on the Grades tab now — see GradePerformance.jsx —
                             so the user can see the actual score before accepting. */}
 
+                        {!todoItem && isMissing ? (
+                          <button
+                            className="btn"
+                            onClick={() => {
+                              void markCompleted(a.course_id, a.id);
+                            }}
+                            title="Mark completed and stop showing this as missing"
+                          >
+                            Mark completed
+                          </button>
+                        ) : null}
+
                         {a._personalDate ? (
                           <button
                             className="btn"
@@ -1333,6 +1350,41 @@ export function UpcomingAssignments() {
                             Remove date
                           </button>
                         ) : null}
+                      </div>
+
+                      <div className="assignmentDetails">
+                        <Expandable
+                          title="Details"
+                          defaultOpen={openDetailsKeys.has(focusId)}
+                          subtitle={
+                            hasDesc && !openDetailsKeys.has(focusId) ? (
+                              <span className="muted">{firstLine(desc)}</span>
+                            ) : hasDesc ? (
+                              <span className="muted"> </span>
+                            ) : (
+                              <span className="muted">No description</span>
+                            )
+                          }
+                          onToggle={(isOpen) => {
+                            setOpenDetailsKeys((prev) => {
+                              const next = new Set(prev);
+                              if (isOpen) next.add(focusId);
+                              else next.delete(focusId);
+                              return next;
+                            });
+                          }}
+                        >
+                          <div className="stack">
+                            {hasDesc ? (
+                              <div className="preserveWhitespace">{desc}</div>
+                            ) : (
+                              <div className="muted">
+                                No description provided.
+                              </div>
+                            )}
+                            {!todoItem ? <AttachmentsList assignment={a} /> : null}
+                          </div>
+                        </Expandable>
                       </div>
                     </div>
                   </li>
@@ -1470,45 +1522,6 @@ export function UpcomingAssignments() {
                               assignmentId={a.id}
                             />
                           </div>
-
-                          <div className="assignmentDetails">
-                            <Expandable
-                              title="Details"
-                              defaultOpen={openDetailsKeys.has(focusId)}
-                              subtitle={
-                                hasDesc && !openDetailsKeys.has(focusId) ? (
-                                  <span className="muted">{firstLine(desc)}</span>
-                                ) : hasDesc ? (
-                                  <span className="muted"> </span>
-                                ) : (
-                                  <span className="muted">
-                                    {todoItem ? "No notes" : "No description"}
-                                  </span>
-                                )
-                              }
-                              onToggle={(isOpen) => {
-                                setOpenDetailsKeys((prev) => {
-                                  const next = new Set(prev);
-                                  if (isOpen) next.add(focusId);
-                                  else next.delete(focusId);
-                                  return next;
-                                });
-                              }}
-                            >
-                              <div className="stack">
-                                {hasDesc ? (
-                                  <div className="preserveWhitespace">{desc}</div>
-                                ) : (
-                                  <div className="muted">
-                                    {todoItem
-                                      ? "No notes provided."
-                                      : "No description provided."}
-                                  </div>
-                                )}
-                                {!todoItem ? <AttachmentsList assignment={a} /> : null}
-                              </div>
-                            </Expandable>
-                          </div>
                         </div>
 
                         {todoItem ? (
@@ -1580,6 +1593,45 @@ export function UpcomingAssignments() {
                             )}
                           </div>
                         )}
+
+                        <div className="assignmentDetails">
+                          <Expandable
+                            title="Details"
+                            defaultOpen={openDetailsKeys.has(focusId)}
+                            subtitle={
+                              hasDesc && !openDetailsKeys.has(focusId) ? (
+                                <span className="muted">{firstLine(desc)}</span>
+                              ) : hasDesc ? (
+                                <span className="muted"> </span>
+                              ) : (
+                                <span className="muted">
+                                  {todoItem ? "No notes" : "No description"}
+                                </span>
+                              )
+                            }
+                            onToggle={(isOpen) => {
+                              setOpenDetailsKeys((prev) => {
+                                const next = new Set(prev);
+                                if (isOpen) next.add(focusId);
+                                else next.delete(focusId);
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="stack">
+                              {hasDesc ? (
+                                <div className="preserveWhitespace">{desc}</div>
+                              ) : (
+                                <div className="muted">
+                                  {todoItem
+                                    ? "No notes provided."
+                                    : "No description provided."}
+                                </div>
+                              )}
+                              {!todoItem ? <AttachmentsList assignment={a} /> : null}
+                            </div>
+                          </Expandable>
+                        </div>
                       </div>
                     </li>
                   );

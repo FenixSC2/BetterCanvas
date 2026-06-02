@@ -249,4 +249,24 @@ export const canvasApi = {
           method: "DELETE",
         },
       ),
+      getCompletedAssignments: (opts) =>
+        request("/api/completed-assignments", opts),
+
+      upsertCompletedAssignment: (
+        courseId,
+        assignmentId,
+        status_source = "manual_completed",
+        opts,
+      ) =>
+        request(`/api/completed-assignments/${courseId}/${assignmentId}`, {
+          ...opts,
+          method: "PUT",
+          body: { status_source },
+        }),
+
+      deleteCompletedAssignment: (courseId, assignmentId, opts) =>
+        request(`/api/completed-assignments/${courseId}/${assignmentId}`, {
+          ...opts,
+          method: "DELETE",
+        }),
 };

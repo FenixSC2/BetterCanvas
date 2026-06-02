@@ -17,6 +17,13 @@ import {
 } from "../lib/workloadEstimates";
 import { loadTodos, syncTodos } from "../lib/todoStore";
 import { formatCourseTitle } from "../utils/courseUtils";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 
 /* ---------------- UI tuning knobs ---------------- */
 const UI = {
@@ -867,11 +874,69 @@ export function WeeklyPlanner() {
   const crossCheckItemsRaw = Array.isArray(plannerCrossCheckQ.data)
     ? plannerCrossCheckQ.data
     : [];
-  const itemsRaw = useMemo(
+  const baseItemsRaw = useMemo(
     () => mergeAssignmentsByIdentity(primaryItemsRaw, crossCheckItemsRaw),
     [primaryItemsRaw, crossCheckItemsRaw],
   );
-  const undatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+  const baseUndatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
+    loadAcceptedGradeKeys(),
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (active) setAcceptedGradeKeys(next);
+      })
+      .catch(() => {
+        // Keep local fallback if server sync fails.
+      });
+
+    function refreshAccepted() {
+      setAcceptedGradeKeys(loadAcceptedGradeKeys());
+    }
+
+    window.addEventListener("focus", refreshAccepted);
+    window.addEventListener("storage", refreshAccepted);
+    window.addEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshAccepted);
+      window.removeEventListener("storage", refreshAccepted);
+      window.removeEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    };
+  }, []);
+
+  const itemsRaw = useMemo(
+    () =>
+      baseItemsRaw.map((item) => {
+        const key = acceptedGradeKey(item?.course_id, item?.id);
+        if (!acceptedGradeKeys.has(key)) return item;
+        return {
+          ...item,
+          submitted: true,
+          _acceptedCompleted: true,
+        };
+      }),
+    [baseItemsRaw, acceptedGradeKeys],
+  );
+
+  const undatedItemsRaw = useMemo(
+    () =>
+      baseUndatedItemsRaw.map((item) => {
+        const key = acceptedGradeKey(item?.course_id, item?.id);
+        if (!acceptedGradeKeys.has(key)) return item;
+        return {
+          ...item,
+          submitted: true,
+          _acceptedCompleted: true,
+        };
+      }),
+    [baseUndatedItemsRaw, acceptedGradeKeys],
+  );
 
   const personalDatesQ = useCachedAsync(
     "personal-assignment-dates",
@@ -907,6 +972,22 @@ export function WeeklyPlanner() {
     window.addEventListener("canvassist:hidden:changed", onHiddenChanged);
     return () => window.removeEventListener("canvassist:hidden:changed", onHiddenChanged);
   }, []);
+
+  async function markCompleted(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_completed",
+      );
+    } catch {
+      // Keep optimistic local state.
+    }
+  }
 
   const [weekStart, setWeekStart] = useState(() =>
     startOfWeekSunday(new Date()),
@@ -2928,6 +3009,27 @@ export function WeeklyPlanner() {
                                     >
                                       View
                                     </button>
+
+                                    {missing ? (
+                                      <button
+                                        className="btn"
+                                        onClick={() => {
+                                          void markCompleted(a.course_id, a.id);
+                                        }}
+                                        title="Mark completed and stop showing this as missing"
+                                        style={{
+                                          flex: 1,
+                                          minWidth: 0,
+                                          whiteSpace: "nowrap",
+                                          display: "inline-flex",
+                                          justifyContent: "center",
+                                          fontSize: 13,
+                                          padding: "8px 10px",
+                                        }}
+                                      >
+                                        Mark completed
+                                      </button>
+                                    ) : null}
                                   </div>
 
                                   {!hasEstimate ? (

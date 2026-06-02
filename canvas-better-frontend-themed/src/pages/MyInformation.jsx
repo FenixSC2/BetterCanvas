@@ -9,6 +9,14 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 import { makeTodoId, createTodoItem, loadTodos } from "../lib/todoStore";
+import { isDemoMode } from "../lib/storagePolicy";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 import { useAuth } from "../hooks/useAuth";
 import { formatCourseTitle } from "../utils/courseUtils";
 
@@ -353,6 +361,36 @@ export function MyInformation({ active = true }) {
 
   // Seen tracking
   const [seenIds, setSeenIds] = useState(() => new Set());
+  const demoMode = isDemoMode();
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
+    loadAcceptedGradeKeys(),
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (active) setAcceptedGradeKeys(next);
+      })
+      .catch(() => {
+        // Keep local fallback if server sync fails.
+      });
+
+    function refreshAccepted() {
+      setAcceptedGradeKeys(loadAcceptedGradeKeys());
+    }
+
+    window.addEventListener("focus", refreshAccepted);
+    window.addEventListener("storage", refreshAccepted);
+    window.addEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshAccepted);
+      window.removeEventListener("storage", refreshAccepted);
+      window.removeEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    };
+  }, []);
 
   // Add-announcement-to-todo state: maps announcement id → { date, status }
   const [todoFormById, setTodoFormById] = useState({});
@@ -452,14 +490,30 @@ export function MyInformation({ active = true }) {
   const lastSeenIdRef = useRef(0);
 
   useEffect(() => {
+    if (demoMode) {
+      setLastSeenIdFromDb(0);
+      lastSeenIdRef.current = 0;
+      return;
+    }
     canvasApi.getAnnouncementLastSeen().then((res) => {
       const id = res?.last_seen_id ?? 0;
       setLastSeenIdFromDb(id);
       lastSeenIdRef.current = id;
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [demoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const missingCount = overview?.missing_count ?? 0;
+  const missingItems = Array.isArray(overview?.missing) ? overview.missing : [];
+  const filteredMissingItems = useMemo(
+    () =>
+      missingItems.filter(
+        (m) =>
+          !acceptedGradeKeys.has(
+            acceptedGradeKey(m?.course_id, m?.assignment_id),
+          ),
+      ),
+    [missingItems, acceptedGradeKeys],
+  );
+  const missingCount = filteredMissingItems.length;
   const canvasDue24Count = overview?.due_next_24h_count ?? 0;
   const due24Count = canvasDue24Count + todosDue24h.length;
   const gpa = overview?.gpa;
@@ -484,11 +538,25 @@ export function MyInformation({ active = true }) {
   // when announcements finish loading while the dropdown is already open.
   const [annIsOpen, setAnnIsOpen] = useState(false);
 
-  // NEW badge count — based on DB high-water mark so it persists across sessions
+  function newestAnnouncementId(items) {
+    let newest = 0;
+    for (const a of items || []) {
+      const id = Number(a?.id);
+      if (Number.isFinite(id) && id > newest) newest = id;
+    }
+    return newest;
+  }
+
+  // NEW badge count:
+  // - live mode: DB-backed high-water mark (cross-session persistence)
+  // - demo mode: local seen set (server intentionally returns no persisted seen state)
   const newAnnouncementCount = useMemo(() => {
     if (!announcements?.length) return 0;
+    if (demoMode) {
+      return announcements.filter((a) => a?.id && !seenIds.has(Number(a.id))).length;
+    }
     return announcements.filter((a) => a?.id && a.id > lastSeenIdFromDb).length;
-  }, [announcements, lastSeenIdFromDb]);
+  }, [announcements, demoMode, seenIds, lastSeenIdFromDb]);
 
   function persistSeen(nextSet) {
     setSeenIds(new Set(nextSet));
@@ -515,7 +583,9 @@ export function MyInformation({ active = true }) {
     }
     persistSeen(next);
 
-    const newestId = announcements?.[0]?.id ?? 0;
+    if (demoMode) return;
+
+    const newestId = newestAnnouncementId(announcements);
     if (newestId && newestId > lastSeenIdRef.current) {
       lastSeenIdRef.current = newestId;
       setLastSeenIdFromDb(newestId);
@@ -604,6 +674,22 @@ export function MyInformation({ active = true }) {
 
   function handleDisableNotifications() {
     notif.setEnabled(false);
+  }
+
+  async function markCompleted(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_completed",
+      );
+    } catch {
+      // Keep optimistic local state.
+    }
   }
 
   function htmlToPrettyText(html) {
@@ -1058,7 +1144,7 @@ export function MyInformation({ active = true }) {
           </div>
         ) : (
           <ul className="list listSpaced">
-            {overview.missing.map((m) => {
+            {filteredMissingItems.map((m) => {
               const titleText = (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   {m?.name || "Untitled assignment"}
@@ -1100,6 +1186,16 @@ export function MyInformation({ active = true }) {
                       Open in Canvas
                     </a>
                   ) : null}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      void markCompleted(m.course_id, m.assignment_id);
+                    }}
+                    title="Mark completed and stop showing this as missing"
+                  >
+                    Mark completed
+                  </button>
                   <WorkloadEstimateControl
                     courseId={m.course_id}
                     assignmentId={m.assignment_id}
