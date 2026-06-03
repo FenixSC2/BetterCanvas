@@ -501,18 +501,6 @@ function ScrollableDayList({ children, style, className = "" }) {
       <div
         ref={scrollerRef}
         className="plannerDayList"
-        style={{
-          flex: 1,
-          height: 0,
-          minHeight: 0,
-          overflowY: "auto",
-          paddingRight: UI.LIST_SCROLL_PAD_RIGHT_PX,
-          paddingTop: 0,
-          paddingBottom: 0,
-          display: "flex",
-          flexDirection: "column",
-          gap: UI.LIST_GAP_PX,
-        }}
       >
         {children}
       </div>
@@ -819,29 +807,17 @@ function AnchoredPopover({
   return createPortal(
     <div
       ref={panelRef}
-      className="card"
+      className="card weeklyPlannerPopover"
       style={{
-        position: "fixed",
         top: pos.top,
         left: pos.left,
         width: pos.panelWidth,
-        height: "auto",
-        maxHeight: "calc(100vh - 20px)",
-        zIndex: 9999,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
         opacity: entered ? 1 : 0,
         transform: entered ? "translateY(0px)" : "translateY(6px)",
-        transition: "opacity 140ms ease, transform 180ms ease",
-        willChange: "transform, opacity",
       }}
     >
       <div
-        className="cardBody"
-        style={{
-          height: "auto",
-          maxHeight: "calc(100vh - 20px)",
-          overflowY: "auto",
-        }}
+        className="cardBody weeklyPlannerPopoverBody"
       >
         {children}
       </div>
@@ -870,15 +846,22 @@ export function WeeklyPlanner() {
     { ttlMs: 60 * 1000 },
   );
 
-  const primaryItemsRaw = Array.isArray(plannerQ.data) ? plannerQ.data : [];
-  const crossCheckItemsRaw = Array.isArray(plannerCrossCheckQ.data)
-    ? plannerCrossCheckQ.data
-    : [];
+  const primaryItemsRaw = useMemo(
+    () => (Array.isArray(plannerQ.data) ? plannerQ.data : []),
+    [plannerQ.data],
+  );
+  const crossCheckItemsRaw = useMemo(
+    () => (Array.isArray(plannerCrossCheckQ.data) ? plannerCrossCheckQ.data : []),
+    [plannerCrossCheckQ.data],
+  );
   const baseItemsRaw = useMemo(
     () => mergeAssignmentsByIdentity(primaryItemsRaw, crossCheckItemsRaw),
     [primaryItemsRaw, crossCheckItemsRaw],
   );
-  const baseUndatedItemsRaw = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+  const baseUndatedItemsRaw = useMemo(
+    () => (Array.isArray(undatedQ.data) ? undatedQ.data : []),
+    [undatedQ.data],
+  );
 
   const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
     loadAcceptedGradeKeys(),
@@ -1905,7 +1888,8 @@ export function WeeklyPlanner() {
     }
 
     return { start, end, days, buckets, undated, todoUndated, dayTotals, weekTotal };
-  }, [
+    // workloadIsFavorite/workloadRemainingHours read localStorage; storageTick is the intentional invalidation key
+  }, [ // oxlint-disable-line react-doctor/exhaustive-deps
     items,
     itemsRaw,
     undatedItems,
@@ -1949,7 +1933,8 @@ export function WeeklyPlanner() {
     });
 
     return combined.slice(0, UI.NEXT_UP_LIMIT).map((x) => x.item);
-  }, [items, todos, view.end, settings.showCompleted, settings.showPersonalTodos, storageTick]);
+    // workloadIsFavorite reads localStorage; storageTick is the intentional invalidation key
+  }, [items, todos, view.end, settings.showCompleted, settings.showPersonalTodos, storageTick]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   useEffect(() => {
     if (!settings.showPersonalTodos) return;
@@ -2231,6 +2216,7 @@ export function WeeklyPlanner() {
 
             <div className="rowWrap" style={{ gap: 10, alignItems: "center" }}>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
@@ -2243,6 +2229,7 @@ export function WeeklyPlanner() {
                 ← Prev
               </button>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
@@ -2255,6 +2242,7 @@ export function WeeklyPlanner() {
                 Today
               </button>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   if (settings.dayViewMode === "next7") {
@@ -2267,6 +2255,7 @@ export function WeeklyPlanner() {
                 Next →
               </button>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   plannerQ.refresh();
@@ -2532,7 +2521,7 @@ export function WeeklyPlanner() {
                                     <span className="mono">{dueDate || "—"} {dueTime || ""}</span>
                                   </div>
                                   {normalizeTodoRecurrence(t.recurrence) !== "none" ? (
-                                    <div className="muted" style={{ marginTop: 6, fontSize: 11 }}>
+                                    <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
                                       {plannerTodoRecurrenceLabel(t.recurrence)}
                                     </div>
                                   ) : null}
@@ -2541,7 +2530,7 @@ export function WeeklyPlanner() {
                                       className="muted"
                                       style={{
                                         marginTop: 6,
-                                        fontSize: 11,
+                                        fontSize: 12,
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
                                         whiteSpace: "nowrap",
@@ -2792,6 +2781,7 @@ export function WeeklyPlanner() {
                                         </div>
 
                                         <button
+                                          type="button"
                                           className="btn"
                                           onClick={() =>
                                             completeAllSplitsForAssignment(
@@ -2805,6 +2795,7 @@ export function WeeklyPlanner() {
                                         </button>
 
                                         <button
+                                          type="button"
                                           className="btn btnDanger"
                                           onClick={() => removeSplit(s.id)}
                                         >
@@ -2812,6 +2803,7 @@ export function WeeklyPlanner() {
                                         </button>
 
                                         <button
+                                          type="button"
                                           className="btn"
                                           onClick={() =>
                                             navigateToAssignment(
@@ -2971,6 +2963,7 @@ export function WeeklyPlanner() {
                                     }}
                                   >
                                     <button
+                                      type="button"
                                       className="btn"
                                       onClick={(e) => openSplitPopover(e, a)}
                                       disabled={!canSplit}
@@ -2993,6 +2986,7 @@ export function WeeklyPlanner() {
                                     </button>
 
                                     <button
+                                      type="button"
                                       className="btn"
                                       onClick={() =>
                                         navigateToAssignment(a.course_id, a.id)
@@ -3012,6 +3006,7 @@ export function WeeklyPlanner() {
 
                                     {missing ? (
                                       <button
+                                        type="button"
                                         className="btn"
                                         onClick={() => {
                                           void markCompleted(a.course_id, a.id);
@@ -3121,7 +3116,7 @@ export function WeeklyPlanner() {
                                 <span className="mono">{dueDate || "—"} {dueTime || ""}</span>
                               </div>
                               <div style={{ marginTop: 10 }}>
-                                <button className="btn" onClick={() => navigateToTodoItem(a.id)}>
+                                <button type="button" className="btn" onClick={() => navigateToTodoItem(a.id)}>
                                   View to-do
                                 </button>
                               </div>
@@ -3206,6 +3201,7 @@ export function WeeklyPlanner() {
                               }}
                             >
                               <button
+                                type="button"
                                 className="btn"
                                 onClick={() =>
                                   navigateToAssignment(a.course_id, a.id)
@@ -3290,6 +3286,7 @@ export function WeeklyPlanner() {
               <div className="effortFieldRow">
                 <input
                   type="date"
+                  aria-label="Split date"
                   value={splitPopDateISO}
                   min={isoDay(new Date())}
                   max={
@@ -3315,6 +3312,7 @@ export function WeeklyPlanner() {
                   type="number"
                   min="0"
                   step="0.25"
+                  aria-label="Hours to plan"
                   value={splitPopHours}
                   onChange={(e) => {
                     setSplitPopHours(e.target.value);
@@ -3418,6 +3416,7 @@ export function WeeklyPlanner() {
                             </div>
 
                             <button
+                              type="button"
                               className="btn plannerUndatedAction"
                               onClick={() => navigateToTodoItem(t.id)}
                             >
@@ -3501,6 +3500,7 @@ export function WeeklyPlanner() {
                               </div>
 
                               <button
+                                type="button"
                                 className="btn plannerUndatedAction"
                                 onClick={() => navigateToAssignment(a.course_id, a.id)}
                               >
@@ -3540,6 +3540,7 @@ export function WeeklyPlanner() {
 
           <div style={{ marginTop: 10 }}>
             <button
+              type="button"
               className="btn btnDanger"
               onClick={() => {
                 const ok = window.confirm(

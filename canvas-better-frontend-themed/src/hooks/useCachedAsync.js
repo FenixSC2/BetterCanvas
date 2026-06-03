@@ -118,9 +118,10 @@ export function useCachedAsync(key, fetcher, opts = {}) {
 
   useEffect(() => {
     run();
-    return () => abortRef.current?.abort?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyStr]);
+    const controller = abortRef.current;
+    return () => controller?.abort?.();
+    // run captures `data` for an initial-loading branch; re-running on keyStr is intentional, and the captured controller above avoids stale-ref hazards
+  }, [keyStr]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   // Re-fetch when auth state changes (login/logout)
   useEffect(() => {
@@ -129,8 +130,8 @@ export function useCachedAsync(key, fetcher, opts = {}) {
     }
     window.addEventListener("auth:changed", handleAuthChange);
     return () => window.removeEventListener("auth:changed", handleAuthChange);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // listener mounts once for the lifetime of the hook; `run` is invoked via closure to always reach the latest version
+  }, []); // oxlint-disable-line react-doctor/exhaustive-deps
 
   return { data, error, loading, refreshing, refresh: run };
 }

@@ -61,8 +61,9 @@ export function Login({ onViewDemo }) {
 
         <form onSubmit={handleLogin} className="authForm">
           <div className="authField">
-            <label>Email address</label>
+            <label htmlFor="login-email">Email address</label>
             <input
+              id="login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -73,9 +74,10 @@ export function Login({ onViewDemo }) {
           </div>
 
           <div className="authField">
-            <label>Password</label>
+            <label htmlFor="login-password">Password</label>
             <div className="authInputRow">
               <input
+                id="login-password"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

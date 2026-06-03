@@ -280,11 +280,41 @@ function safeJsonParse(raw, fallback) {
 }
 
 
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      className="toggle"
+    >
+      <span className={`toggleTrack ${checked ? "on" : "off"}`}>
+        <span className={`toggleThumb ${checked ? "on" : ""}`} />
+      </span>
+    </button>
+  );
+}
+
 export function MyInformation({ active = true }) {
   const { hasToken } = useAuth();
   const notif = useDesktopNotifications(hasToken);
-  const [heroGreeting, setHeroGreeting] = useState("");
   const lastGreetingRef = useRef("");
+  const heroGreeting = useMemo(() => {
+    if (!active) return lastGreetingRef.current;
+    const next = pickRandomWithoutRepeat(
+      greetingOptionsFor(new Date()),
+      lastGreetingRef.current,
+    );
+    lastGreetingRef.current = next;
+    return next;
+  }, [active]);
 
   // ✅ Cached API data (prevents "No info" flash on tab switch)
   const profileQ = useCachedAsync(
@@ -335,17 +365,7 @@ export function MyInformation({ active = true }) {
     annRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!active) return;
-    const next = pickRandomWithoutRepeat(
-      greetingOptionsFor(new Date()),
-      lastGreetingRef.current,
-    );
-    lastGreetingRef.current = next;
-    setHeroGreeting(next);
-  }, [active]);
-
-  const announcements = announcementsQ.data || [];
+  const announcements = useMemo(() => announcementsQ.data || [], [announcementsQ.data]);
   const annErr = announcementsQ.error;
 
   // Show the announcements loading state if we're actively loading OR have never
@@ -459,28 +479,6 @@ export function MyInformation({ active = true }) {
     }
   }, [showGpaCollapsed]);
 
-  function Toggle({ checked, onChange, label }) {
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onChange(!checked);
-        }}
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        title={label}
-        className="toggle"
-      >
-        <span className={`toggleTrack ${checked ? "on" : "off"}`}>
-          <span className={`toggleThumb ${checked ? "on" : ""}`} />
-        </span>
-      </button>
-    );
-  }
-
   const SEEN_KEY = "announcements:seenIds";
 
   // DB-backed high-water mark: the ID of the newest announcement the user has
@@ -502,7 +500,10 @@ export function MyInformation({ active = true }) {
     }).catch(() => {});
   }, [demoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const missingItems = Array.isArray(overview?.missing) ? overview.missing : [];
+  const missingItems = useMemo(
+    () => (Array.isArray(overview?.missing) ? overview.missing : []),
+    [overview?.missing],
+  );
   const filteredMissingItems = useMemo(
     () =>
       missingItems.filter(
@@ -594,12 +595,16 @@ export function MyInformation({ active = true }) {
   }
 
   // If the dropdown is already open when announcements finish loading, mark them seen.
-  // This handles the case where the user opens the section before the fetch completes.
+  // This handles the case where the user opens the section before the fetch completes —
+  // the onOpen handler can't observe an async fetch that completes later.
+  /* oxlint-disable react-doctor/no-event-handler -- handles "data arrived while dropdown was already open" which no handler can intercept */
   useEffect(() => {
     if (annIsOpen && announcements?.length) {
       markAllAnnouncementsSeen();
     }
-  }, [announcements]); // eslint-disable-line react-hooks/exhaustive-deps
+    // markAllAnnouncementsSeen reads state through closure; including it would re-fire every render
+  }, [announcements, annIsOpen]); // oxlint-disable-line react-doctor/exhaustive-deps
+  /* oxlint-enable react-doctor/no-event-handler */
 
   // Load seenIds after mount
   useEffect(() => {
@@ -1245,28 +1250,15 @@ export function MyInformation({ active = true }) {
               onMouseLeave={() => setGpaInfoOpen(false)}
               onFocus={openGpaInfo}
               onBlur={() => setGpaInfoOpen(false)}
-              style={{ width: 18, height: 18, fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+              style={{ width: 18, height: 18, fontSize: 12, fontWeight: 700, flexShrink: 0 }}
             >
               i
             </button>
             {gpaInfoOpen && createPortal(
-              <div style={{
-                position: "fixed",
-                top: gpaInfoPos.top,
-                left: gpaInfoPos.left,
-                transform: "translateY(-50%)",
-                zIndex: 9999,
-                width: "min(280px, 72vw)",
-                padding: "10px 12px",
-                borderRadius: "var(--radiusSm)",
-                border: "1px solid var(--border2)",
-                background: "var(--surface)",
-                color: "var(--text)",
-                fontSize: "var(--fontSm)",
-                lineHeight: 1.45,
-                boxShadow: "var(--shadow)",
-                pointerEvents: "none",
-              }}>
+              <div
+                className="gpaInfoTooltip"
+                style={{ top: gpaInfoPos.top, left: gpaInfoPos.left }}
+              >
                 This GPA is calculated from your current semester courses only.
               </div>,
               document.body
@@ -1398,11 +1390,12 @@ export function MyInformation({ active = true }) {
 
               <div className="rowWrap" style={{ gap: 10 }}>
                 {notificationsOn ? (
-                  <button className="btn" onClick={handleDisableNotifications}>
+                  <button type="button" className="btn" onClick={handleDisableNotifications}>
                     Disable notifications
                   </button>
                 ) : (
                   <button
+                    type="button"
                     className="btn"
                     onClick={handleEnableNotifications}
                     disabled={notif.permission === "denied"}
@@ -1417,6 +1410,7 @@ export function MyInformation({ active = true }) {
                 )}
 
                 <button
+                  type="button"
                   className="btn"
                   onClick={() => clearNotificationHistory()}
                   title="Allows alerts to fire again for the same assignments"
@@ -1425,6 +1419,7 @@ export function MyInformation({ active = true }) {
                 </button>
 
                 <button
+                  type="button"
                   className="btn"
                   disabled={notif.permission !== "granted"}
                   onClick={() => {

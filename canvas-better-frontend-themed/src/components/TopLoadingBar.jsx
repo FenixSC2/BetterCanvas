@@ -56,19 +56,7 @@ export function TopLoadingBar() {
   if (!active) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        height: 6,
-        width: "100%",
-        zIndex: 1200,
-        background: "color-mix(in srgb, var(--surface), transparent 78%)",
-        backdropFilter: "blur(3px)",
-      }}
-      aria-hidden="true"
-    >
+    <div className="topLoadingBar" aria-hidden="true">
       <div
         style={{
           height: "100%",

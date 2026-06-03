@@ -151,7 +151,7 @@ function Popover({
   width = 320,
 }) {
   const panelRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0, width });
 
   useEffect(() => {
     if (!open) return;
@@ -160,33 +160,45 @@ function Popover({
       const anchor = anchorRef?.current;
       if (!anchor) return;
 
-      const rect = anchor.getBoundingClientRect(); // viewport coords
-      const margin = 8;
+      const root = anchor.closest("[data-popover-root]");
+      const rootRect = root?.getBoundingClientRect();
+      if (!rootRect) return;
 
-      let left;
+      const rect = anchor.getBoundingClientRect();
+      const margin = 8;
+      const maxWidth = Math.max(180, rootRect.width - margin * 2);
+      const effectiveWidth = Math.min(width, maxWidth);
+
+      let leftInRoot;
       if (align === "left") {
-        left = rect.left;
+        leftInRoot = rect.left - rootRect.left;
+      } else if (align === "center") {
+        leftInRoot = rect.left - rootRect.left + rect.width / 2 - effectiveWidth / 2;
       } else {
-        left = rect.right - width; // align right edges
+        leftInRoot = rect.right - rootRect.left - effectiveWidth;
       }
 
-      // clamp into viewport
-      left = Math.max(
+      leftInRoot = Math.max(
         margin,
-        Math.min(left, window.innerWidth - width - margin)
+        Math.min(leftInRoot, rootRect.width - effectiveWidth - margin)
       );
 
-      // prefer below anchor; clamp if near bottom
-      let top = rect.bottom + margin;
-      const maxTop = window.innerHeight - margin;
-      top = Math.max(margin, Math.min(top, maxTop));
+      const topInRoot = rect.bottom - rootRect.top + margin;
 
-      setPos({ top, left });
+      const next = {
+        top: Math.round(topInRoot),
+        left: Math.round(leftInRoot),
+        width: Math.round(effectiveWidth),
+      };
+      setPos((prev) =>
+        prev.top === next.top && prev.left === next.left && prev.width === next.width
+          ? prev
+          : next
+      );
     }
 
     recompute();
     window.addEventListener("resize", recompute);
-    window.addEventListener("scroll", recompute, true);
 
     function onKey(e) {
       if (e.key === "Escape") onClose?.();
@@ -208,7 +220,6 @@ function Popover({
 
     return () => {
       window.removeEventListener("resize", recompute);
-      window.removeEventListener("scroll", recompute, true);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
     };
@@ -218,18 +229,16 @@ function Popover({
 
   return (
     <div
+      className="anchoredPopover"
       style={{
-        position: "fixed",
         top: pos.top,
         left: pos.left,
-        zIndex: 9999,
-        width,
+        width: pos.width,
       }}
     >
       <div
         ref={panelRef}
-        className="card"
-        style={{ boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }}
+        className="card anchoredPopoverCard"
       >
         <div className="cardBody">{children}</div>
       </div>
@@ -497,15 +506,22 @@ export function UpcomingAssignments() {
     }
   }
 
-  const primaryCanvasItems = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
-  const crossCheckCanvasItems = Array.isArray(upcomingCrossCheckQ.data)
-    ? upcomingCrossCheckQ.data
-    : [];
+  const primaryCanvasItems = useMemo(
+    () => (Array.isArray(upcomingQ.data) ? upcomingQ.data : []),
+    [upcomingQ.data],
+  );
+  const crossCheckCanvasItems = useMemo(
+    () => (Array.isArray(upcomingCrossCheckQ.data) ? upcomingCrossCheckQ.data : []),
+    [upcomingCrossCheckQ.data],
+  );
   const canvasItems = useMemo(
     () => mergeAssignmentsByIdentity(primaryCanvasItems, crossCheckCanvasItems),
     [primaryCanvasItems, crossCheckCanvasItems]
   );
-  const canvasUndatedItems = Array.isArray(undatedQ.data) ? undatedQ.data : [];
+  const canvasUndatedItems = useMemo(
+    () => (Array.isArray(undatedQ.data) ? undatedQ.data : []),
+    [undatedQ.data],
+  );
 
   useEffect(() => {
     let active = true;
@@ -800,7 +816,8 @@ export function UpcomingAssignments() {
     });
 
     return list;
-  }, [items, filterMode, blend, canvasPointStats, workloadTick, acceptedGradeKeys]);
+    // workloadTick is an intentional invalidation key for isAssignmentFavorited (reads localStorage)
+  }, [items, filterMode, blend, canvasPointStats, workloadTick, acceptedGradeKeys]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   // Separate list for undated assignments (for the undated section)
   const undatedSorted = useMemo(() => {
@@ -878,6 +895,7 @@ export function UpcomingAssignments() {
     });
 
     return list;
+    // workloadTick is an intentional invalidation key for isAssignmentFavorited (reads localStorage)
   }, [
     canvasUndatedItems,
     undatedTodoItems,
@@ -885,10 +903,11 @@ export function UpcomingAssignments() {
     blend,
     filterMode,
     canvasPointStats,
-    workloadTick,
+    workloadTick, // oxlint-disable-line react-doctor/exhaustive-deps
   ]);
 
   // === Auto-focus target assignment ===
+  /* oxlint-disable react-doctor/no-event-handler -- responds to localStorage nav target + async data arrival; no handler on this page sets these */
   useEffect(() => {
     // wait until we have *some* data (cached or freshly loaded)
     if (!canvasItems?.length) return;
@@ -919,8 +938,13 @@ export function UpcomingAssignments() {
     // Mark pending focus; we’ll execute scroll when DOM is present
     pendingFocusRef.current = key;
   }, [canvasItems, filterMode]);
+  /* oxlint-enable react-doctor/no-event-handler */
 
-  // After list renders (filteredSorted changes), perform scroll if pending
+  // After list renders (filteredSorted changes), perform scroll if pending.
+  // The timer ID is set inside an async run() closure, so the cleanup reads the
+  // latest ref value rather than a snapshot — clearing the most recent timer is
+  // the intended behavior here.
+  // oxlint-disable-next-line react-doctor/exhaustive-deps
   useEffect(() => {
     const key = pendingFocusRef.current;
     if (!key) return;
@@ -947,9 +971,12 @@ export function UpcomingAssignments() {
     });
 
     return () => {
+      // focusTimerRef is assigned inside the async `run` closure above, so we
+      // can only read the latest value here. The setTimeout sets a fresh ID each
+      // time, so clearing the latest matches expectations.
       if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
     };
-  }, [filteredSorted]);
+  }, [filteredSorted]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   if (upcomingQ.error || undatedQ.error)
     return <ErrorBox error={upcomingQ.error || undatedQ.error} />
@@ -971,15 +998,8 @@ export function UpcomingAssignments() {
       : "Undated";
 
   return (
-    <div className="stack" style={{ position: "relative" }}>
-      <div
-        className="rowWrap"
-        style={{
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "center",
-        }}
-      >
+    <div className="stack" style={{ position: "relative" }} data-popover-root>
+      <div className="upcomingControlsRow">
         <div className="muted">
           Powered by <span className="mono">GET /api/upcoming</span>.
           <span> • Includes personal TO-DO items stored in this browser.</span>
@@ -989,44 +1009,41 @@ export function UpcomingAssignments() {
         </div>
 
         {/* Controls */}
-        <div
-          className="rowWrap"
-          style={{ gap: 10, alignItems: "center", flexWrap: "nowrap" }}
-        >
+        <div className="upcomingControlsToolbar">
           <button
+            type="button"
             ref={filterBtnRef}
-            className="btn"
+            className="btn upcomingControlsBtn"
             onClick={() => {
               setFilterOpen((v) => !v);
               setSortOpen(false);
             }}
             title="Filter assignments"
-            style={{ whiteSpace: "nowrap" }}
           >
             Filter: <span className="mono">{filterLabel}</span>
           </button>
 
           <button
+            type="button"
             ref={sortBtnRef}
-            className="btn"
+            className="btn upcomingControlsBtn"
             onClick={() => {
               setSortOpen((v) => !v);
               setFilterOpen(false);
             }}
             title="Sort by time and/or points"
-            style={{ whiteSpace: "nowrap" }}
           >
             Sorting
           </button>
 
           <button
-            className="btn"
+            type="button"
+            className="btn upcomingControlsBtn"
             onClick={() => {
               upcomingQ.refresh();
               undatedQ.refresh();
             }}
             title="Fetch fresh upcoming assignments"
-            style={{ whiteSpace: "nowrap" }}
           >
             Refresh
           </button>
@@ -1065,6 +1082,7 @@ export function UpcomingAssignments() {
               ["undated", "Undated"],
             ].map(([key, label]) => (
               <button
+                type="button"
                 key={key}
                 className="btn"
                 onClick={() => {
@@ -1090,7 +1108,7 @@ export function UpcomingAssignments() {
         open={sortOpen}
         onClose={() => setSortOpen(false)}
         anchorRef={sortBtnRef}
-        align="right"
+        align="center"
         width={360}
       >
         <div className="stack">
@@ -1119,6 +1137,7 @@ export function UpcomingAssignments() {
               min="0"
               max="1"
               step="0.05"
+              aria-label="Blend between due-date and effort sort"
               value={blend}
               onChange={(e) => setBlend(Number(e.target.value))}
               style={{ flex: 1, minWidth: 160 }}
@@ -1139,6 +1158,7 @@ export function UpcomingAssignments() {
               min="0"
               max="1"
               step="0.05"
+              aria-label="Sort blend value"
               value={blend}
               onChange={(e) => setBlend(Number(e.target.value))}
               style={{ width: 90 }}
@@ -1324,6 +1344,7 @@ export function UpcomingAssignments() {
 
                         {!todoItem && isMissing ? (
                           <button
+                            type="button"
                             className="btn"
                             onClick={() => {
                               void markCompleted(a.course_id, a.id);
@@ -1336,6 +1357,7 @@ export function UpcomingAssignments() {
 
                         {a._personalDate ? (
                           <button
+                            type="button"
                             className="btn"
                             style={{ fontSize: "var(--fontSm)" }}
                             onClick={async () => {
@@ -1527,6 +1549,7 @@ export function UpcomingAssignments() {
                         {todoItem ? (
                           <div className="assignmentActions" style={{ minWidth: 0 }}>
                             <button
+                              type="button"
                               className="btn"
                               onClick={() => navigateToTodoItem(a.id)}
                               title="Open this item in TO-DO's"
@@ -1551,11 +1574,13 @@ export function UpcomingAssignments() {
                               <>
                                 <input
                                   type="datetime-local"
+                                  aria-label="Set a personal due date"
                                   value={addingDateInput}
                                   onChange={(e) => setAddingDateInput(e.target.value)}
                                   style={{ fontSize: "var(--fontSm)" }}
                                 />
                                 <button
+                                  type="button"
                                   className="btn"
                                   style={{ fontSize: "var(--fontSm)" }}
                                   onClick={async () => {
@@ -1575,6 +1600,7 @@ export function UpcomingAssignments() {
                                   Save date
                                 </button>
                                 <button
+                                  type="button"
                                   className="btn"
                                   style={{ fontSize: "var(--fontSm)" }}
                                   onClick={() => { setAddingDateFor(null); setAddingDateInput(""); }}
@@ -1584,6 +1610,7 @@ export function UpcomingAssignments() {
                               </>
                             ) : (
                               <button
+                                type="button"
                                 className="btn"
                                 style={{ fontSize: "var(--fontSm)" }}
                                 onClick={() => { setAddingDateFor(focusId); setAddingDateInput(""); }}

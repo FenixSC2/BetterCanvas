@@ -79,7 +79,8 @@ function DiscussionReplies({ courseId, topic }) {
       .catch((e) => { if (!cancelled) setErr(e); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [opened, courseId, topic.id]);
+    // data/loading are read as guards; including them would re-fetch on every error or completion
+  }, [opened, courseId, topic.id]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   function toggleReply(id) {
     setOpenReplyIds((prev) => {
@@ -90,7 +91,10 @@ function DiscussionReplies({ courseId, topic }) {
     });
   }
 
-  const replies = Array.isArray(data?.replies) ? data.replies : [];
+  const replies = useMemo(
+    () => (Array.isArray(data?.replies) ? data.replies : []),
+    [data?.replies],
+  );
 
   // Show only top-level replies in the outer list, with nested children inline so a
   // long thread isn't dozens of independent items on the page.
@@ -123,14 +127,6 @@ function DiscussionReplies({ courseId, topic }) {
     return counts;
   }, [replies, childrenByParent]);
 
-  if (replyCount === 0) {
-    return (
-      <div className="muted" style={{ fontSize: 12 }}>
-        No replies yet.
-      </div>
-    );
-  }
-
   // Every reply card we actually render gets an expandable affordance, so building
   // the "expand all" set is just top-level + their direct children.
   const expandableIds = useMemo(() => {
@@ -141,6 +137,14 @@ function DiscussionReplies({ courseId, topic }) {
     }
     return ids;
   }, [topLevel, childrenByParent]);
+
+  if (replyCount === 0) {
+    return (
+      <div className="muted" style={{ fontSize: 12 }}>
+        No replies yet.
+      </div>
+    );
+  }
 
   const allExpanded =
     expandableIds.length > 0 && expandableIds.every((id) => openReplyIds.has(id));
@@ -167,7 +171,7 @@ function DiscussionReplies({ courseId, topic }) {
           {unread > 0 ? (
             <span
               className="badge badgeSuccess"
-              style={{ marginLeft: 4, fontSize: 11 }}
+              style={{ marginLeft: 4, fontSize: 12 }}
             >
               NEW: {unread}
             </span>
@@ -269,13 +273,13 @@ function ReplyItem({
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
             <span style={{ fontWeight: 600 }}>{reply.author_name || "Unknown"}</span>
-            <span className="muted" style={{ fontSize: 11 }}>
+            <span className="muted" style={{ fontSize: 12 }}>
               {reply.created_at ? fmtWhen(reply.created_at) : ""}
             </span>
             {reply.read_state === "unread" ? (
-              <span className="badge badgeSuccess" style={{ fontSize: 10 }}>NEW</span>
+              <span className="badge badgeSuccess" style={{ fontSize: 12 }}>NEW</span>
             ) : null}
-            <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+            <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>
               {isOpen ? "click to collapse" : "click to expand"}
             </span>
           </span>
@@ -346,7 +350,10 @@ function CourseDiscussions({ course, lastSeen, markSeen }) {
     { ttlMs: 3 * 60 * 1000 },
   );
 
-  const topics = Array.isArray(q.data?.discussions) ? q.data.discussions : [];
+  const topics = useMemo(
+    () => (Array.isArray(q.data?.discussions) ? q.data.discussions : []),
+    [q.data?.discussions],
+  );
 
   const sorted = useMemo(() => {
     const list = topics.slice();
@@ -386,7 +393,7 @@ function CourseDiscussions({ course, lastSeen, markSeen }) {
             {newCount > 0 ? (
               <span
                 className="badge badgeSuccess"
-                style={{ marginLeft: 8, fontSize: 11 }}
+                style={{ marginLeft: 8, fontSize: 12 }}
               >
                 NEW: {newCount}
               </span>

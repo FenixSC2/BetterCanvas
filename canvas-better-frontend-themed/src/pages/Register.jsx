@@ -77,8 +77,9 @@ export function Register() {
 
         <form onSubmit={handleRegister} className="authForm">
           <div className="authField">
-            <label>Email address</label>
+            <label htmlFor="register-email">Email address</label>
             <input
+              id="register-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -89,9 +90,10 @@ export function Register() {
           </div>
 
           <div className="authField">
-            <label>Password</label>
+            <label htmlFor="register-password">Password</label>
             <div className="authInputRow">
               <input
+                id="register-password"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -114,9 +116,10 @@ export function Register() {
           </div>
 
           <div className="authField">
-            <label>Confirm password</label>
+            <label htmlFor="register-confirm-password">Confirm password</label>
             <div className="authInputRow">
               <input
+                id="register-confirm-password"
                 type={showConfirmPassword ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

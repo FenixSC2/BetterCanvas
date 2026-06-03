@@ -91,7 +91,10 @@ export function Calendar() {
     { ttlMs: 3 * 60 * 1000 },
   );
 
-  const assignments = Array.isArray(upcomingQ.data) ? upcomingQ.data : [];
+  const assignments = useMemo(
+    () => (Array.isArray(upcomingQ.data) ? upcomingQ.data : []),
+    [upcomingQ.data],
+  );
 
   const upcomingRefreshRef = useRef(null);
   upcomingRefreshRef.current = upcomingQ.refresh;
@@ -202,12 +205,14 @@ export function Calendar() {
           <div className="rowWrap" style={{ gap: 8, alignItems: "center" }}>
             <input
               type="date"
+              aria-label="Event date"
               value={composerDate}
               onChange={(e) => setComposerDate(e.target.value)}
               style={{ minWidth: 150 }}
             />
             <input
               type="text"
+              aria-label="Event title"
               placeholder="Event title"
               value={composerTitle}
               onChange={(e) => setComposerTitle(e.target.value)}
@@ -325,7 +330,7 @@ export function Calendar() {
                     <button
                       type="button"
                       className="btn"
-                      style={{ padding: "0 6px", fontSize: 11 }}
+                      style={{ padding: "0 6px", fontSize: 12 }}
                       title="Add event on this date"
                       onClick={() => {
                         setComposerDate(iso);
@@ -348,7 +353,7 @@ export function Calendar() {
                               target="_blank"
                               rel="noreferrer"
                               className="badge badgeNeutral"
-                              style={{ fontSize: 11, display: "block" }}
+                              style={{ fontSize: 12, display: "block" }}
                               title={`${it.title} • ${it.subtitle}`}
                             >
                               {it.title}
@@ -356,7 +361,7 @@ export function Calendar() {
                           ) : (
                             <span
                               className="badge badgeNeutral"
-                              style={{ fontSize: 11, display: "block" }}
+                              style={{ fontSize: 12, display: "block" }}
                               title={`${it.title} • ${it.subtitle}`}
                             >
                               {it.title}
@@ -366,7 +371,7 @@ export function Calendar() {
                           <span
                             className="badge badgeSuccess rowWrap"
                             style={{
-                              fontSize: 11,
+                              fontSize: 12,
                               gap: 4,
                               alignItems: "center",
                               padding: "1px 6px",
@@ -377,7 +382,7 @@ export function Calendar() {
                             <button
                               type="button"
                               className="btn"
-                              style={{ padding: "0 4px", fontSize: 10 }}
+                              style={{ padding: "0 4px", fontSize: 12 }}
                               onClick={() => removeEvent(it.id)}
                               aria-label="Remove event"
                             >
@@ -388,7 +393,7 @@ export function Calendar() {
                       </li>
                     ))}
                     {items.length > 4 ? (
-                      <li className="muted" style={{ fontSize: 10 }}>
+                      <li className="muted" style={{ fontSize: 12 }}>
                         +{items.length - 4} more
                       </li>
                     ) : null}

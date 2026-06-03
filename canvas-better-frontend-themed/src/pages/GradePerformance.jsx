@@ -69,6 +69,12 @@ function assignmentIdentity(a) {
   return `${a.course_id}:${a.id}`;
 }
 
+function fmtNumberInput(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  return String(Number(n.toFixed(2)));
+}
+
 function hasExplicitPrediction(raw) {
   if (raw == null) return false;
   const s = String(raw).trim();
@@ -485,12 +491,11 @@ function AnchoredPopover({
   return createPortal(
     <div
       ref={panelRef}
+      className="anchoredPopoverFixed"
       style={{
-        position: "fixed",
         top: pos.top,
         left: pos.left,
         width,
-        zIndex: 9999,
       }}
     >
       {children}
@@ -535,7 +540,6 @@ export function GradePerformance({ demoMode = false }) {
   const [editingKey, setEditingKey] = useState("");
   const [editWeightInput, setEditWeightInput] = useState("");
   const [editingPredictionKey, setEditingPredictionKey] = useState(null);
-  const [editUnlockScore, setEditUnlockScore] = useState(false);
   const [editScoreInput, setEditScoreInput] = useState("");
   const [lastProjectionDelta, setLastProjectionDelta] = useState(null);
   const editAnchorRefs = useRef({});
@@ -617,8 +621,12 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 5 * 60 * 1000 },
   );
 
-  const summaries = Array.isArray(summariesQ.data) ? summariesQ.data : [];
+  const summaries = useMemo(
+    () => (Array.isArray(summariesQ.data) ? summariesQ.data : []),
+    [summariesQ.data],
+  );
 
+  /* oxlint-disable react-doctor/no-event-handler -- the selections below sync to async query data (summaries, stats, scaleConfig) on arrival; no event handler can observe the data load */
   useEffect(() => {
     if (!summaries.length) return;
     const currentSelected = summaries.some(
@@ -661,9 +669,10 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 5 * 60 * 1000 },
   );
 
-  const allAssignments = Array.isArray(allAssignmentsQ.data)
-    ? allAssignmentsQ.data
-    : [];
+  const allAssignments = useMemo(
+    () => (Array.isArray(allAssignmentsQ.data) ? allAssignmentsQ.data : []),
+    [allAssignmentsQ.data],
+  );
 
   const overridesQ = useCachedAsync(
     `grade-performance:assignment-weight-overrides:${demoMode ? "demo" : "live"}`,
@@ -833,6 +842,7 @@ export function GradePerformance({ demoMode = false }) {
       setTargetLetter(scaleConfig.entries[0].value);
     }
   }, [scaleConfig, targetLetter]);
+  /* oxlint-enable react-doctor/no-event-handler */
 
   const needCalculator = useMemo(() => {
     const selected = minNeededCandidates.find(
@@ -1441,36 +1451,35 @@ export function GradePerformance({ demoMode = false }) {
 
   function openEditPopup(assignment) {
     const key = assignmentIdentity(assignment);
-    const row =
-      stats.rows.find((item) => item.key === key) ||
-      buildStats(
-        [assignment],
-        predictedById,
-        weightOverridesById,
-        scoreOverridesById,
-        acceptedGradeKeys,
-        acceptedGradeSources,
-      ).rows[0];
     const scoreOverride = scoreOverridesById?.[key];
-    const canUnlockScore = !!row?.countedAsGraded || !!scoreOverride?.enabled;
+    const overridePoints = Number(weightOverridesById?.[key]?.weight_points);
+    const basePoints = Number(assignment?.points_possible);
+    const effectivePoints =
+      Number.isFinite(overridePoints) && overridePoints > 0
+        ? overridePoints
+        : Number.isFinite(basePoints) && basePoints > 0
+          ? basePoints
+          : NaN;
+
+    let initialScoreInput = "";
+    if (scoreOverride?.enabled && Number.isFinite(Number(scoreOverride.score))) {
+      const rawScore = Number(scoreOverride.score);
+      if (predictPointsMode) {
+        initialScoreInput = fmtNumberInput(rawScore);
+      } else {
+        const pct = toPct(rawScore, effectivePoints);
+        initialScoreInput = pct == null ? "" : fmtNumberInput(pct);
+      }
+    }
+
     setEditingKey(key);
     setEditWeightInput(getWeightInputValue(assignment));
-    setEditUnlockScore(canUnlockScore && !!scoreOverride?.enabled);
-    setEditScoreInput(
-      scoreOverride?.enabled
-        ? String(scoreOverride.score)
-        : Number.isFinite(Number(row?.score))
-          ? String(row.score)
-          : Number.isFinite(Number(assignment?.score))
-            ? String(assignment.score)
-            : "",
-    );
+    setEditScoreInput(initialScoreInput);
   }
 
   function closeEditPopup() {
     setEditingKey("");
     setEditWeightInput("");
-    setEditUnlockScore(false);
     setEditScoreInput("");
   }
 
@@ -1565,7 +1574,10 @@ export function GradePerformance({ demoMode = false }) {
     if (!editingKey) return;
     const assignment = editingAssignment;
     if (!assignment) return;
-    if (editUnlockScore && !canEditUnlockScore) {
+    const scoreInputTrimmed = String(editScoreInput ?? "").trim();
+    const hasScoreOverrideInput = scoreInputTrimmed.length > 0;
+
+    if (hasScoreOverrideInput && !canEditUnlockScore) {
       setWeightMessage(
         "Score override can only be enabled for assignments that already have a graded score.",
       );
@@ -1586,8 +1598,19 @@ export function GradePerformance({ demoMode = false }) {
     setWeightMessage("");
     await applyWeightValue(assignment, editWeightInput);
 
-    if (editUnlockScore) {
-      const nextScore = Number(editScoreInput);
+    if (hasScoreOverrideInput) {
+      const enteredScore = Number(scoreInputTrimmed);
+      let nextScore = enteredScore;
+      if (!predictPointsMode) {
+        const effectivePoints = Number(editingRow?.effectivePoints);
+        if (!Number.isFinite(effectivePoints) || effectivePoints <= 0) {
+          setWeightMessage(
+            "Percent mode requires effective points for this assignment. Set weight/points first.",
+          );
+          return;
+        }
+        nextScore = (enteredScore / 100) * effectivePoints;
+      }
       if (Number.isFinite(nextScore)) {
         const nextScoreOverrides = {
           ...(scoreOverridesById || {}),
@@ -1609,7 +1632,7 @@ export function GradePerformance({ demoMode = false }) {
             : null,
         );
       } else {
-        setWeightMessage("Unlock score is enabled, but score must be numeric.");
+        setWeightMessage("Score override must be numeric.");
         return;
       }
     } else {
@@ -1974,6 +1997,7 @@ export function GradePerformance({ demoMode = false }) {
                             type="number"
                             min="0"
                             step="0.01"
+                            aria-label={`Override weight for ${g.name || "this assignment group"}`}
                             defaultValue={hasOverride ? overrideVal : ""}
                             placeholder={
                               Number.isFinite(canvasWeight)
@@ -2113,6 +2137,40 @@ export function GradePerformance({ demoMode = false }) {
           </div>
 
           <div className="effortPopoverBody">
+            {canEditUnlockScore ? (
+              <label className="gradeCalcField">
+                <span className="muted">
+                  Override score ({predictPointsMode ? "points" : "percent"}) (optional)
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editScoreInput}
+                  onChange={(e) => setEditScoreInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveEditPopup();
+                    }
+                  }}
+                  placeholder={
+                    predictPointsMode
+                      ? "Leave blank to use Canvas score"
+                      : "Leave blank to use Canvas score (%)"
+                  }
+                />
+                <div className="muted">
+                  Enter a value to override score locally in
+                  {predictPointsMode ? " points" : " percent"}. Leave blank to keep the Canvas score.
+                </div>
+              </label>
+            ) : (
+              <div className="muted">
+                Score override is only available for assignments that already
+                have a graded score.
+              </div>
+            )}
+
             <label className="gradeCalcField">
               <span className="muted">Weight / pts override</span>
               <input
@@ -2127,44 +2185,6 @@ export function GradePerformance({ demoMode = false }) {
                 Leave blank or use the Canvas value to clear override.
               </div>
             </label>
-
-            <div className="toggleRow">
-              <span className="muted">Modify locked score</span>
-              <Toggle
-                checked={editUnlockScore}
-                onChange={setEditUnlockScore}
-                label={
-                  editUnlockScore
-                    ? "Disable score override"
-                    : "Enable score override"
-                }
-                disabled={!canEditUnlockScore}
-              />
-            </div>
-
-            {!canEditUnlockScore ? (
-              <div className="muted">
-                Score override is only available for assignments that already
-                have a graded score.
-              </div>
-            ) : null}
-
-            {editUnlockScore ? (
-              <label className="gradeCalcField">
-                <span className="muted">Override score</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editScoreInput}
-                  onChange={(e) => setEditScoreInput(e.target.value)}
-                  placeholder="Enter adjusted score"
-                />
-                <div className="muted">
-                  This score is local to this tab and updates grade
-                  bubbles/calculations.
-                </div>
-              </label>
-            ) : null}
 
             <div className="gradeCalcPopoverActions">
               <button type="button" className="btn" onClick={saveEditPopup}>
@@ -2570,6 +2590,7 @@ export function GradePerformance({ demoMode = false }) {
                                       : "100"
                                   }
                                   step="0.01"
+                                  aria-label="Predicted score for this assignment"
                                   autoFocus
                                   value={draftPredictValue}
                                   placeholder={placeholderVal}

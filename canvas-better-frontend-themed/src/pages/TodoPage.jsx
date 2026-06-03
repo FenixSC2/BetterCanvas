@@ -235,10 +235,11 @@ function TodoItemForm({
   return (
     <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "grid", gap: 4 }}>
-        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+        <label htmlFor="todo-title" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
           Title <span style={{ color: "var(--badge-danger-text)" }}>*</span>
         </label>
         <input
+          id="todo-title"
           ref={titleRef}
           type="text"
           value={title}
@@ -257,13 +258,14 @@ function TodoItemForm({
       </div>
 
       <div style={{ display: "grid", gap: 4 }}>
-        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+        <label htmlFor="todo-due-at" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
           Due date &amp; time{" "}
           <span className="muted" style={{ fontWeight: 400 }}>
             (optional)
           </span>
         </label>
         <input
+          id="todo-due-at"
           type="datetime-local"
           value={dueInput}
           onChange={(e) => {
@@ -275,10 +277,11 @@ function TodoItemForm({
       </div>
 
       <div style={{ display: "grid", gap: 4 }}>
-        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+        <label htmlFor="todo-recurrence" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
           Repeat
         </label>
         <select
+          id="todo-recurrence"
           value={recurrence}
           onChange={(e) => {
             setRecurrence(normalizeRecurrence(e.target.value));
@@ -297,10 +300,11 @@ function TodoItemForm({
 
       {showEditScope && recurrence !== "none" ? (
         <div style={{ display: "grid", gap: 4 }}>
-          <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+          <label htmlFor="todo-edit-scope" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
             Apply edits to
           </label>
           <select
+            id="todo-edit-scope"
             value={editScope}
             onChange={(e) => setEditScope(e.target.value)}
             className="select"
@@ -314,10 +318,11 @@ function TodoItemForm({
 
       {recurrence !== "none" ? (
         <div style={{ display: "grid", gap: 4 }}>
-          <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+          <label htmlFor="todo-workload-reset" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
             On each repeat, reset workload
           </label>
           <select
+            id="todo-workload-reset"
             value={workloadResetMode}
             onChange={(e) => setWorkloadResetMode(normalizeWorkloadResetMode(e.target.value))}
             className="select"
@@ -332,13 +337,14 @@ function TodoItemForm({
       ) : null}
 
       <div style={{ display: "grid", gap: 4 }}>
-        <label style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
+        <label htmlFor="todo-notes" style={{ fontWeight: 700, fontSize: "var(--fontSm)" }}>
           Notes{" "}
           <span className="muted" style={{ fontWeight: 400 }}>
             (optional)
           </span>
         </label>
         <textarea
+          id="todo-notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Add any notes or details…"
@@ -370,6 +376,7 @@ function TodoItemForm({
                   taskInputRefs.current[idx] = node;
                 }}
                 type="text"
+                aria-label={`Task list item ${idx + 1}`}
                 value={row}
                 onChange={(e) => {
                   const next = [...taskRows];
@@ -624,6 +631,7 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, onCreate, isFocuse
             </span>
             <input
               type="datetime-local"
+              aria-label="New due date for repeating task"
               value={repeatDueAt}
               onChange={(e) => setRepeatDueAt(e.target.value)}
               style={{ fontSize: "var(--fontSm)" }}
@@ -679,20 +687,8 @@ function TodoCard({ todo, onToggleComplete, onEdit, onDelete, onCreate, isFocuse
             >
               <button
                 type="button"
-                className="muted"
+                className="muted showNotesToggle"
                 onClick={() => setExpanded((v) => !v)}
-                style={{
-                  background: "var(--surface2)",
-                  border: "1px solid var(--border2)",
-                  borderRadius: "var(--radiusSm)",
-                  cursor: "pointer",
-                  padding: "2px 8px",
-                  fontWeight: 700,
-                  fontSize: "var(--fontSm)",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted",
-                  flexShrink: 0,
-                }}
               >
                 {expanded ? "Hide notes" : "Show notes"}
               </button>
@@ -1178,7 +1174,8 @@ export function TodoPage() {
     );
 
     return { overdue: o, upcoming: u, undated: un, completed: c };
-  }, [todos, workloadTick]);
+    // workloadTick is an intentional invalidation key for favoriteRank (reads localStorage)
+  }, [todos, workloadTick]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   const totalActive = overdue.length + upcoming.length + undated.length;
 
@@ -1311,19 +1308,8 @@ export function TodoPage() {
         <div style={{ marginTop: 4 }}>
           <button
             type="button"
-            className="muted"
+            className="muted completedSectionToggle"
             onClick={() => setCompletedExpanded((v) => !v)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: "var(--fontSm)",
-              paddingBottom: 8,
-              paddingLeft: 0,
-              userSelect: "none",
-              color: "inherit",
-            }}
           >
             Completed ({completed.length}) — click to {completedExpanded ? "hide" : "expand"}
           </button>

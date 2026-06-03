@@ -76,7 +76,6 @@ function getAssignmentId(assignment) {
 }
 
 export function SettingsModal({
-  open,
   onClose,
   demoMode = false,
   onExitDemo = null,
@@ -118,34 +117,24 @@ export function SettingsModal({
   const [hideLoading, setHideLoading] = useState(null); // track which assignment is being hidden
 
   useEffect(() => {
-    if (!open) return;
     function onKeyDown(e) {
       if (e.key === "Escape") onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [onClose]);
 
   useEffect(() => {
-    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open]);
-
-  // Refresh effort drafts when opening modal
-  useEffect(() => {
-    if (!open) return;
-    setSnapDraft(getEffortSnapMinutes());
-    setDefaultModeDraft(getDefaultEffortMode());
-    setEffortEnabledDraft(isEffortTrackingEnabled());
-  }, [open]);
+  }, []);
 
   // Load hidden assignments when opening the hidden assignments section
   useEffect(() => {
-    if (!open || activeSection !== "hidden" || !user) return;
+    if (activeSection !== "hidden" || !user) return;
 
     setHiddenLoading(true);
     Promise.all([
@@ -167,7 +156,7 @@ export function SettingsModal({
       .finally(() => {
         setHiddenLoading(false);
       });
-  }, [open, activeSection, user]);
+  }, [activeSection, user]);
 
   const sections = useMemo(
     () => [
@@ -179,8 +168,6 @@ export function SettingsModal({
     ],
     [],
   );
-
-  if (!open) return null;
 
   function applySnap() {
     // sanitize: integer minutes, min 1
@@ -448,6 +435,7 @@ export function SettingsModal({
                           <div style={{ fontWeight: 700, marginBottom: 6, fontSize: "var(--fontSm)" }}>Background</div>
                           <input
                             type="color"
+                            aria-label="Background color"
                             value={customColors.primary}
                             onChange={(e) => setCustomColors({ ...customColors, primary: e.target.value })}
                             style={{ width: 44, height: 36, border: "1px solid var(--border2)", borderRadius: "var(--radiusSm)", cursor: "pointer", padding: 2, background: "none" }}
@@ -457,6 +445,7 @@ export function SettingsModal({
                           <div style={{ fontWeight: 700, marginBottom: 6, fontSize: "var(--fontSm)" }}>Cards & surfaces</div>
                           <input
                             type="color"
+                            aria-label="Cards and surfaces color"
                             value={customColors.secondary}
                             onChange={(e) => setCustomColors({ ...customColors, secondary: e.target.value })}
                             style={{ width: 44, height: 36, border: "1px solid var(--border2)", borderRadius: "var(--radiusSm)", cursor: "pointer", padding: 2, background: "none" }}
@@ -505,16 +494,7 @@ export function SettingsModal({
                     <select
                       value={font}
                       onChange={(e) => setFont(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "8px 2.5rem 8px 10px",
-                        borderRadius: "var(--radiusSm)",
-                        border: "1px solid var(--border2)",
-                        background: "var(--surface2)",
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        fontSize: "var(--fontBase)",
-                      }}
+                      className="settingsFontSelect"
                     >
                       {FONT_OPTIONS.map((opt) => (
                         <option key={opt.key} value={opt.key} style={{ fontFamily: opt.css }}>
@@ -583,6 +563,7 @@ export function SettingsModal({
                         type="button"
                         role="switch"
                         aria-checked={plannerSettings.showPersonalTodos}
+                        aria-label="Show personal to-do items"
                         className="toggle"
                         onClick={() => {
                           const newValue = !plannerSettings.showPersonalTodos;
@@ -687,6 +668,7 @@ export function SettingsModal({
                         className="effortInput"
                         type="text"
                         inputMode="numeric"
+                        aria-label="Drag snapping increment in minutes"
                         value={snapDraft}
                         onChange={(e) => setSnapDraft(e.target.value)}
                         onKeyDown={(e) => {
@@ -734,6 +716,7 @@ export function SettingsModal({
                           </div>
                           <input
                             type="text"
+                            aria-label="Search assignments to hide"
                             placeholder="Search by assignment name..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
