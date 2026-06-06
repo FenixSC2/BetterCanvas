@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Impeccable code analysis results
+.impeccable/
+
+# Design documents
+PRODUCT.md
+DESIGN.md
