@@ -9,6 +9,14 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 
 import { useCachedAsync, clearCachedAsync } from "../hooks/useCachedAsync";
 import { makeTodoId, createTodoItem, loadTodos } from "../lib/todoStore";
+import { isDemoMode } from "../lib/storagePolicy";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 import { useAuth } from "../hooks/useAuth";
 import { formatCourseTitle } from "../utils/courseUtils";
 
@@ -272,11 +280,41 @@ function safeJsonParse(raw, fallback) {
 }
 
 
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      className="toggle"
+    >
+      <span className={`toggleTrack ${checked ? "on" : "off"}`}>
+        <span className={`toggleThumb ${checked ? "on" : ""}`} />
+      </span>
+    </button>
+  );
+}
+
 export function MyInformation({ active = true }) {
   const { hasToken } = useAuth();
   const notif = useDesktopNotifications(hasToken);
-  const [heroGreeting, setHeroGreeting] = useState("");
   const lastGreetingRef = useRef("");
+  const heroGreeting = useMemo(() => {
+    if (!active) return lastGreetingRef.current;
+    const next = pickRandomWithoutRepeat(
+      greetingOptionsFor(new Date()),
+      lastGreetingRef.current,
+    );
+    lastGreetingRef.current = next;
+    return next;
+  }, [active]);
 
   // ✅ Cached API data (prevents "No info" flash on tab switch)
   const profileQ = useCachedAsync(
@@ -327,17 +365,7 @@ export function MyInformation({ active = true }) {
     annRefreshRef.current?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!active) return;
-    const next = pickRandomWithoutRepeat(
-      greetingOptionsFor(new Date()),
-      lastGreetingRef.current,
-    );
-    lastGreetingRef.current = next;
-    setHeroGreeting(next);
-  }, [active]);
-
-  const announcements = announcementsQ.data || [];
+  const announcements = useMemo(() => announcementsQ.data || [], [announcementsQ.data]);
   const annErr = announcementsQ.error;
 
   // Show the announcements loading state if we're actively loading OR have never
@@ -353,6 +381,36 @@ export function MyInformation({ active = true }) {
 
   // Seen tracking
   const [seenIds, setSeenIds] = useState(() => new Set());
+  const demoMode = isDemoMode();
+  const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
+    loadAcceptedGradeKeys(),
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (active) setAcceptedGradeKeys(next);
+      })
+      .catch(() => {
+        // Keep local fallback if server sync fails.
+      });
+
+    function refreshAccepted() {
+      setAcceptedGradeKeys(loadAcceptedGradeKeys());
+    }
+
+    window.addEventListener("focus", refreshAccepted);
+    window.addEventListener("storage", refreshAccepted);
+    window.addEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshAccepted);
+      window.removeEventListener("storage", refreshAccepted);
+      window.removeEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+    };
+  }, []);
 
   // Add-announcement-to-todo state: maps announcement id → { date, status }
   const [todoFormById, setTodoFormById] = useState({});
@@ -421,28 +479,6 @@ export function MyInformation({ active = true }) {
     }
   }, [showGpaCollapsed]);
 
-  function Toggle({ checked, onChange, label }) {
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onChange(!checked);
-        }}
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        title={label}
-        className="toggle"
-      >
-        <span className={`toggleTrack ${checked ? "on" : "off"}`}>
-          <span className={`toggleThumb ${checked ? "on" : ""}`} />
-        </span>
-      </button>
-    );
-  }
-
   const SEEN_KEY = "announcements:seenIds";
 
   // DB-backed high-water mark: the ID of the newest announcement the user has
@@ -452,14 +488,33 @@ export function MyInformation({ active = true }) {
   const lastSeenIdRef = useRef(0);
 
   useEffect(() => {
+    if (demoMode) {
+      setLastSeenIdFromDb(0);
+      lastSeenIdRef.current = 0;
+      return;
+    }
     canvasApi.getAnnouncementLastSeen().then((res) => {
       const id = res?.last_seen_id ?? 0;
       setLastSeenIdFromDb(id);
       lastSeenIdRef.current = id;
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [demoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const missingCount = overview?.missing_count ?? 0;
+  const missingItems = useMemo(
+    () => (Array.isArray(overview?.missing) ? overview.missing : []),
+    [overview?.missing],
+  );
+  const filteredMissingItems = useMemo(
+    () =>
+      missingItems.filter(
+        (m) =>
+          !acceptedGradeKeys.has(
+            acceptedGradeKey(m?.course_id, m?.assignment_id),
+          ),
+      ),
+    [missingItems, acceptedGradeKeys],
+  );
+  const missingCount = filteredMissingItems.length;
   const canvasDue24Count = overview?.due_next_24h_count ?? 0;
   const due24Count = canvasDue24Count + todosDue24h.length;
   const gpa = overview?.gpa;
@@ -484,11 +539,25 @@ export function MyInformation({ active = true }) {
   // when announcements finish loading while the dropdown is already open.
   const [annIsOpen, setAnnIsOpen] = useState(false);
 
-  // NEW badge count — based on DB high-water mark so it persists across sessions
+  function newestAnnouncementId(items) {
+    let newest = 0;
+    for (const a of items || []) {
+      const id = Number(a?.id);
+      if (Number.isFinite(id) && id > newest) newest = id;
+    }
+    return newest;
+  }
+
+  // NEW badge count:
+  // - live mode: DB-backed high-water mark (cross-session persistence)
+  // - demo mode: local seen set (server intentionally returns no persisted seen state)
   const newAnnouncementCount = useMemo(() => {
     if (!announcements?.length) return 0;
+    if (demoMode) {
+      return announcements.filter((a) => a?.id && !seenIds.has(Number(a.id))).length;
+    }
     return announcements.filter((a) => a?.id && a.id > lastSeenIdFromDb).length;
-  }, [announcements, lastSeenIdFromDb]);
+  }, [announcements, demoMode, seenIds, lastSeenIdFromDb]);
 
   function persistSeen(nextSet) {
     setSeenIds(new Set(nextSet));
@@ -515,7 +584,9 @@ export function MyInformation({ active = true }) {
     }
     persistSeen(next);
 
-    const newestId = announcements?.[0]?.id ?? 0;
+    if (demoMode) return;
+
+    const newestId = newestAnnouncementId(announcements);
     if (newestId && newestId > lastSeenIdRef.current) {
       lastSeenIdRef.current = newestId;
       setLastSeenIdFromDb(newestId);
@@ -524,12 +595,16 @@ export function MyInformation({ active = true }) {
   }
 
   // If the dropdown is already open when announcements finish loading, mark them seen.
-  // This handles the case where the user opens the section before the fetch completes.
+  // This handles the case where the user opens the section before the fetch completes —
+  // the onOpen handler can't observe an async fetch that completes later.
+  /* oxlint-disable react-doctor/no-event-handler -- handles "data arrived while dropdown was already open" which no handler can intercept */
   useEffect(() => {
     if (annIsOpen && announcements?.length) {
       markAllAnnouncementsSeen();
     }
-  }, [announcements]); // eslint-disable-line react-hooks/exhaustive-deps
+    // markAllAnnouncementsSeen reads state through closure; including it would re-fire every render
+  }, [announcements, annIsOpen]); // oxlint-disable-line react-doctor/exhaustive-deps
+  /* oxlint-enable react-doctor/no-event-handler */
 
   // Load seenIds after mount
   useEffect(() => {
@@ -604,6 +679,22 @@ export function MyInformation({ active = true }) {
 
   function handleDisableNotifications() {
     notif.setEnabled(false);
+  }
+
+  async function markCompleted(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_completed",
+      );
+    } catch {
+      // Keep optimistic local state.
+    }
   }
 
   function htmlToPrettyText(html) {
@@ -1058,7 +1149,7 @@ export function MyInformation({ active = true }) {
           </div>
         ) : (
           <ul className="list listSpaced">
-            {overview.missing.map((m) => {
+            {filteredMissingItems.map((m) => {
               const titleText = (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   {m?.name || "Untitled assignment"}
@@ -1100,6 +1191,16 @@ export function MyInformation({ active = true }) {
                       Open in Canvas
                     </a>
                   ) : null}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      void markCompleted(m.course_id, m.assignment_id);
+                    }}
+                    title="Mark completed and stop showing this as missing"
+                  >
+                    Mark completed
+                  </button>
                   <WorkloadEstimateControl
                     courseId={m.course_id}
                     assignmentId={m.assignment_id}
@@ -1149,28 +1250,15 @@ export function MyInformation({ active = true }) {
               onMouseLeave={() => setGpaInfoOpen(false)}
               onFocus={openGpaInfo}
               onBlur={() => setGpaInfoOpen(false)}
-              style={{ width: 18, height: 18, fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+              style={{ width: 18, height: 18, fontSize: 12, fontWeight: 700, flexShrink: 0 }}
             >
               i
             </button>
             {gpaInfoOpen && createPortal(
-              <div style={{
-                position: "fixed",
-                top: gpaInfoPos.top,
-                left: gpaInfoPos.left,
-                transform: "translateY(-50%)",
-                zIndex: 9999,
-                width: "min(280px, 72vw)",
-                padding: "10px 12px",
-                borderRadius: "var(--radiusSm)",
-                border: "1px solid var(--border2)",
-                background: "var(--surface)",
-                color: "var(--text)",
-                fontSize: "var(--fontSm)",
-                lineHeight: 1.45,
-                boxShadow: "var(--shadow)",
-                pointerEvents: "none",
-              }}>
+              <div
+                className="gpaInfoTooltip"
+                style={{ top: gpaInfoPos.top, left: gpaInfoPos.left }}
+              >
                 This GPA is calculated from your current semester courses only.
               </div>,
               document.body
@@ -1302,11 +1390,12 @@ export function MyInformation({ active = true }) {
 
               <div className="rowWrap" style={{ gap: 10 }}>
                 {notificationsOn ? (
-                  <button className="btn" onClick={handleDisableNotifications}>
+                  <button type="button" className="btn" onClick={handleDisableNotifications}>
                     Disable notifications
                   </button>
                 ) : (
                   <button
+                    type="button"
                     className="btn"
                     onClick={handleEnableNotifications}
                     disabled={notif.permission === "denied"}
@@ -1321,6 +1410,7 @@ export function MyInformation({ active = true }) {
                 )}
 
                 <button
+                  type="button"
                   className="btn"
                   onClick={() => clearNotificationHistory()}
                   title="Allows alerts to fire again for the same assignments"
@@ -1329,6 +1419,7 @@ export function MyInformation({ active = true }) {
                 </button>
 
                 <button
+                  type="button"
                   className="btn"
                   disabled={notif.permission !== "granted"}
                   onClick={() => {

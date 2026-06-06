@@ -23,11 +23,6 @@ export function AuthProvider({ children }) {
   const [tokenExpired, setTokenExpired] = useState(false);
   const loggingInRef = useRef(false);
 
-  // Check if user is logged in on mount
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
   // Listen for 401 unauthorized events from API
   useEffect(() => {
     function handleUnauthorized() {
@@ -94,6 +89,11 @@ export function AuthProvider({ children }) {
       setLoading(false);
     }
   }, []);
+
+  // Check if user is logged in on mount. checkAuth is a useCallback([]) so it is stable.
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   const login = useCallback(async (email, password) => {
     loggingInRef.current = true;

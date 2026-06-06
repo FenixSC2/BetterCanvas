@@ -12,8 +12,12 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { formatCourseTitle } from "../utils/courseUtils";
 import {
   loadAcceptedGradeKeys,
+  loadAcceptedGradeSources,
   acceptedGradeKey,
-  markGradeAccepted,
+  acceptedGradeSourceFor,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+  hydrateAcceptedGradeKeysFromServer,
 } from "../lib/acceptedGrades";
 
 const STANDARD_SCALE = [
@@ -63,6 +67,12 @@ function fmtPoints(v) {
 
 function assignmentIdentity(a) {
   return `${a.course_id}:${a.id}`;
+}
+
+function fmtNumberInput(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  return String(Number(n.toFixed(2)));
 }
 
 function hasExplicitPrediction(raw) {
@@ -222,6 +232,8 @@ function buildStats(
   predictedById,
   weightOverridesById,
   scoreOverridesById,
+  acceptedGradeKeys,
+  acceptedGradeSources,
 ) {
   let gradedEarned = 0;
   let gradedPossible = 0;
@@ -253,7 +265,21 @@ function buildStats(
         ? overrideScore
         : Number(assignment?.score);
     const hasRawScore = Number.isFinite(score);
-    const submitted = assignment?.submitted === true;
+    const acceptedKey = acceptedGradeKey(assignment?.course_id, assignment?.id);
+    const accepted = acceptedGradeKeys?.has(acceptedKey);
+    const acceptedSource = accepted
+      ? acceptedGradeSourceFor(
+          acceptedGradeSources,
+          assignment?.course_id,
+          assignment?.id,
+        )
+      : null;
+    const hasRealCanvasGrade =
+      assignment?.submitted === true && hasRawScore && score > 0;
+    const keepUngradedMode =
+      accepted && acceptedSource === "manual_ungraded" && !hasRealCanvasGrade;
+    const submitted =
+      assignment?.submitted === true || (accepted && !keepUngradedMode);
     const countedAsGraded =
       hasEffectivePoints && hasRawScore && (submitted || overrideEnabled);
     const pendingScore = hasEffectivePoints && hasRawScore && !submitted;
@@ -294,6 +320,10 @@ function buildStats(
       hasEffectivePoints,
       score,
       hasRawScore,
+      accepted,
+      acceptedSource,
+      hasRealCanvasGrade,
+      keepUngradedMode,
       submitted,
       countedAsGraded,
       pendingScore,
@@ -461,12 +491,11 @@ function AnchoredPopover({
   return createPortal(
     <div
       ref={panelRef}
+      className="anchoredPopoverFixed"
       style={{
-        position: "fixed",
         top: pos.top,
         left: pos.left,
         width,
-        zIndex: 9999,
       }}
     >
       {children}
@@ -511,14 +540,79 @@ export function GradePerformance({ demoMode = false }) {
   const [editingKey, setEditingKey] = useState("");
   const [editWeightInput, setEditWeightInput] = useState("");
   const [editingPredictionKey, setEditingPredictionKey] = useState(null);
-  const [editUnlockScore, setEditUnlockScore] = useState(false);
   const [editScoreInput, setEditScoreInput] = useState("");
   const [lastProjectionDelta, setLastProjectionDelta] = useState(null);
   const editAnchorRefs = useRef({});
+  const autoPromoteInFlightRef = useRef(new Set());
   const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() => loadAcceptedGradeKeys());
+  const [acceptedGradeSources, setAcceptedGradeSources] = useState(() =>
+    loadAcceptedGradeSources(),
+  );
 
-  function acceptGrade(courseId, assignmentId) {
-    setAcceptedGradeKeys((prev) => markGradeAccepted(prev, courseId, assignmentId));
+  useEffect(() => {
+    let active = true;
+
+    hydrateAcceptedGradeKeysFromServer()
+      .then((next) => {
+        if (!active) return;
+        setAcceptedGradeKeys(next);
+        setAcceptedGradeSources(loadAcceptedGradeSources());
+      })
+      .catch(() => {
+        // Keep local fallback if server sync fails.
+      });
+
+    function refreshFromLocal() {
+      setAcceptedGradeKeys(loadAcceptedGradeKeys());
+      setAcceptedGradeSources(loadAcceptedGradeSources());
+    }
+
+    window.addEventListener("focus", refreshFromLocal);
+    window.addEventListener("storage", refreshFromLocal);
+    window.addEventListener("canvassist:accepted-grades:changed", refreshFromLocal);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshFromLocal);
+      window.removeEventListener("storage", refreshFromLocal);
+      window.removeEventListener("canvassist:accepted-grades:changed", refreshFromLocal);
+    };
+  }, []);
+
+  async function acceptGrade(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "accepted_grade",
+      );
+    } catch {
+      // Keep optimistic local state; background sync can recover later.
+    }
+  }
+
+  async function markNotGraded(courseId, assignmentId) {
+    setAcceptedGradeKeys((prev) =>
+      markAssignmentCompletedLocal(prev, courseId, assignmentId),
+    );
+    setAcceptedGradeSources((prev) => ({
+      ...(prev || {}),
+      [acceptedGradeKey(courseId, assignmentId)]: "manual_ungraded",
+    }));
+    try {
+      await markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        courseId,
+        assignmentId,
+        "manual_ungraded",
+      );
+      setAcceptedGradeSources(loadAcceptedGradeSources());
+    } catch {
+      // Keep optimistic local state; background sync can recover later.
+    }
   }
 
   const summariesQ = useCachedAsync(
@@ -527,8 +621,12 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 5 * 60 * 1000 },
   );
 
-  const summaries = Array.isArray(summariesQ.data) ? summariesQ.data : [];
+  const summaries = useMemo(
+    () => (Array.isArray(summariesQ.data) ? summariesQ.data : []),
+    [summariesQ.data],
+  );
 
+  /* oxlint-disable react-doctor/no-event-handler -- the selections below sync to async query data (summaries, stats, scaleConfig) on arrival; no event handler can observe the data load */
   useEffect(() => {
     if (!summaries.length) return;
     const currentSelected = summaries.some(
@@ -571,9 +669,10 @@ export function GradePerformance({ demoMode = false }) {
     { ttlMs: 5 * 60 * 1000 },
   );
 
-  const allAssignments = Array.isArray(allAssignmentsQ.data)
-    ? allAssignmentsQ.data
-    : [];
+  const allAssignments = useMemo(
+    () => (Array.isArray(allAssignmentsQ.data) ? allAssignmentsQ.data : []),
+    [allAssignmentsQ.data],
+  );
 
   const overridesQ = useCachedAsync(
     `grade-performance:assignment-weight-overrides:${demoMode ? "demo" : "live"}`,
@@ -695,12 +794,16 @@ export function GradePerformance({ demoMode = false }) {
         predictedById,
         weightOverridesById,
         scoreOverridesById,
+        acceptedGradeKeys,
+        acceptedGradeSources,
       ),
     [
       selectedCourseAssignments,
       predictedById,
       weightOverridesById,
       scoreOverridesById,
+      acceptedGradeKeys,
+      acceptedGradeSources,
     ],
   );
 
@@ -739,6 +842,7 @@ export function GradePerformance({ demoMode = false }) {
       setTargetLetter(scaleConfig.entries[0].value);
     }
   }, [scaleConfig, targetLetter]);
+  /* oxlint-enable react-doctor/no-event-handler */
 
   const needCalculator = useMemo(() => {
     const selected = minNeededCandidates.find(
@@ -872,6 +976,8 @@ export function GradePerformance({ demoMode = false }) {
         predictedById,
         weightOverridesById,
         scoreOverridesById,
+        acceptedGradeKeys,
+        acceptedGradeSources,
       ).rows[0] ||
       null
     );
@@ -882,11 +988,38 @@ export function GradePerformance({ demoMode = false }) {
     predictedById,
     weightOverridesById,
     scoreOverridesById,
+    acceptedGradeKeys,
+    acceptedGradeSources,
   ]);
 
   const canEditUnlockScore =
     !!editingRow?.countedAsGraded ||
     !!scoreOverridesById?.[editingKey]?.enabled;
+
+  useEffect(() => {
+    const rowsToPromote = stats.rows.filter(
+      (row) => row?.acceptedSource === "manual_ungraded" && row?.hasRealCanvasGrade,
+    );
+    if (rowsToPromote.length === 0) return;
+
+    for (const row of rowsToPromote) {
+      const key = acceptedGradeKey(row.assignment?.course_id, row.assignment?.id);
+      if (autoPromoteInFlightRef.current.has(key)) continue;
+      autoPromoteInFlightRef.current.add(key);
+      void markAssignmentCompletedRemote(
+        loadAcceptedGradeKeys(),
+        row.assignment?.course_id,
+        row.assignment?.id,
+        "manual_completed",
+      )
+        .then(() => {
+          setAcceptedGradeSources(loadAcceptedGradeSources());
+        })
+        .finally(() => {
+          autoPromoteInFlightRef.current.delete(key);
+        });
+    }
+  }, [stats.rows]);
 
   const editingAnchorEl = editingKey
     ? editAnchorRefs.current[editingKey] || null
@@ -1033,6 +1166,19 @@ export function GradePerformance({ demoMode = false }) {
     return `badge ${showGrades ? classWhenShown : "badgeNeutral"}`;
   }
 
+  function shouldTreatAsSubmitted(assignment) {
+    if (assignment?.submitted === true) return true;
+    const key = acceptedGradeKey(assignment?.course_id, assignment?.id);
+    if (!acceptedGradeKeys.has(key)) return false;
+    const source = acceptedGradeSourceFor(
+      acceptedGradeSources,
+      assignment?.course_id,
+      assignment?.id,
+    );
+    if (source !== "manual_ungraded") return true;
+    return assignment?.submitted === true && Number(assignment?.score) > 0;
+  }
+
   function computeDisplayedProjectedPercent(
     assignments,
     nextPredictedById,
@@ -1044,6 +1190,8 @@ export function GradePerformance({ demoMode = false }) {
       nextPredictedById,
       nextWeightOverridesById,
       nextScoreOverridesById,
+      acceptedGradeKeys,
+      acceptedGradeSources,
     );
     return nextStats.projectedPercent ?? nextStats.currentKnownPercent;
   }
@@ -1198,7 +1346,7 @@ export function GradePerformance({ demoMode = false }) {
       const hasEffectivePoints =
         (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
         (Number.isFinite(basePoints) && basePoints > 0);
-      const submitted = assignment?.submitted === true;
+      const submitted = shouldTreatAsSubmitted(assignment);
       const hasScore = Number.isFinite(Number(assignment?.score));
       if (!hasEffectivePoints || (submitted && hasScore)) continue;
       next[key] = String(defaultPred);
@@ -1237,7 +1385,7 @@ export function GradePerformance({ demoMode = false }) {
       const hasEffectivePoints =
         (Number.isFinite(effectiveWeight) && effectiveWeight > 0) ||
         (Number.isFinite(basePoints) && basePoints > 0);
-      const submitted = assignment?.submitted === true;
+      const submitted = shouldTreatAsSubmitted(assignment);
       const hasScore = Number.isFinite(Number(assignment?.score));
       if (!hasEffectivePoints || (submitted && hasScore)) continue;
       next[key] = String(defaultPred);
@@ -1303,34 +1451,35 @@ export function GradePerformance({ demoMode = false }) {
 
   function openEditPopup(assignment) {
     const key = assignmentIdentity(assignment);
-    const row =
-      stats.rows.find((item) => item.key === key) ||
-      buildStats(
-        [assignment],
-        predictedById,
-        weightOverridesById,
-        scoreOverridesById,
-      ).rows[0];
     const scoreOverride = scoreOverridesById?.[key];
-    const canUnlockScore = !!row?.countedAsGraded || !!scoreOverride?.enabled;
+    const overridePoints = Number(weightOverridesById?.[key]?.weight_points);
+    const basePoints = Number(assignment?.points_possible);
+    const effectivePoints =
+      Number.isFinite(overridePoints) && overridePoints > 0
+        ? overridePoints
+        : Number.isFinite(basePoints) && basePoints > 0
+          ? basePoints
+          : NaN;
+
+    let initialScoreInput = "";
+    if (scoreOverride?.enabled && Number.isFinite(Number(scoreOverride.score))) {
+      const rawScore = Number(scoreOverride.score);
+      if (predictPointsMode) {
+        initialScoreInput = fmtNumberInput(rawScore);
+      } else {
+        const pct = toPct(rawScore, effectivePoints);
+        initialScoreInput = pct == null ? "" : fmtNumberInput(pct);
+      }
+    }
+
     setEditingKey(key);
     setEditWeightInput(getWeightInputValue(assignment));
-    setEditUnlockScore(canUnlockScore && !!scoreOverride?.enabled);
-    setEditScoreInput(
-      scoreOverride?.enabled
-        ? String(scoreOverride.score)
-        : Number.isFinite(Number(row?.score))
-          ? String(row.score)
-          : Number.isFinite(Number(assignment?.score))
-            ? String(assignment.score)
-            : "",
-    );
+    setEditScoreInput(initialScoreInput);
   }
 
   function closeEditPopup() {
     setEditingKey("");
     setEditWeightInput("");
-    setEditUnlockScore(false);
     setEditScoreInput("");
   }
 
@@ -1425,7 +1574,10 @@ export function GradePerformance({ demoMode = false }) {
     if (!editingKey) return;
     const assignment = editingAssignment;
     if (!assignment) return;
-    if (editUnlockScore && !canEditUnlockScore) {
+    const scoreInputTrimmed = String(editScoreInput ?? "").trim();
+    const hasScoreOverrideInput = scoreInputTrimmed.length > 0;
+
+    if (hasScoreOverrideInput && !canEditUnlockScore) {
       setWeightMessage(
         "Score override can only be enabled for assignments that already have a graded score.",
       );
@@ -1446,8 +1598,19 @@ export function GradePerformance({ demoMode = false }) {
     setWeightMessage("");
     await applyWeightValue(assignment, editWeightInput);
 
-    if (editUnlockScore) {
-      const nextScore = Number(editScoreInput);
+    if (hasScoreOverrideInput) {
+      const enteredScore = Number(scoreInputTrimmed);
+      let nextScore = enteredScore;
+      if (!predictPointsMode) {
+        const effectivePoints = Number(editingRow?.effectivePoints);
+        if (!Number.isFinite(effectivePoints) || effectivePoints <= 0) {
+          setWeightMessage(
+            "Percent mode requires effective points for this assignment. Set weight/points first.",
+          );
+          return;
+        }
+        nextScore = (enteredScore / 100) * effectivePoints;
+      }
       if (Number.isFinite(nextScore)) {
         const nextScoreOverrides = {
           ...(scoreOverridesById || {}),
@@ -1469,7 +1632,7 @@ export function GradePerformance({ demoMode = false }) {
             : null,
         );
       } else {
-        setWeightMessage("Unlock score is enabled, but score must be numeric.");
+        setWeightMessage("Score override must be numeric.");
         return;
       }
     } else {
@@ -1834,6 +1997,7 @@ export function GradePerformance({ demoMode = false }) {
                             type="number"
                             min="0"
                             step="0.01"
+                            aria-label={`Override weight for ${g.name || "this assignment group"}`}
                             defaultValue={hasOverride ? overrideVal : ""}
                             placeholder={
                               Number.isFinite(canvasWeight)
@@ -1973,6 +2137,40 @@ export function GradePerformance({ demoMode = false }) {
           </div>
 
           <div className="effortPopoverBody">
+            {canEditUnlockScore ? (
+              <label className="gradeCalcField">
+                <span className="muted">
+                  Override score ({predictPointsMode ? "points" : "percent"}) (optional)
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editScoreInput}
+                  onChange={(e) => setEditScoreInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveEditPopup();
+                    }
+                  }}
+                  placeholder={
+                    predictPointsMode
+                      ? "Leave blank to use Canvas score"
+                      : "Leave blank to use Canvas score (%)"
+                  }
+                />
+                <div className="muted">
+                  Enter a value to override score locally in
+                  {predictPointsMode ? " points" : " percent"}. Leave blank to keep the Canvas score.
+                </div>
+              </label>
+            ) : (
+              <div className="muted">
+                Score override is only available for assignments that already
+                have a graded score.
+              </div>
+            )}
+
             <label className="gradeCalcField">
               <span className="muted">Weight / pts override</span>
               <input
@@ -1987,44 +2185,6 @@ export function GradePerformance({ demoMode = false }) {
                 Leave blank or use the Canvas value to clear override.
               </div>
             </label>
-
-            <div className="toggleRow">
-              <span className="muted">Modify locked score</span>
-              <Toggle
-                checked={editUnlockScore}
-                onChange={setEditUnlockScore}
-                label={
-                  editUnlockScore
-                    ? "Disable score override"
-                    : "Enable score override"
-                }
-                disabled={!canEditUnlockScore}
-              />
-            </div>
-
-            {!canEditUnlockScore ? (
-              <div className="muted">
-                Score override is only available for assignments that already
-                have a graded score.
-              </div>
-            ) : null}
-
-            {editUnlockScore ? (
-              <label className="gradeCalcField">
-                <span className="muted">Override score</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editScoreInput}
-                  onChange={(e) => setEditScoreInput(e.target.value)}
-                  placeholder="Enter adjusted score"
-                />
-                <div className="muted">
-                  This score is local to this tab and updates grade
-                  bubbles/calculations.
-                </div>
-              </label>
-            ) : null}
 
             <div className="gradeCalcPopoverActions">
               <button type="button" className="btn" onClick={saveEditPopup}>
@@ -2327,6 +2487,8 @@ export function GradePerformance({ demoMode = false }) {
                     predictedById,
                     weightOverridesById,
                     scoreOverridesById,
+                    acceptedGradeKeys,
+                    acceptedGradeSources,
                   ).rows[0];
                 const courseLabel =
                   searchScope === "all" ? formatCourseTitle(assignment?.course_name) : null;
@@ -2341,6 +2503,8 @@ export function GradePerformance({ demoMode = false }) {
                 let statusText = "Not submitted or scored";
                 if (row?.countedAsGraded) {
                   statusText = hasScoreOverride ? "Score unlocked" : "Submitted and scored";
+                } else if (row?.keepUngradedMode) {
+                  statusText = "Marked complete, awaiting grade";
                 } else if (row?.pendingScore) {
                   statusText = "Scored but not submitted";
                 } else if (assignment?.submitted === true) {
@@ -2426,6 +2590,7 @@ export function GradePerformance({ demoMode = false }) {
                                       : "100"
                                   }
                                   step="0.01"
+                                  aria-label="Predicted score for this assignment"
                                   autoFocus
                                   value={draftPredictValue}
                                   placeholder={placeholderVal}
@@ -2572,9 +2737,27 @@ export function GradePerformance({ demoMode = false }) {
                             type="button"
                             className="btn"
                             title="Accept the current grade and stop showing this as missing in Upcoming"
-                            onClick={() => acceptGrade(assignment.course_id, assignment.id)}
+                            onClick={() => {
+                              void acceptGrade(assignment.course_id, assignment.id);
+                            }}
                           >
                             Accept grade
+                          </button>
+                        ) : null}
+                        {(row?.countedAsGraded ||
+                          assignment?.submitted === true ||
+                          !!assignment?.graded_at) &&
+                        row?.acceptedSource !== "manual_ungraded" &&
+                        (!Number.isFinite(Number(row?.score)) || Number(row?.score) <= 0) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            title="Keep this assignment complete, but treat it as not graded yet"
+                            onClick={() => {
+                              void markNotGraded(assignment.course_id, assignment.id);
+                            }}
+                          >
+                            Mark not graded
                           </button>
                         ) : null}
                         <button

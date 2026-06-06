@@ -328,12 +328,13 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           )}
         </footer>
 
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          demoMode={demoMode}
-          onExitDemo={onExitDemo}
-        />
+        {settingsOpen && (
+          <SettingsModal
+            onClose={() => setSettingsOpen(false)}
+            demoMode={demoMode}
+            onExitDemo={onExitDemo}
+          />
+        )}
       </div>
     </ThemeProvider>
   );

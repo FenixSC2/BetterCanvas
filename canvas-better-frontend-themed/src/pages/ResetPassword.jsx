@@ -95,8 +95,9 @@ export function ResetPassword() {
 
         <form onSubmit={handleSubmit} className="authForm">
           <div className="authField">
-            <label>New password</label>
+            <label htmlFor="reset-new-password">New password</label>
             <input
+              id="reset-new-password"
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -108,8 +109,9 @@ export function ResetPassword() {
           </div>
 
           <div className="authField">
-            <label>Confirm new password</label>
+            <label htmlFor="reset-confirm-password">Confirm new password</label>
             <input
+              id="reset-confirm-password"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

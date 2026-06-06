@@ -1908,9 +1908,9 @@ details.expandable > .cardBody,
 
 /* ===== UpcomingAssignments layout ===== */
 .assignmentRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  align-items: start;
   gap: 16px;
   width: 100%;
 }
@@ -1990,15 +1990,40 @@ details.expandable > .cardBody,
   width: 100%;
 }
 
+.assignmentRow > .assignmentDetails {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 0 var(--cardPad) var(--cardPad) var(--cardPad);
+}
+
+.assignmentRowMissing .assignmentControls .effortWidget {
+  max-width: 760px;
+}
+
+.assignmentRowMissing .assignmentControls .effortTopRow {
+  align-items: flex-start;
+}
+
+.assignmentRowMissing .assignmentControls .effortNumbers {
+  gap: 6px;
+}
+
 .assignmentActions {
-  flex: 0 0 auto;
+  justify-self: stretch;
   padding: var(--cardPad);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
   min-width: 0;
+  width: 100%;
   padding-top: calc(var(--cardPad) + 2px);
+}
+
+.assignmentActions .btn,
+.assignmentActions a.btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .assignmentDueRight {
@@ -2009,7 +2034,7 @@ details.expandable > .cardBody,
 
 @media (max-width: 1180px) {
   .assignmentRow {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     gap: 8px;
   }
@@ -2017,6 +2042,12 @@ details.expandable > .cardBody,
   .assignmentActions {
     align-items: flex-start;
     padding-top: 0;
+    width: 100%;
+  }
+
+  .assignmentActions .btn,
+  .assignmentActions a.btn {
+    width: auto;
   }
 
   .assignmentDueRight {
@@ -2084,6 +2115,37 @@ details.expandable > .cardBody,
   -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
   box-shadow: var(--shadow), var(--highlight-inset);
   overflow: hidden;
+}
+
+.upcomingControlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.upcomingControlsToolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.upcomingControlsBtn {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .upcomingControlsToolbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .upcomingControlsBtn {
+    flex: 1 1 160px;
+  }
 }
 
 .upcomingPanelHeader {
@@ -2906,10 +2968,18 @@ details.expandable > .cardBody,
   min-height: 0; /* critical for nested flex scroll areas */
 }
 
-/* ---- The ONLY scroller is .plannerDayList (inline styles own sizing) ---- */
+/* ---- The ONLY scroller is .plannerDayList ---- */
 .plannerDayList {
-  /* Do NOT set overflow/max-height/min-height/padding here:
-     WeeklyPlanner.jsx already sets those inline. */
+  flex: 1;
+  height: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-top: 0;
+  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 
   scrollbar-gutter: stable;
   isolation: isolate; /* ensures overlays paint above list content cleanly */
@@ -3657,7 +3727,7 @@ details.expandable > .cardBody,
 }
 
 .gradeCalcEditBtn {
-  width: fit-content;
+  width: 100%;
   flex-shrink: 0;
   height: auto;
   font-size: inherit;
@@ -4515,4 +4585,104 @@ html[data-theme="contrast"] details.expandable.courseRow {
 *::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text), transparent 65%);
   background-clip: content-box;
+}
+
+/* ===== Top loading bar (TopLoadingBar.jsx) =====
+   z-index 95 keeps the bar above .stickyHeader (90) but stays below the
+   rule's 100-trigger threshold and below modals (3000) / settings (100000). */
+.topLoadingBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 6px;
+  width: 100%;
+  z-index: 95;
+  background: color-mix(in srgb, var(--surface), transparent 78%);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* ===== Weekly Planner popover (WeeklyPlanner.jsx) ===== */
+.weeklyPlannerPopover {
+  position: fixed;
+  height: auto;
+  max-height: calc(100vh - 20px);
+  z-index: 40;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  transition: opacity 140ms ease, transform 180ms ease;
+  will-change: transform, opacity;
+}
+.weeklyPlannerPopoverBody {
+  height: auto;
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
+}
+
+/* ===== Anchored popovers / tooltips with dynamic positioning ===== */
+.anchoredPopover {
+  position: absolute;
+  z-index: 40;
+}
+.anchoredPopoverFixed {
+  position: fixed;
+  z-index: 40;
+}
+.anchoredPopoverCard {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+/* ===== GPA info tooltip (MyInformation.jsx) ===== */
+.gpaInfoTooltip {
+  position: fixed;
+  transform: translateY(-50%);
+  z-index: 40;
+  width: min(280px, 72vw);
+  padding: 10px 12px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fontSm);
+  line-height: 1.45;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* ===== Show-notes toggle button (TodoPage.jsx) ===== */
+.showNotesToggle {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radiusSm);
+  cursor: pointer;
+  padding: 2px 8px;
+  font-weight: 700;
+  font-size: var(--fontSm);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  flex-shrink: 0;
+}
+
+/* ===== Completed section toggle (TodoPage.jsx) ===== */
+.completedSectionToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: var(--fontSm);
+  padding-bottom: 8px;
+  padding-left: 0;
+  user-select: none;
+  color: inherit;
+}
+
+/* ===== Settings font select (SettingsModal.jsx) ===== */
+.settingsFontSelect {
+  width: 100%;
+  padding: 8px 2.5rem 8px 10px;
+  border-radius: var(--radiusSm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--fontBase);
 }

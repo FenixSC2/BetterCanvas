@@ -57,8 +57,9 @@ export function ForgotPassword() {
 
         <form onSubmit={handleSubmit} className="authForm">
           <div className="authField">
-            <label>Email address</label>
+            <label htmlFor="forgot-email">Email address</label>
             <input
+              id="forgot-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

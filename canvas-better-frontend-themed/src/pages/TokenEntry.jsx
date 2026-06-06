@@ -186,7 +186,7 @@ export function TokenEntry() {
           <form onSubmit={handleSubmitToken} className="authForm">
             <div className="authField">
               <div className="authLabelRow">
-                <label>Canvas Access Token</label>
+                <label htmlFor="canvas-access-token">Canvas Access Token</label>
                 <button
                   type="button"
                   className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
@@ -200,6 +200,7 @@ export function TokenEntry() {
                 </button>
               </div>
               <textarea
+                id="canvas-access-token"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 disabled={loading}
@@ -244,7 +245,7 @@ export function TokenEntry() {
             <form onSubmit={handleSubmitToken} className="authForm">
               <div className="authField">
                 <div className="authLabelRow">
-                  <label>New Canvas Token (optional)</label>
+                  <label htmlFor="canvas-new-token">New Canvas Token (optional)</label>
                   <button
                     type="button"
                     className="authInfoBubble authInfoBubbleHoverable authInfoBubbleNeutral"
@@ -258,6 +259,7 @@ export function TokenEntry() {
                   </button>
                 </div>
                 <textarea
+                  id="canvas-new-token"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={loading}
@@ -285,7 +287,8 @@ export function TokenEntry() {
         )}
 
         <div className="authFooter">
-          <button 
+          <button
+            type="button" 
             onClick={logout} 
             className="authLink"
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "inherit" }}

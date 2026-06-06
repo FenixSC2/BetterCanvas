@@ -134,12 +134,11 @@ function AnchoredPopover({
   return createPortal(
     <div
       ref={panelRef}
+      className="anchoredPopoverFixed"
       style={{
-        position: "fixed",
         top: pos.top,
         left: pos.left,
         width,
-        zIndex: 9999,
       }}
     >
       {children}
@@ -428,7 +427,10 @@ export function WorkloadEstimateControl({
   const mode = st?.mode === CHECKLIST_MODE ? CHECKLIST_MODE : "hours";
   const isChecklistMode = mode === CHECKLIST_MODE;
   const isFavorite = !!st?.favorite;
-  const checklistItems = Array.isArray(st?.checklistItems) ? st.checklistItems : [];
+  const checklistItems = useMemo(
+    () => (Array.isArray(st?.checklistItems) ? st.checklistItems : []),
+    [st?.checklistItems],
+  );
   const checklistProgress = useMemo(
     () => getChecklistProgress(checklistItems),
     [checklistItems],
@@ -470,8 +472,9 @@ export function WorkloadEstimateControl({
     return safeMins / 60; // convert to hours
   }
 
-  // include tick so same-tab snap changes re-render (your setItem patch already bumps tick)
-  const snapStep = useMemo(() => getSnapStepHours(), [tick]);
+  // include tick so same-tab snap changes re-render (your setItem patch already bumps tick).
+  // tick is an intentional invalidation key for the external localStorage read.
+  const snapStep = useMemo(() => getSnapStepHours(), [tick]); // oxlint-disable-line react-doctor/exhaustive-deps
 
   const pct = useMemo(() => {
     if (estimate <= 0) return 0;
@@ -699,6 +702,7 @@ export function WorkloadEstimateControl({
                 type="number"
                 min="0"
                 step="0.25"
+                aria-label="Estimated hours"
                 placeholder={compactLabels ? "Hours…" : "Estimated hours…"}
                 value={inlineEstimateDraft}
                 onChange={(e) => {
@@ -912,6 +916,7 @@ export function WorkloadEstimateControl({
               <input
                 type="checkbox"
                 className="themeCheckbox"
+                aria-label="All checklist items complete"
                 checked={true}
                 readOnly
               />
@@ -1169,6 +1174,7 @@ export function WorkloadEstimateControl({
                   <input
                     className="effortInput"
                     type="text"
+                    aria-label="Add a new checklist task"
                     placeholder="Add task…"
                     value={newChecklistItemDraft}
                     onChange={(e) => setNewChecklistItemDraft(e.target.value)}
@@ -1204,6 +1210,7 @@ export function WorkloadEstimateControl({
                       type="number"
                       min="0"
                       step="0.25"
+                      aria-label="Estimated hours"
                       value={draftHours}
                       onChange={(e) => {
                         setDraftHours(e.target.value);
@@ -1291,6 +1298,7 @@ export function WorkloadEstimateControl({
                       type="number"
                       min="0"
                       step="0.25"
+                      aria-label="Add hours"
                       placeholder="Add hours…"
                       value={addHoursDraft}
                       onChange={(e) => setAddHoursDraft(e.target.value)}

@@ -8,6 +8,13 @@ import { WorkloadEstimateControl } from "../components/WorkloadEstimateControl";
 import { useCachedAsync } from "../hooks/useCachedAsync";
 import { formatCourseTitle } from "../utils/courseUtils";
 import { courseColor } from "../utils/courseColor";
+import {
+  loadAcceptedGradeKeys,
+  acceptedGradeKey,
+  hydrateAcceptedGradeKeysFromServer,
+  markAssignmentCompletedLocal,
+  markAssignmentCompletedRemote,
+} from "../lib/acceptedGrades";
 
 function fmtDue(dt) {
   if (!dt) return "No due date";
@@ -144,9 +151,55 @@ function TriStateToggle({ state, onChange, label }) {
 }
 
 export function MyCourses() {
-  // grade visibility per-course, persisted in localStorage
   const COURSE_GRADE_VIS_KEY = "courses:gradeVisibilityById";
+  const COURSE_UPCOMING_EXPANDED_KEY = "courses:upcomingExpandedById";
+  const UPCOMING_COLLAPSED_COUNT = 5;
 
+    const [acceptedGradeKeys, setAcceptedGradeKeys] = useState(() =>
+      loadAcceptedGradeKeys(),
+    );
+
+    useEffect(() => {
+      let active = true;
+
+      hydrateAcceptedGradeKeysFromServer()
+        .then((next) => {
+          if (active) setAcceptedGradeKeys(next);
+        })
+        .catch(() => {
+          // Keep local fallback if server sync fails.
+        });
+
+      function refreshAccepted() {
+        setAcceptedGradeKeys(loadAcceptedGradeKeys());
+      }
+
+      window.addEventListener("focus", refreshAccepted);
+      window.addEventListener("storage", refreshAccepted);
+      window.addEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+      return () => {
+        active = false;
+        window.removeEventListener("focus", refreshAccepted);
+        window.removeEventListener("storage", refreshAccepted);
+        window.removeEventListener("canvassist:accepted-grades:changed", refreshAccepted);
+      };
+    }, []);
+
+    async function markCompleted(courseId, assignmentId) {
+      setAcceptedGradeKeys((prev) =>
+        markAssignmentCompletedLocal(prev, courseId, assignmentId),
+      );
+      try {
+        await markAssignmentCompletedRemote(
+          loadAcceptedGradeKeys(),
+          courseId,
+          assignmentId,
+          "manual_completed",
+        );
+      } catch {
+        // Keep optimistic local state.
+      }
+    }
   const [gradeVisibleById, setGradeVisibleById] = useState(() => {
     try {
       const raw = localStorage.getItem(COURSE_GRADE_VIS_KEY);
@@ -168,6 +221,27 @@ export function MyCourses() {
     }
   }, [gradeVisibleById]);
 
+  const [upcomingExpandedById, setUpcomingExpandedById] = useState(() => {
+    try {
+      const raw = localStorage.getItem(COURSE_UPCOMING_EXPANDED_KEY);
+      const obj = raw ? JSON.parse(raw) : {};
+      return obj && typeof obj === "object" ? obj : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COURSE_UPCOMING_EXPANDED_KEY,
+        JSON.stringify(upcomingExpandedById)
+      );
+    } catch {
+      // ignore
+    }
+  }, [upcomingExpandedById]);
+
   function isGradeVisible(courseId) {
     // default OFF if not set
     const v = gradeVisibleById?.[String(courseId)];
@@ -176,6 +250,17 @@ export function MyCourses() {
 
   function setGradeVisible(courseId, next) {
     setGradeVisibleById((prev) => ({
+      ...(prev || {}),
+      [String(courseId)]: !!next,
+    }));
+  }
+
+  function isUpcomingExpanded(courseId) {
+    return !!upcomingExpandedById?.[String(courseId)];
+  }
+
+  function setUpcomingExpanded(courseId, next) {
+    setUpcomingExpandedById((prev) => ({
       ...(prev || {}),
       [String(courseId)]: !!next,
     }));
@@ -196,7 +281,7 @@ export function MyCourses() {
     { ttlMs: 2 * 60 * 1000 }
   );
 
-  const summaries = state.data ?? [];
+  const summaries = useMemo(() => state.data ?? [], [state.data]);
   const loading = state.loading;
   const err = state.error;
 
@@ -232,7 +317,8 @@ export function MyCourses() {
     let allOff = true;
 
     for (const course of sorted) {
-      const visible = isGradeVisible(course.id);
+      const v = gradeVisibleById?.[String(course.id)];
+      const visible = v == null ? false : !!v;
       if (visible) allOff = false;
       if (!visible) allOn = false;
     }
@@ -315,9 +401,18 @@ export function MyCourses() {
 
       {sorted.map((c) => {
         const nextAsgs = c.next_assignments || [];
-        const missing = c.missing || [];
-        const missingCount = c.missing_count ?? 0;
+        const missing = (c.missing || []).filter(
+          (m) =>
+            !acceptedGradeKeys.has(
+              acceptedGradeKey(m?.course_id, m?.assignment_id),
+            ),
+        );
+        const missingCount = missing.length;
         const showGrades = isGradeVisible(c.id);
+        const showAllUpcoming = isUpcomingExpanded(c.id);
+        const visibleNextAsgs = showAllUpcoming
+          ? nextAsgs
+          : nextAsgs.slice(0, UPCOMING_COLLAPSED_COUNT);
 
         const upcomingCount = countUpcomingWithinDays(nextAsgs, 10);
 
@@ -451,80 +546,6 @@ export function MyCourses() {
               ) : null}
 
               <div>
-                <div className="h3">Next assignments: </div>
-
-                {nextAsgs.length === 0 ? (
-                  <div className="muted">No upcoming assignments returned.</div>
-                ) : (
-                  <ul className="list listSpaced">
-                    {nextAsgs.map((a) => {
-                      const titleText = a?.name || "Untitled assignment";
-
-                      const subtitleLine = (
-                        <span className="muted">
-                          Due: <span className="mono">{fmtDue(a.due_at)}</span>
-                          {typeof a.points_possible === "number"
-                            ? ` • Points: ${a.points_possible}`
-                            : ""}
-                          {a.submitted ? ` • Submitted` : ""}
-                          {a.score != null ? ` • Score: ${a.score}` : ""}
-                        </span>
-                      );
-
-                      const assignmentCourseId = a?.course_id ?? c.id;
-                      const right = (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          {a.html_url ? (
-                            <a
-                              className="btn"
-                              href={a.html_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Open in Canvas
-                            </a>
-                          ) : null}
-                          <WorkloadEstimateControl
-                            courseId={assignmentCourseId}
-                            assignmentId={a.id}
-                            compactLabels={true}
-                          />
-                        </div>
-                      );
-
-                      return (
-                        <li key={a.id} className="listItem">
-                          <Expandable
-                            title={titleText}
-                            subtitle={subtitleLine}
-                            right={right}
-                          >
-                            {a.description ? (
-                              <div className="desc preserveWhitespace">
-                                {htmlToPrettyText(a.description)}
-                              </div>
-                            ) : (
-                              <div className="muted">
-                                No description available.
-                              </div>
-                            )}
-                          </Expandable>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              <div>
                 <div className="h3">Current grade: </div>
 
                 {showGrades ? (
@@ -599,6 +620,16 @@ export function MyCourses() {
                               Open in Canvas
                             </a>
                           ) : null}
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              void markCompleted(m.course_id, m.assignment_id);
+                            }}
+                            title="Mark completed and stop showing this as missing"
+                          >
+                            Mark completed
+                          </button>
                           <WorkloadEstimateControl
                             courseId={m.course_id}
                             assignmentId={m.assignment_id}
@@ -631,6 +662,96 @@ export function MyCourses() {
                       );
                     })}
                   </ul>
+                )}
+              </div>
+
+              <div>
+                <div className="h3">Next assignments: </div>
+
+                {nextAsgs.length === 0 ? (
+                  <div className="muted">No upcoming assignments returned.</div>
+                ) : (
+                  <>
+                    <ul className="list listSpaced">
+                      {visibleNextAsgs.map((a) => {
+                        const titleText = a?.name || "Untitled assignment";
+
+                        const subtitleLine = (
+                          <span className="muted">
+                            Due: <span className="mono">{fmtDue(a.due_at)}</span>
+                            {typeof a.points_possible === "number"
+                              ? ` • Points: ${a.points_possible}`
+                              : ""}
+                            {a.submitted ? ` • Submitted` : ""}
+                            {a.score != null ? ` • Score: ${a.score}` : ""}
+                          </span>
+                        );
+
+                        const assignmentCourseId = a?.course_id ?? c.id;
+                        const right = (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              flexWrap: "wrap",
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            {a.html_url ? (
+                              <a
+                                className="btn"
+                                href={a.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open in Canvas
+                              </a>
+                            ) : null}
+                            <WorkloadEstimateControl
+                              courseId={assignmentCourseId}
+                              assignmentId={a.id}
+                              compactLabels={true}
+                            />
+                          </div>
+                        );
+
+                        return (
+                          <li key={a.id} className="listItem">
+                            <Expandable
+                              title={titleText}
+                              subtitle={subtitleLine}
+                              right={right}
+                            >
+                              {a.description ? (
+                                <div className="desc preserveWhitespace">
+                                  {htmlToPrettyText(a.description)}
+                                </div>
+                              ) : (
+                                <div className="muted">
+                                  No description available.
+                                </div>
+                              )}
+                            </Expandable>
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {nextAsgs.length > UPCOMING_COLLAPSED_COUNT ? (
+                      <div style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setUpcomingExpanded(c.id, !showAllUpcoming)}
+                        >
+                          {showAllUpcoming
+                            ? "Show fewer upcoming assignments"
+                            : `Show ${nextAsgs.length - visibleNextAsgs.length} more upcoming assignments`}
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
