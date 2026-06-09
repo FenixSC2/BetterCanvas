@@ -308,14 +308,34 @@ function Toggle({ checked, onChange, label }) {
 
 // ===== Hero widget sub-components =====
 
+const HERO_GRADES_VISIBLE_KEY = "heroWidget:gradesVisible";
+
 function GradesSnapshotWidget({ config, overview, loading }) {
+  const [gradesVisible, setGradesVisible] = useState(() => {
+    try {
+      const raw = localStorage.getItem(HERO_GRADES_VISIBLE_KEY);
+      return raw === null ? true : raw === "true";
+    } catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(HERO_GRADES_VISIBLE_KEY, String(gradesVisible)); } catch {}
+  }, [gradesVisible]);
+
   const grades = overview?.grades ?? [];
   const max = config.maxCourses ? Number(config.maxCourses) : null;
   const displayed = max ? grades.slice(0, max) : grades;
 
   return (
     <div className="heroWidget heroWidgetGrades">
-      <div className="heroWidgetLabel">Grades</div>
+      <div className="heroWidgetHeader">
+        <span className="heroWidgetLabel">Grades</span>
+        <Toggle
+          checked={gradesVisible}
+          onChange={setGradesVisible}
+          label={gradesVisible ? "Hide grade values" : "Show grade values"}
+        />
+      </div>
       {loading ? (
         <div className="muted" style={{ fontSize: 12 }}>Loading…</div>
       ) : !displayed.length ? (
@@ -329,14 +349,20 @@ function GradesSnapshotWidget({ config, overview, loading }) {
               <div key={g.course_id} className="gradeSnapshotRow">
                 <span className="gradeSnapshotName">{title}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  {config.showScore && g.current_score != null && (
-                    <span className="muted" style={{ fontSize: 11 }}>
-                      {Number(g.current_score).toFixed(1)}%
-                    </span>
+                  {gradesVisible ? (
+                    <>
+                      {config.showScore && g.current_score != null && (
+                        <span className="muted" style={{ fontSize: 11, letterSpacing: "-0.01em" }}>
+                          {Number(g.current_score).toFixed(1)}%
+                        </span>
+                      )}
+                      <span className={`gradeBadge ${isEst ? "estimated" : "actual"}`}>
+                        {g.display_grade ?? g.current_grade ?? "—"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="gradeSnapshotHidden" aria-label="Grade hidden">••••</span>
                   )}
-                  <span className={`gradeBadge ${isEst ? "estimated" : "actual"}`}>
-                    {g.display_grade ?? g.current_grade ?? "—"}
-                  </span>
                 </div>
               </div>
             );
@@ -423,13 +449,33 @@ function TodayRingWidget({ config, missingCount, canvasDue24Count }) {
 function QuickStatsWidget({ config, missingCount, canvasDue24Count, gpa, todosDue24h, overviewLoading }) {
   const stats = [];
   if (config.showMissing !== false)
-    stats.push({ value: missingCount, label: "Missing", danger: missingCount > 0 });
+    stats.push({
+      value: missingCount,
+      label: "Missing",
+      dotColor: missingCount > 0 ? "#ef4444" : "var(--border-strong)",
+      valueColor: missingCount > 0 ? "#ef4444" : undefined,
+    });
   if (config.showDueSoon !== false)
-    stats.push({ value: canvasDue24Count, label: "Due Soon", warn: canvasDue24Count > 0 });
+    stats.push({
+      value: canvasDue24Count,
+      label: "Due soon",
+      dotColor: canvasDue24Count > 0 ? "#f59e0b" : "var(--border-strong)",
+      valueColor: canvasDue24Count > 0 ? "#f59e0b" : undefined,
+    });
   if (config.showGpa !== false)
-    stats.push({ value: gpa != null ? Number(gpa).toFixed(2) : "—", label: "GPA" });
+    stats.push({
+      value: gpa != null ? Number(gpa).toFixed(2) : "—",
+      label: "GPA",
+      dotColor: "var(--accent)",
+      valueColor: undefined,
+    });
   if (config.showTodos !== false)
-    stats.push({ value: todosDue24h.length, label: "Todos Due" });
+    stats.push({
+      value: todosDue24h.length,
+      label: "Todos due",
+      dotColor: todosDue24h.length > 0 ? "var(--accent)" : "var(--border-strong)",
+      valueColor: undefined,
+    });
 
   return (
     <div className="heroWidget heroWidgetQuickStats">
@@ -439,19 +485,17 @@ function QuickStatsWidget({ config, missingCount, canvasDue24Count, gpa, todosDu
       ) : stats.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>No stats selected</div>
       ) : (
-        <div className="quickStatsGrid">
+        <ul className="quickStatsList">
           {stats.map((s) => (
-            <div key={s.label} className="quickStatItem">
-              <span
-                className="quickStatValue"
-                style={{ color: s.danger ? "#ef4444" : s.warn ? "#f59e0b" : undefined }}
-              >
+            <li key={s.label} className="quickStatsRow">
+              <span className="quickStatsDot" style={{ background: s.dotColor }} />
+              <span className="quickStatsValue" style={{ color: s.valueColor }}>
                 {s.value}
               </span>
-              <span className="quickStatLabel">{s.label}</span>
-            </div>
+              <span className="quickStatsLabel">{s.label}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -559,8 +603,11 @@ function WidgetManagerModal({ widgets, onUpdate, onAdd, onRemove, onClose }) {
               Customize which widgets appear on your dashboard
             </div>
           </div>
-          <button type="button" className="closeBtn" onClick={onClose} aria-label="Close">
-            ✕
+          <button type="button" className="iconBtn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path d="M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
 
@@ -585,25 +632,27 @@ function WidgetManagerModal({ widgets, onUpdate, onAdd, onRemove, onClose }) {
                           label={w.visible ? "Hide widget" : "Show widget"}
                         />
                         <div className="widgetManagerRowInfo">
-                          <span className="widgetManagerRowName">{preset?.label ?? w.type}</span>
-                          {!w.visible && (
-                            <span className="badge" style={{ fontSize: 10, opacity: 0.7 }}>
-                              Hidden
-                            </span>
-                          )}
+                          <span className="widgetManagerRowName">
+                            {preset?.label ?? w.type}
+                          </span>
+                          <span className="widgetManagerRowDesc">
+                            {!w.visible
+                              ? "Hidden from dashboard"
+                              : (preset?.description ?? "")}
+                          </span>
                         </div>
                         <div className="widgetManagerRowActions">
                           <button
                             type="button"
-                            className="btn"
+                            className="widgetEditBtn"
                             onClick={() => setEditingId(isEditing ? null : w.id)}
                             aria-expanded={isEditing}
                           >
-                            {isEditing ? "Done" : "Edit"}
+                            {isEditing ? "Done ↑" : "Edit ↓"}
                           </button>
                           <button
                             type="button"
-                            className="btn btnDanger"
+                            className="widgetRemoveBtn"
                             onClick={() => {
                               onRemove(w.id);
                               setEditingId(null);
@@ -638,13 +687,11 @@ function WidgetManagerModal({ widgets, onUpdate, onAdd, onRemove, onClose }) {
                   <li key={type} className="widgetPresetRow">
                     <div className="widgetPresetInfo">
                       <span className="widgetManagerRowName">{def.label}</span>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        {def.description}
-                      </span>
+                      <span className="widgetManagerRowDesc">{def.description}</span>
                     </div>
                     <button
                       type="button"
-                      className="btn"
+                      className="widgetAddBtn"
                       onClick={() => onAdd(type)}
                     >
                       + Add
@@ -1187,12 +1234,13 @@ export function MyInformation({ active = true }) {
         {/* Hero widgets */}
         <div className="heroWidgetArea">
           <div className="heroWidgetBar">
+            <span className="heroWidgetBarLabel">Widgets</span>
             <button
               type="button"
               className="heroWidgetManageBtn"
               onClick={() => setManageOpen(true)}
             >
-              Customize
+              ⚙ Customize
             </button>
           </div>
           <div className="heroWidgetRow">
