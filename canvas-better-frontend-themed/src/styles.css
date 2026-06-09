@@ -1689,13 +1689,36 @@ details.expandable > .cardBody,
   background: color-mix(in srgb, #ef4444 6%, var(--surface-glass-strong));
 }
 
-/* Flatten ONLY the top-level expandable inside a listItem */
+/* Flatten ONLY the top-level expandable inside a listItem.
+   border-radius must match the listItem so overflow:hidden clips
+   hover backgrounds to the card's rounded corners instead of bleeding
+   outside them as a rectangle. backdrop-filter is removed so it can't
+   blur the parent listItem's highlight-inset bevel. */
 .listItem > .expandable,
 .listItem > details {
+  border: none;
+  border-radius: var(--radiusLg);
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Flatten expandables nested inside a card body (e.g. sub-sections within notifications card) */
+.cardBody > details.expandable {
   border: none;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.cardBody > details.expandable > summary.cardBody.expandableSummary {
+  padding: 12px var(--cardPad);
+  border-top: 1px solid var(--border);
+}
+.cardBody > details.expandable > .cardBody.expandableBody {
+  padding: 0 var(--cardPad) var(--cardPad);
 }
 
 /* Header padding only for the top-level expandable */
@@ -4183,23 +4206,23 @@ details.expandable > .cardBody,
 
 .welcomeGreeting {
   margin: 0;
-  font-family: var(--display-font);
-  font-weight: 600;
-  letter-spacing: var(--tracking-mega);
-  font-size: clamp(34px, 6vw, 56px);
-  line-height: 1.02;
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  font-size: clamp(16px, 2.2vw, 24px);
+  line-height: 1.3;
   color: var(--muted-strong-on-bg);
 }
 
 .welcomeGreetingName {
   color: var(--text-on-bg);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .welcomeSubline {
   margin: 0;
-  color: var(--muted-on-bg);
-  font-size: var(--fontBase);
+  color: var(--text-on-bg);
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 600;
   letter-spacing: var(--tracking-tight);
 }
 
@@ -4258,6 +4281,354 @@ details.expandable > .cardBody,
 .welcomeAccountDetails dd {
   margin: 0;
   color: var(--text);
+}
+
+/* ===== Hero widgets ===== */
+.heroWidgetArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heroWidgetBar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.heroWidgetManageBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusSm);
+  color: var(--muted);
+  font-size: var(--fontXs);
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+
+.heroWidgetManageBtn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-glass);
+}
+
+.heroWidgetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: start;
+}
+
+.heroWidgetEmpty {
+  font-size: var(--fontSm);
+  padding: 10px 0;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.heroWidget {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 200px;
+}
+
+.heroWidgetGrades {
+  flex: 2 1 240px;
+}
+
+.heroWidgetQuickStats {
+  flex: 1 1 200px;
+}
+
+.heroWidgetLabel {
+  font-size: var(--fontXs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide, 0.08em);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Grade snapshot */
+.gradeSnapshotList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gradeSnapshotRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gradeSnapshotName {
+  font-size: var(--fontSm);
+  font-weight: 500;
+  color: var(--muted-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Workload ring widget */
+.heroWidgetRing {
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 130px;
+}
+
+.ringWrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.workloadRing {
+  width: 80px;
+  height: 80px;
+}
+
+.ringCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.ringCount {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-on-bg);
+}
+
+.ringCountLabel {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-on-bg);
+}
+
+.ringLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ringLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fontXs);
+  font-weight: 600;
+}
+
+.ringLegendDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Quick Stats widget */
+.quickStatsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 8px;
+}
+
+.quickStatItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.quickStatValue {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+
+.quickStatLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .heroWidgetRow {
+    flex-direction: column;
+  }
+  .heroWidgetRing {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: 16px;
+  }
+}
+
+/* ===== Widget Manager Modal ===== */
+.widgetManagerPanel {
+  width: min(520px, 100%);
+  min-height: unset;
+  height: auto;
+  max-height: calc(100vh - 60px);
+}
+
+.widgetManagerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  flex: 1;
+  padding: 16px 18px;
+}
+
+.widgetManagerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 20px;
+}
+
+.widgetManagerSection + .widgetManagerSection {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.widgetManagerSectionTitle {
+  font-size: var(--fontXs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.widgetManagerList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.widgetManagerRow {
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  overflow: hidden;
+}
+
+.widgetManagerRowMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.widgetManagerRowInfo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.widgetManagerRowName {
+  font-weight: 600;
+  font-size: var(--fontSm);
+}
+
+.widgetManagerRowActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.widgetConfigPanel {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--surface-glass);
+}
+
+.widgetConfigGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.widgetConfigRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fontSm);
+  color: var(--text);
+  cursor: default;
+}
+
+.widgetPresetList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.widgetPresetRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+}
+
+.widgetPresetInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.btnDanger {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.btnDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
 }
 
 /* =====================================================================

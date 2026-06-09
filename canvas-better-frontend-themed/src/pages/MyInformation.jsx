@@ -19,6 +19,12 @@ import {
 } from "../lib/acceptedGrades";
 import { useAuth } from "../hooks/useAuth";
 import { formatCourseTitle } from "../utils/courseUtils";
+import {
+  loadWidgetConfig,
+  saveWidgetConfig,
+  makeWidgetId,
+  WIDGET_PRESETS,
+} from "../lib/widgetConfig";
 
 // desktop notifications
 import {
@@ -248,11 +254,9 @@ function pickRandomWithoutRepeat(options, lastValue = "") {
 
 function datelineFor(d = new Date()) {
   try {
-    return d.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    const date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return `${date} · ${time}`;
   } catch {
     return d.toDateString();
   }
@@ -302,9 +306,380 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
+// ===== Hero widget sub-components =====
+
+function GradesSnapshotWidget({ config, overview, loading }) {
+  const grades = overview?.grades ?? [];
+  const max = config.maxCourses ? Number(config.maxCourses) : null;
+  const displayed = max ? grades.slice(0, max) : grades;
+
+  return (
+    <div className="heroWidget heroWidgetGrades">
+      <div className="heroWidgetLabel">Grades</div>
+      {loading ? (
+        <div className="muted" style={{ fontSize: 12 }}>Loading…</div>
+      ) : !displayed.length ? (
+        <div className="muted" style={{ fontSize: 12 }}>No courses found</div>
+      ) : (
+        <div className="gradeSnapshotList">
+          {displayed.map((g) => {
+            const title = formatCourseTitle(g.course_name) || `Course ${g.course_id}`;
+            const isEst = !!g.grade_is_estimated;
+            return (
+              <div key={g.course_id} className="gradeSnapshotRow">
+                <span className="gradeSnapshotName">{title}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  {config.showScore && g.current_score != null && (
+                    <span className="muted" style={{ fontSize: 11 }}>
+                      {Number(g.current_score).toFixed(1)}%
+                    </span>
+                  )}
+                  <span className={`gradeBadge ${isEst ? "estimated" : "actual"}`}>
+                    {g.display_grade ?? g.current_grade ?? "—"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {max && grades.length > max && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+              +{grades.length - max} more course{grades.length - max === 1 ? "" : "s"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TodayRingWidget({ config, missingCount, canvasDue24Count }) {
+  const r = 15, cx = 20, cy = 20, sw = 4;
+  const C = 2 * Math.PI * r;
+  const total = missingCount + canvasDue24Count;
+  const missingFrac = total === 0 ? 0 : missingCount / total;
+  const dueFrac = total === 0 ? 0 : canvasDue24Count / total;
+  const s1 = missingFrac * C;
+  const s2 = dueFrac * C;
+
+  return (
+    <div className="heroWidget heroWidgetRing">
+      <div className="heroWidgetLabel">Today</div>
+      <div className="ringWrapper">
+        <svg viewBox="0 0 40 40" className="workloadRing" aria-hidden="true">
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-strong)" strokeWidth={sw} />
+          {total === 0 ? (
+            <circle cx={cx} cy={cy} r={r} fill="none"
+              stroke="var(--success-color, #22c55e)" strokeWidth={sw}
+              strokeDasharray={`${C} 0`}
+              transform={`rotate(-90 ${cx} ${cy})`}
+              strokeLinecap="round" />
+          ) : (
+            <>
+              {missingFrac > 0 && (
+                <circle cx={cx} cy={cy} r={r} fill="none"
+                  stroke="#ef4444" strokeWidth={sw}
+                  strokeDasharray={`${s1} ${C}`}
+                  transform={`rotate(-90 ${cx} ${cy})`} />
+              )}
+              {dueFrac > 0 && (
+                <circle cx={cx} cy={cy} r={r} fill="none"
+                  stroke="#f59e0b" strokeWidth={sw}
+                  strokeDasharray={`${s2} ${C}`}
+                  transform={`rotate(${-90 + missingFrac * 360} ${cx} ${cy})`} />
+              )}
+            </>
+          )}
+        </svg>
+        <div className="ringCenter">
+          <span className="ringCount">{total}</span>
+          <span className="ringCountLabel">items</span>
+        </div>
+      </div>
+      {config.showLegend !== false && (
+        <div className="ringLegend">
+          {missingCount > 0 && (
+            <span className="ringLegendItem" style={{ color: "#ef4444" }}>
+              <span className="ringLegendDot" style={{ background: "#ef4444" }} />
+              {missingCount} missing
+            </span>
+          )}
+          {canvasDue24Count > 0 && (
+            <span className="ringLegendItem" style={{ color: "#f59e0b" }}>
+              <span className="ringLegendDot" style={{ background: "#f59e0b" }} />
+              {canvasDue24Count} due soon
+            </span>
+          )}
+          {total === 0 && (
+            <span className="ringLegendItem" style={{ color: "var(--muted)" }}>
+              All clear
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuickStatsWidget({ config, missingCount, canvasDue24Count, gpa, todosDue24h, overviewLoading }) {
+  const stats = [];
+  if (config.showMissing !== false)
+    stats.push({ value: missingCount, label: "Missing", danger: missingCount > 0 });
+  if (config.showDueSoon !== false)
+    stats.push({ value: canvasDue24Count, label: "Due Soon", warn: canvasDue24Count > 0 });
+  if (config.showGpa !== false)
+    stats.push({ value: gpa != null ? Number(gpa).toFixed(2) : "—", label: "GPA" });
+  if (config.showTodos !== false)
+    stats.push({ value: todosDue24h.length, label: "Todos Due" });
+
+  return (
+    <div className="heroWidget heroWidgetQuickStats">
+      <div className="heroWidgetLabel">Quick Stats</div>
+      {overviewLoading ? (
+        <div className="muted" style={{ fontSize: 12 }}>Loading…</div>
+      ) : stats.length === 0 ? (
+        <div className="muted" style={{ fontSize: 12 }}>No stats selected</div>
+      ) : (
+        <div className="quickStatsGrid">
+          {stats.map((s) => (
+            <div key={s.label} className="quickStatItem">
+              <span
+                className="quickStatValue"
+                style={{ color: s.danger ? "#ef4444" : s.warn ? "#f59e0b" : undefined }}
+              >
+                {s.value}
+              </span>
+              <span className="quickStatLabel">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WidgetConfigEditor({ type, config, onChange }) {
+  switch (type) {
+    case "grades":
+      return (
+        <div className="widgetConfigGrid">
+          <label className="widgetConfigRow">
+            <span>Show % score</span>
+            <Toggle
+              checked={!!config.showScore}
+              onChange={(v) => onChange({ showScore: v })}
+              label="Show % score"
+            />
+          </label>
+          <label className="widgetConfigRow">
+            <span>Max courses shown</span>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              placeholder="All"
+              value={config.maxCourses ?? ""}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                onChange({ maxCourses: Number.isFinite(n) && n > 0 ? n : null });
+              }}
+              style={{ width: 70 }}
+            />
+          </label>
+        </div>
+      );
+    case "today_ring":
+      return (
+        <div className="widgetConfigGrid">
+          <label className="widgetConfigRow">
+            <span>Show legend</span>
+            <Toggle
+              checked={config.showLegend !== false}
+              onChange={(v) => onChange({ showLegend: v })}
+              label="Show legend"
+            />
+          </label>
+        </div>
+      );
+    case "quick_stats":
+      return (
+        <div className="widgetConfigGrid">
+          {[
+            { key: "showMissing", label: "Missing count" },
+            { key: "showDueSoon", label: "Due soon count" },
+            { key: "showGpa", label: "GPA" },
+            { key: "showTodos", label: "Todos due today" },
+          ].map(({ key, label }) => (
+            <label key={key} className="widgetConfigRow">
+              <span>{label}</span>
+              <Toggle
+                checked={config[key] !== false}
+                onChange={(v) => onChange({ [key]: v })}
+                label={label}
+              />
+            </label>
+          ))}
+        </div>
+      );
+    default:
+      return <div className="muted" style={{ fontSize: 13 }}>No settings for this widget.</div>;
+  }
+}
+
+function WidgetManagerModal({ widgets, onUpdate, onAdd, onRemove, onClose }) {
+  const [editingId, setEditingId] = useState(null);
+
+  const usedTypes = new Set(widgets.map((w) => w.type));
+  const availablePresets = Object.entries(WIDGET_PRESETS).filter(
+    ([type, def]) => !def.unique || !usedTypes.has(type)
+  );
+
+  function toggleVisible(id) {
+    const w = widgets.find((w) => w.id === id);
+    if (w) onUpdate(id, { visible: !w.visible });
+  }
+
+  function updateConfig(id, configPatch) {
+    const w = widgets.find((w) => w.id === id);
+    if (w) onUpdate(id, { config: { ...w.config, ...configPatch } });
+  }
+
+  return createPortal(
+    <div className="modalOverlay" onMouseDown={onClose} role="presentation">
+      <div
+        className="modalPanel widgetManagerPanel"
+        onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Manage widgets"
+      >
+        <div className="modalHeader">
+          <div>
+            <div className="h3">Manage Widgets</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+              Customize which widgets appear on your dashboard
+            </div>
+          </div>
+          <button type="button" className="closeBtn" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div className="widgetManagerBody">
+          <section className="widgetManagerSection">
+            <div className="widgetManagerSectionTitle">Active Widgets</div>
+            {widgets.length === 0 ? (
+              <div className="muted" style={{ fontSize: 13 }}>
+                No widgets configured. Add one below.
+              </div>
+            ) : (
+              <ul className="widgetManagerList">
+                {widgets.map((w) => {
+                  const preset = WIDGET_PRESETS[w.type];
+                  const isEditing = editingId === w.id;
+                  return (
+                    <li key={w.id} className="widgetManagerRow">
+                      <div className="widgetManagerRowMain">
+                        <Toggle
+                          checked={!!w.visible}
+                          onChange={() => toggleVisible(w.id)}
+                          label={w.visible ? "Hide widget" : "Show widget"}
+                        />
+                        <div className="widgetManagerRowInfo">
+                          <span className="widgetManagerRowName">{preset?.label ?? w.type}</span>
+                          {!w.visible && (
+                            <span className="badge" style={{ fontSize: 10, opacity: 0.7 }}>
+                              Hidden
+                            </span>
+                          )}
+                        </div>
+                        <div className="widgetManagerRowActions">
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => setEditingId(isEditing ? null : w.id)}
+                            aria-expanded={isEditing}
+                          >
+                            {isEditing ? "Done" : "Edit"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btnDanger"
+                            onClick={() => {
+                              onRemove(w.id);
+                              setEditingId(null);
+                            }}
+                            aria-label={`Remove ${preset?.label ?? w.type}`}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {isEditing && (
+                        <div className="widgetConfigPanel">
+                          <WidgetConfigEditor
+                            type={w.type}
+                            config={w.config}
+                            onChange={(patch) => updateConfig(w.id, patch)}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {availablePresets.length > 0 && (
+            <section className="widgetManagerSection">
+              <div className="widgetManagerSectionTitle">Add Widget</div>
+              <ul className="widgetPresetList">
+                {availablePresets.map(([type, def]) => (
+                  <li key={type} className="widgetPresetRow">
+                    <div className="widgetPresetInfo">
+                      <span className="widgetManagerRowName">{def.label}</span>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {def.description}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => onAdd(type)}
+                    >
+                      + Add
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {availablePresets.length === 0 && widgets.length > 0 && (
+            <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+              All available widget types are already added.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ===== Main page component =====
+
 export function MyInformation({ active = true }) {
   const { hasToken } = useAuth();
   const notif = useDesktopNotifications(hasToken);
+
+  // Live clock — updates every minute so date/time display stays current
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const lastGreetingRef = useRef("");
   const heroGreeting = useMemo(() => {
     if (!active) return lastGreetingRef.current;
@@ -460,6 +835,37 @@ export function MyInformation({ active = true }) {
       return Number.isFinite(ms) && ms >= now && ms <= cutoff;
     }).sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
   }, [todos]);
+
+  // Widget config
+  const [widgets, setWidgets] = useState(() => loadWidgetConfig());
+  const [manageOpen, setManageOpen] = useState(false);
+
+  function handleWidgetUpdate(id, updates) {
+    setWidgets((prev) => {
+      const next = prev.map((w) => (w.id === id ? { ...w, ...updates } : w));
+      saveWidgetConfig(next);
+      return next;
+    });
+  }
+
+  function handleWidgetAdd(type) {
+    const preset = WIDGET_PRESETS[type];
+    if (!preset) return;
+    const newWidget = { id: makeWidgetId(), type, visible: true, config: { ...preset.defaultConfig } };
+    setWidgets((prev) => {
+      const next = [...prev, newWidget];
+      saveWidgetConfig(next);
+      return next;
+    });
+  }
+
+  function handleWidgetRemove(id) {
+    setWidgets((prev) => {
+      const next = prev.filter((w) => w.id !== id);
+      saveWidgetConfig(next);
+      return next;
+    });
+  }
 
   const SHOW_GPA_KEY = "myinfo:showGpaInCollapsed";
   const [showGpaCollapsed, setShowGpaCollapsed] = useState(() => {
@@ -763,7 +1169,7 @@ export function MyInformation({ active = true }) {
           <span className="welcomeGreetingName">{firstNameOf(profile)}.</span>
         </h1>
 
-        <p className="welcomeSubline">{datelineFor()}</p>
+        <p className="welcomeSubline">{datelineFor(now)}</p>
 
         {(profile.primary_email || profile.sortable_name || profile.short_name || profile.id) ? (
           <details className="welcomeAccountDetails">
@@ -777,6 +1183,69 @@ export function MyInformation({ active = true }) {
             </dl>
           </details>
         ) : null}
+
+        {/* Hero widgets */}
+        <div className="heroWidgetArea">
+          <div className="heroWidgetBar">
+            <button
+              type="button"
+              className="heroWidgetManageBtn"
+              onClick={() => setManageOpen(true)}
+            >
+              Customize
+            </button>
+          </div>
+          <div className="heroWidgetRow">
+            {widgets.filter((w) => w.visible).map((w) => {
+              switch (w.type) {
+                case "grades":
+                  return (
+                    <GradesSnapshotWidget
+                      key={w.id}
+                      config={w.config}
+                      overview={overview}
+                      loading={overviewLoading}
+                    />
+                  );
+                case "today_ring":
+                  return (
+                    <TodayRingWidget
+                      key={w.id}
+                      config={w.config}
+                      missingCount={missingCount}
+                      canvasDue24Count={canvasDue24Count}
+                    />
+                  );
+                case "quick_stats":
+                  return (
+                    <QuickStatsWidget
+                      key={w.id}
+                      config={w.config}
+                      overviewLoading={overviewLoading}
+                      missingCount={missingCount}
+                      canvasDue24Count={canvasDue24Count}
+                      gpa={gpa}
+                      todosDue24h={todosDue24h}
+                    />
+                  );
+                default:
+                  return null;
+              }
+            })}
+            {widgets.filter((w) => w.visible).length === 0 && (
+              <div className="heroWidgetEmpty">
+                <span className="muted">No widgets visible. </span>
+                <button
+                  type="button"
+                  className="linkBtn"
+                  onClick={() => setManageOpen(true)}
+                >
+                  Add some →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* Announcements */}
@@ -1369,6 +1838,16 @@ export function MyInformation({ active = true }) {
           </ul>
         )}
       </Expandable>
+
+      {manageOpen && (
+        <WidgetManagerModal
+          widgets={widgets}
+          onUpdate={handleWidgetUpdate}
+          onAdd={handleWidgetAdd}
+          onRemove={handleWidgetRemove}
+          onClose={() => setManageOpen(false)}
+        />
+      )}
 
       {/* Notifications */}
       <div className="card">
