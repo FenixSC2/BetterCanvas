@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Tabs } from "./components/Tabs";
 import { MyInformation } from "./pages/MyInformation";
 import { MyCourses } from "./pages/MyCourses";
@@ -169,9 +169,6 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
   // Track which tabs have been visited so we can keep them mounted (lazy-mount + CSS hide)
   const [mounted, setMounted] = useState(() => new Set(["info"]));
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [headerCompact, setHeaderCompact] = useState(false);
-  const headerCompactRef = useRef(false);
-  const transitionTimeoutRef = useRef(null);
 
   useEffect(() => {
     function onNav(e) {
@@ -186,83 +183,6 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
     return () => window.removeEventListener("canvasbetter:navigate", onNav);
   }, []);
 
-  useEffect(() => {
-    function checkScroll() {
-      const y = window.scrollY;
-      const pageHeight = document.documentElement.scrollHeight;
-      const viewportHeight = window.innerHeight;
-      const scrollableHeight = pageHeight - viewportHeight;
-      
-      // Don't change state if we're already transitioning
-      if (transitionTimeoutRef.current) return;
-      
-      // Only enable compact mode on pages with substantial scrollable content (150px+)
-      // This prevents jitter on borderline-scrollable pages
-      if (scrollableHeight < 150) {
-        // Force expanded state on short pages
-        if (headerCompactRef.current) {
-          headerCompactRef.current = false;
-          setHeaderCompact(false);
-        }
-        return;
-      }
-      
-      // Always expand when at the very top
-      let nextCompact;
-      if (y <= 2) {
-        nextCompact = false;
-      } else {
-        // More responsive thresholds: compact at 40px, expand back at 10px
-        nextCompact = headerCompactRef.current ? y > 10 : y > 40;
-      }
-      
-      if (nextCompact !== headerCompactRef.current) {
-        headerCompactRef.current = nextCompact;
-        setHeaderCompact(nextCompact);
-        
-        // Lock state changes for the duration of the transition
-        transitionTimeoutRef.current = setTimeout(() => {
-          transitionTimeoutRef.current = null;
-        }, 180); // Slightly longer than CSS transition (160ms)
-      }
-    }
-
-    checkScroll();
-    window.addEventListener("scroll", checkScroll, { passive: true });
-    
-    // Also check on resize in case window size changes
-    window.addEventListener("resize", checkScroll, { passive: true });
-    
-    return () => {
-      window.removeEventListener("scroll", checkScroll);
-      window.removeEventListener("resize", checkScroll);
-      if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
-    };
-  }, []);
-
-  // Check scroll position when tab changes
-  useEffect(() => {
-    // Small delay to let content render
-    const timer = setTimeout(() => {
-      const pageHeight = document.documentElement.scrollHeight;
-      const viewportHeight = window.innerHeight;
-      const scrollableHeight = pageHeight - viewportHeight;
-      
-      // Force expand on short pages (< 150px scrollable content)
-      if (scrollableHeight < 150 && headerCompactRef.current) {
-        headerCompactRef.current = false;
-        setHeaderCompact(false);
-      } else if (scrollableHeight >= 150) {
-        // On longer pages, check if we're at the top
-        const y = window.scrollY;
-        if (y <= 2 && headerCompactRef.current) {
-          headerCompactRef.current = false;
-          setHeaderCompact(false);
-        }
-      }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [active]);
 
   function handleTabChange(tab) {
     setMounted(prev => { const s = new Set(prev); s.add(tab); return s; });
@@ -275,22 +195,20 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
       <div className="app">
         <TopLoadingBar />
 
-        {/* Fixed top-right settings button (always visible) */}
-        <SettingsButton className="settingsFloating" onClick={() => setSettingsOpen(true)} />
-
-        <header className={`header stickyHeader ${headerCompact ? "headerCompact" : ""}`}>
+        <header className="header stickyHeader">
           <div className="brand">
             <div className="brandLogomark" aria-hidden="true">CA</div>
-            <div className="brandText">
-              <div className="brandTitle">CanvAssist</div>
-              <div className="brandSub">A student-friendly dashboard</div>
-              {demoMode && (
-                <div className="brandDemoTag">Viewing demo data</div>
-              )}
-            </div>
+            <div className="brandTitle">CanvAssist</div>
+            {demoMode && (
+              <div className="brandDemoTag">Viewing demo data</div>
+            )}
           </div>
 
-          <Tabs tabs={tabs} activeKey={active} onChange={handleTabChange} />
+          <div className="headerCenter">
+            <Tabs tabs={tabs} activeKey={active} onChange={handleTabChange} />
+          </div>
+
+          <SettingsButton onClick={() => setSettingsOpen(true)} />
         </header>
 
         {/* widen only for planner */}

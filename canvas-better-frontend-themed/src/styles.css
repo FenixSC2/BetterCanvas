@@ -582,13 +582,15 @@ ol {
 }
 
 .header {
-  padding: var(--headerPadTop) var(--headerPadX) var(--headerPadBottom);
+  padding: 10px var(--headerPadX);
   background: var(--surface-glass-strong);
   backdrop-filter: blur(var(--blur-strong)) saturate(var(--saturate));
   -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(var(--saturate));
   border-bottom: 1px solid var(--border);
   color: var(--text);
-  transition: padding var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
 }
 
 .stickyHeader {
@@ -600,19 +602,8 @@ ol {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  max-height: 76px;
-  opacity: 1;
-  transform: translateY(0);
-  overflow: hidden;
-  transition: max-height var(--dur) var(--ease-out), opacity 160ms var(--ease-out),
-    transform var(--dur) var(--ease-out), margin var(--dur) var(--ease-out);
-}
-
-.brandText {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+  gap: 10px;
+  justify-self: start;
 }
 
 .brandLogomark {
@@ -660,27 +651,10 @@ ol {
 }
 .brand:hover .brandLogomark { transform: rotate(-6deg) scale(1.06); }
 
-.headerCompact {
-  padding-top: 10px;
-  padding-bottom: 10px;
-  box-shadow: var(--shadow);
-  background: var(--surface-glass-strong);
-}
 
-.headerCompact .brand {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-6px);
-  margin: 0;
-  pointer-events: none;
-}
-
-.tabs {
-  transition: margin-top var(--dur) var(--ease-out);
-}
-
-.headerCompact .tabs {
-  margin-top: 0;
+.headerCenter {
+  display: flex;
+  justify-content: center;
 }
 
 .brandTitle {
@@ -701,7 +675,6 @@ ol {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: var(--fontXs);
@@ -730,7 +703,6 @@ ol {
   position: relative;
   display: inline-flex;
   gap: var(--tabGap);
-  margin-top: 14px;
   flex-wrap: wrap;
   padding: 4px;
   border-radius: 14px;
@@ -1196,21 +1168,9 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
   color: color-mix(in srgb, #ef4444 75%, var(--text));
 }
 
-/* ===== Settings floating button ===== */
-.settingsFloating {
-  position: fixed;
-  top: 14px;
-  right: 18px;
-  z-index: 100000;
-  background: var(--surface-glass-strong);
-  backdrop-filter: blur(var(--blur-strong)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(var(--saturate));
-  box-shadow: var(--shadow-md), var(--highlight-inset);
-}
-
-html[data-density="compact"] .settingsFloating {
-  top: 10px;
-  right: 12px;
+/* ===== Settings button (inside header) ===== */
+.header .iconBtn {
+  justify-self: end;
 }
 
 /* ===== Expandable (details/summary) ===== */
