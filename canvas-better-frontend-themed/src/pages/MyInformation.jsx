@@ -1207,6 +1207,123 @@ function NotificationsWidget({ notif, overview, isSecureContext, notificationsOn
   );
 }
 
+function RecentlyGradedWidget({ config, gradesVisible }) {
+  const summariesQ = useCachedAsync(
+    "grade-performance:courses:summary",
+    ({ signal }) => canvasApi.getCourseSummaries(3, 5, { signal }),
+    { ttlMs: 5 * 60 * 1000 },
+  );
+
+  const summaries = Array.isArray(summariesQ.data) ? summariesQ.data : [];
+
+  const courseIdsKey = summaries
+    .map((c) => c.id)
+    .sort((a, b) => a - b)
+    .join(",") || "none";
+
+  const allAssignmentsQ = useCachedAsync(
+    `grade-performance:all-assignments:${courseIdsKey}`,
+    async ({ signal }) => {
+      if (!summaries.length) return [];
+      const responses = await Promise.all(
+        summaries.map(async (course) => {
+          const items = await canvasApi.getCourseAssignmentsIncludingHidden(
+            course.id, 200, { signal },
+          );
+          return (Array.isArray(items) ? items : []).map((a) => ({
+            ...a,
+            course_name: a?.course_name || course.name,
+          }));
+        }),
+      );
+      return responses.flat();
+    },
+    { ttlMs: 5 * 60 * 1000 },
+  );
+
+  const allAssignments = Array.isArray(allAssignmentsQ.data) ? allAssignmentsQ.data : [];
+  const maxItems = Number(config.maxItems) > 0 ? Number(config.maxItems) : 5;
+
+  const recentRows = useMemo(() => {
+    return allAssignments
+      .map((a) => {
+        const ms = a?.graded_at ? Date.parse(a.graded_at) : NaN;
+        const score = Number(a?.score);
+        if (!Number.isFinite(ms) || !Number.isFinite(score)) return null;
+        return { assignment: a, gradedMs: ms, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.gradedMs - a.gradedMs)
+      .slice(0, maxItems);
+  }, [allAssignments, maxItems]);
+
+  const loading =
+    (summariesQ.loading && !summaries.length) ||
+    (allAssignmentsQ.loading && !allAssignments.length && summaries.length > 0);
+
+  const subtitle = loading
+    ? "Loading…"
+    : recentRows.length > 0
+    ? `${recentRows.length} recently graded`
+    : "No graded assignments found";
+
+  function fmtScore(val) {
+    const n = Number(val);
+    return Number.isFinite(n) ? n.toFixed(2) : "—";
+  }
+
+  return (
+    <CollapsibleWidget
+      storageKey="widget:recently_graded:open"
+      label="Recently Graded"
+      subtitle={subtitle}
+    >
+      {loading ? (
+        <Loading label="Loading recently graded…" />
+      ) : recentRows.length === 0 ? (
+        <div className="muted">No graded assignments found yet.</div>
+      ) : (
+        <ul className="gradeCalcList recentGradeList">
+          {recentRows.map(({ assignment, gradedMs, score }) => (
+            <li
+              key={`${assignment.course_id}:${assignment.id}:${gradedMs}`}
+              className="gradeCalcListItem recentGradeItem"
+            >
+              <div className="gradeCalcListMain recentGradeMain">
+                <div className="gradeCalcItemTitle">{assignment.name}</div>
+                <div className="muted recentGradeCourse">
+                  {formatCourseTitle(assignment?.course_name)}
+                </div>
+                <div className="recentGradeMeta muted">
+                  <span>Graded {new Date(gradedMs).toLocaleString()}</span>
+                  <span>
+                    Score {gradesVisible ? fmtScore(score) : "Hidden"}
+                    {Number.isFinite(Number(assignment?.points_possible))
+                      ? ` / ${gradesVisible ? fmtScore(assignment.points_possible) : "Hidden"}`
+                      : ""}
+                  </span>
+                </div>
+              </div>
+              {assignment?.html_url ? (
+                <div className="recentGradeActions">
+                  <a
+                    className="btn"
+                    href={assignment.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View in Canvas
+                  </a>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </CollapsibleWidget>
+  );
+}
+
 function WidgetConfigEditor({ type, config, onChange }) {
   switch (type) {
     case "grades":
@@ -1323,6 +1440,25 @@ function WidgetConfigEditor({ type, config, onChange }) {
               checked={config.showGpa !== false}
               onChange={(v) => onChange({ showGpa: v })}
               label="Show GPA"
+            />
+          </label>
+        </div>
+      );
+    case "recently_graded":
+      return (
+        <div className="widgetConfigGrid">
+          <label className="widgetConfigRow">
+            <span>Items shown</span>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={config.maxItems ?? 5}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                onChange({ maxItems: Number.isFinite(n) && n > 0 ? n : 5 });
+              }}
+              style={{ width: 70 }}
             />
           </label>
         </div>
@@ -2069,6 +2205,14 @@ export function MyInformation({ active = true }) {
                       notificationsOn={notificationsOn}
                       handleEnableNotifications={handleEnableNotifications}
                       handleDisableNotifications={handleDisableNotifications}
+                    />
+                  );
+                case "recently_graded":
+                  return (
+                    <RecentlyGradedWidget
+                      key={w.id}
+                      config={w.config}
+                      gradesVisible={gradesVisible}
                     />
                   );
                 default:

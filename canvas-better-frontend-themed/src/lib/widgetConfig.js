@@ -49,6 +49,12 @@ export const WIDGET_PRESETS = {
     defaultConfig: {},
     unique: true,
   },
+  recently_graded: {
+    label: 'Recently Graded',
+    description: 'Last graded assignments across all courses, sorted by graded date',
+    defaultConfig: { maxItems: 5 },
+    unique: true,
+  },
 };
 
 const DEFAULT_WIDGETS = [
