@@ -52,12 +52,12 @@ export const WIDGET_PRESETS = {
 };
 
 const DEFAULT_WIDGETS = [
-  { id: 'default_grades',        type: 'grades',       visible: true, config: { showScore: false, maxCourses: null, showGpa: true } },
   { id: 'default_today_ring',    type: 'today_ring',   visible: true, config: { showLegend: true } },
   { id: 'default_quick_stats',   type: 'quick_stats',  visible: true, config: { showMissing: false, showDueSoon: false, showGpa: true, showTodos: true } },
+  { id: 'default_grades',        type: 'grades',       visible: true, config: { showScore: false, maxCourses: null, showGpa: true } },
+  { id: 'default_announcements', type: 'announcements',visible: true, config: {} },
   { id: 'default_due_soon',      type: 'due_soon',     visible: true, config: {} },
   { id: 'default_missing_work',  type: 'missing_work', visible: true, config: {} },
-  { id: 'default_announcements', type: 'announcements',visible: true, config: {} },
   { id: 'default_notifications', type: 'notifications',visible: true, config: {} },
 ];
 

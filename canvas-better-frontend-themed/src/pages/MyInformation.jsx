@@ -1928,19 +1928,22 @@ export function MyInformation({ active = true }) {
       {/* Welcome hero — typographic moment, not a stats template */}
       <section className="welcomeHero" aria-labelledby="welcomeHeading">
         <div className="welcomeHeroTop">
-          {profile.avatar_url ? (
-            <img className="welcomeAvatar" src={profile.avatar_url} alt="" />
-          ) : (
-            <div className="welcomeAvatar welcomeAvatarPlaceholder" aria-hidden="true">
-              {avatarInitialOf(profile)}
+          <div className="welcomeIdentity">
+            {profile.avatar_url ? (
+              <img className="welcomeAvatar" src={profile.avatar_url} alt="" />
+            ) : (
+              <div className="welcomeAvatar welcomeAvatarPlaceholder" aria-hidden="true">
+                {avatarInitialOf(profile)}
+              </div>
+            )}
+            <div className="welcomeMeta">
+              <span className="welcomeName">{profile.short_name || profile.name || "Student"}</span>
+              {(profileQ.refreshing || overviewQ.refreshing || announcementsQ.refreshing) ? (
+                <span className="welcomeSyncing"><span className="spinner" />Syncing</span>
+              ) : null}
             </div>
-          )}
-          <div className="welcomeMeta">
-            <span className="welcomeName">{profile.short_name || profile.name || "Student"}</span>
-            {(profileQ.refreshing || overviewQ.refreshing || announcementsQ.refreshing) ? (
-              <span className="welcomeSyncing"><span className="spinner" />Syncing</span>
-            ) : null}
           </div>
+          <p className="welcomeSubline">{datelineFor(now)}</p>
         </div>
 
         <h1 id="welcomeHeading" className="welcomeGreeting">
@@ -1948,33 +1951,30 @@ export function MyInformation({ active = true }) {
           <span className="welcomeGreetingName">{firstNameOf(profile)}.</span>
         </h1>
 
-        <p className="welcomeSubline">{datelineFor(now)}</p>
-
-        {(profile.primary_email || profile.sortable_name || profile.short_name || profile.id) ? (
-          <details className="welcomeAccountDetails">
-            <summary>Account details</summary>
-            <dl>
-              {profile.name ? (<><dt>Name</dt><dd>{profile.name}</dd></>) : null}
-              <dt>Canvas ID</dt><dd className="mono">{profile.id}</dd>
-              {profile.primary_email ? (<><dt>Email</dt><dd className="mono">{profile.primary_email}</dd></>) : null}
-              {profile.sortable_name ? (<><dt>Sortable</dt><dd className="mono">{profile.sortable_name}</dd></>) : null}
-              {profile.short_name ? (<><dt>Short</dt><dd className="mono">{profile.short_name}</dd></>) : null}
-            </dl>
-          </details>
-        ) : null}
+        <div className="welcomeActions">
+          {(profile.primary_email || profile.sortable_name || profile.short_name || profile.id) ? (
+            <details className="welcomeAccountDetails">
+              <summary>Account details</summary>
+              <dl>
+                {profile.name ? (<><dt>Name</dt><dd>{profile.name}</dd></>) : null}
+                <dt>Canvas ID</dt><dd className="mono">{profile.id}</dd>
+                {profile.primary_email ? (<><dt>Email</dt><dd className="mono">{profile.primary_email}</dd></>) : null}
+                {profile.sortable_name ? (<><dt>Sortable</dt><dd className="mono">{profile.sortable_name}</dd></>) : null}
+                {profile.short_name ? (<><dt>Short</dt><dd className="mono">{profile.short_name}</dd></>) : null}
+              </dl>
+            </details>
+          ) : <div />}
+          <button
+            type="button"
+            className="heroWidgetManageBtn"
+            onClick={() => setManageOpen(true)}
+          >
+            ⚙ Customize
+          </button>
+        </div>
 
         {/* Hero widgets */}
         <div className="heroWidgetArea">
-          <div className="heroWidgetBar">
-            <span className="heroWidgetBarLabel">Widgets</span>
-            <button
-              type="button"
-              className="heroWidgetManageBtn"
-              onClick={() => setManageOpen(true)}
-            >
-              ⚙ Customize
-            </button>
-          </div>
           <div className="heroWidgetRow">
             {widgets.filter((w) => w.visible).map((w) => {
               switch (w.type) {

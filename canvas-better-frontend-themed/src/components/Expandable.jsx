@@ -46,18 +46,16 @@ export function Expandable({
           }}
         >
           {/* our indicator */}
-          <span
-            className="mono"
+          <svg
+            className={`expandableChevron${open ? " open" : ""}`}
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
             aria-hidden="true"
-            style={{
-              width: 18,
-              display: "inline-block",
-              userSelect: "none",
-              opacity: 0.8,
-            }}
           >
-            {open ? "▾" : "▸"}
-          </span>
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="expandableTitle">{title}</div>
