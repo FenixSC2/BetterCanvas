@@ -13,3 +13,6 @@ backend/canvas_better.db
 *.db
 *.db-shm
 *.db-wal
+
+# Graphify info
+graphify-out/
