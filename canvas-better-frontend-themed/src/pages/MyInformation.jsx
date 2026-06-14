@@ -1283,39 +1283,41 @@ function RecentlyGradedWidget({ config, gradesVisible }) {
       ) : recentRows.length === 0 ? (
         <div className="muted">No graded assignments found yet.</div>
       ) : (
-        <ul className="gradeCalcList recentGradeList">
+        <ul className="list recentGradeList">
           {recentRows.map(({ assignment, gradedMs, score }) => (
             <li
               key={`${assignment.course_id}:${assignment.id}:${gradedMs}`}
-              className="gradeCalcListItem recentGradeItem"
+              className="listItem recentGradeItem"
             >
-              <div className="gradeCalcListMain recentGradeMain">
-                <div className="gradeCalcItemTitle">{assignment.name}</div>
-                <div className="muted recentGradeCourse">
-                  {formatCourseTitle(assignment?.course_name)}
+              <div className="recentGradeRow">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="expandableTitle">{assignment.name}</div>
+                  <div className="expandableSubtitle" style={{ marginTop: 2 }}>
+                    {formatCourseTitle(assignment?.course_name)}
+                  </div>
+                  <div className="recentGradeMeta muted">
+                    <span>Graded {new Date(gradedMs).toLocaleString()}</span>
+                    <span>
+                      Score {gradesVisible ? fmtScore(score) : "Hidden"}
+                      {Number.isFinite(Number(assignment?.points_possible))
+                        ? ` / ${gradesVisible ? fmtScore(assignment.points_possible) : "Hidden"}`
+                        : ""}
+                    </span>
+                  </div>
                 </div>
-                <div className="recentGradeMeta muted">
-                  <span>Graded {new Date(gradedMs).toLocaleString()}</span>
-                  <span>
-                    Score {gradesVisible ? fmtScore(score) : "Hidden"}
-                    {Number.isFinite(Number(assignment?.points_possible))
-                      ? ` / ${gradesVisible ? fmtScore(assignment.points_possible) : "Hidden"}`
-                      : ""}
-                  </span>
-                </div>
+                {assignment?.html_url ? (
+                  <div className="expandableRight recentGradeActions">
+                    <a
+                      className="btn"
+                      href={assignment.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View in Canvas
+                    </a>
+                  </div>
+                ) : null}
               </div>
-              {assignment?.html_url ? (
-                <div className="recentGradeActions">
-                  <a
-                    className="btn"
-                    href={assignment.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View in Canvas
-                  </a>
-                </div>
-              ) : null}
             </li>
           ))}
         </ul>
