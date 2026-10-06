@@ -626,7 +626,7 @@ export function GradePerformance({ demoMode = false }) {
     [summariesQ.data],
   );
 
-  /* oxlint-disable react-doctor/no-event-handler -- the selections below sync to async query data (summaries, stats, scaleConfig) on arrival; no event handler can observe the data load */
+  // Effects below: the selections below sync to async query data (summaries, stats, scaleConfig) on arrival; no event handler can observe the data load.
   useEffect(() => {
     if (!summaries.length) return;
     const currentSelected = summaries.some(
@@ -842,7 +842,6 @@ export function GradePerformance({ demoMode = false }) {
       setTargetLetter(scaleConfig.entries[0].value);
     }
   }, [scaleConfig, targetLetter]);
-  /* oxlint-enable react-doctor/no-event-handler */
 
   const needCalculator = useMemo(() => {
     const selected = minNeededCandidates.find(

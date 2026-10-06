@@ -907,7 +907,7 @@ export function UpcomingAssignments() {
   ]);
 
   // === Auto-focus target assignment ===
-  /* oxlint-disable react-doctor/no-event-handler -- responds to localStorage nav target + async data arrival; no handler on this page sets these */
+  // Effects below: responds to localStorage nav target + async data arrival; no handler on this page sets these.
   useEffect(() => {
     // wait until we have *some* data (cached or freshly loaded)
     if (!canvasItems?.length) return;
@@ -941,13 +941,11 @@ export function UpcomingAssignments() {
     // Mark pending focus; we’ll execute scroll when DOM is present
     pendingFocusRef.current = key;
   }, [canvasItems, filterMode]);
-  /* oxlint-enable react-doctor/no-event-handler */
 
   // After list renders (filteredSorted changes), perform scroll if pending.
   // The timer ID is set inside an async run() closure, so the cleanup reads the
   // latest ref value rather than a snapshot — clearing the most recent timer is
   // the intended behavior here.
-  // oxlint-disable-next-line react-doctor/exhaustive-deps
   useEffect(() => {
     const key = pendingFocusRef.current;
     if (!key) return;
@@ -979,7 +977,7 @@ export function UpcomingAssignments() {
       // time, so clearing the latest matches expectations.
       if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
     };
-  }, [filteredSorted]); // oxlint-disable-line react-doctor/exhaustive-deps
+  }, [filteredSorted]);
 
   if (upcomingQ.error || undatedQ.error)
     return <ErrorBox error={upcomingQ.error || undatedQ.error} />

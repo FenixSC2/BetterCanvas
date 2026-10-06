@@ -3048,30 +3048,6 @@ def delete_todo_endpoint(
     )
     return {"success": bool(deleted_ids), "deleted_ids": deleted_ids}
 
-@app.get("/api/debug/cache")
-def debug_cache(current_user: User = Depends(get_current_user)):
-    with _cache_lock:
-        keys = list(_cache.keys())
-    return {
-        "ttl_seconds": CACHE_TTL_SECONDS,
-        "keys": keys,
-        "count": len(keys),
-    }
-
-@app.get("/api/debug/terms")
-def debug_terms(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    token = get_canvas_token(current_user.id, db)
-    if not token:
-        raise HTTPException(status_code=400, detail="No Canvas token found")
-    courses = get_courses(mode=CacheMode.fresh, token=token, user_id=current_user.id)
-    counts: dict[int, int] = {}
-    for c in courses:
-        if c.term_id is None:
-            continue
-        counts[c.term_id] = counts.get(c.term_id, 0) + 1
-    top = sorted(counts.items(), key=lambda kv: kv[0], reverse=True)[:10]
-    return {"term_counts_top10": top, "total_courses": len(courses)}
-
 @app.on_event("startup")
 async def on_startup():
     global _sync_task
