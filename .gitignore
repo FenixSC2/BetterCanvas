@@ -16,3 +16,6 @@ backend/canvas_better.db
 
 # Graphify info
 graphify-out/
+graphify-security-out/
+
+SECURITY_AUDIT.md

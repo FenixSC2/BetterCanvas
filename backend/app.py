@@ -180,6 +180,7 @@ _cache_lock = Lock()
 _cache: dict[str, dict[str, Any]] = {}  # key -> {"ts": float, "value": Any}
 _demo_sessions: Dict[str, Dict[str, Any]] = {}  # session_id -> {"expires": float} for demo mode
 _demo_sessions_lock = Lock()
+_demo_evict_task: Optional[asyncio.Task] = None
 
 # === Cache mode ===
 class CacheMode(str, Enum):
@@ -346,6 +347,10 @@ class GradeScalePreferenceRequest(BaseModel):
     thresholds: Optional[Dict[str, float]] = None
     pass_threshold: Optional[float] = Field(default=None, ge=0.0, le=100.0)
 
+
+class AnnouncementSeenRequest(BaseModel):
+    announcement_id: int = 0
+
 # Annoucnement model
 class Announcement(BaseModel):
     id: int
@@ -474,6 +479,17 @@ def is_demo_session(session_id: str) -> bool:
             _demo_sessions.pop(session_id, None)
             return False
         return True
+
+async def _demo_evict_loop():
+    while True:
+        await asyncio.sleep(300)  # every 5 minutes
+        now = time.time()
+        with _demo_sessions_lock:
+            expired = [k for k, v in _demo_sessions.items() if now > v["expires"]]
+            for k in expired:
+                del _demo_sessions[k]
+        if expired:
+            logger.info("Demo session eviction: removed %d stale entries", len(expired))
 
 def get_session_id(session_id: Optional[str] = Cookie(None)) -> Optional[str]:
     """Helper dependency to get session ID from the httponly session cookie."""
@@ -1726,7 +1742,7 @@ def api_upcoming(
     db: Session = Depends(get_db),
 ):
     """Get upcoming assignments. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
-    logger.info("[DBG-UPCOMING] session_id=%s", "present(" + session_id[:8] + "...)" if session_id else "MISSING")
+    logger.info("[DBG-UPCOMING] session_id=%s", "present" if session_id else "MISSING")
 
     # Check for demo mode
     if session_id and is_demo_session(session_id):
@@ -1856,7 +1872,8 @@ def api_undated_assignments(
     return undated
 
 @app.get("/api/demo/enable")
-def api_demo_enable():
+@limiter.limit("5/minute")
+def api_demo_enable(request: Request):
     """Enable demo mode - returns a demo session ID."""
     session_id = create_demo_session()
     response = JSONResponse({"success": True, "demo": True})
@@ -2251,7 +2268,7 @@ def api_get_announcement_last_seen(
 
 @app.post("/api/announcements/last-seen")
 def api_set_announcement_last_seen(
-    payload: dict,
+    payload: AnnouncementSeenRequest,
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
@@ -2262,7 +2279,7 @@ def api_set_announcement_last_seen(
         uid = get_session_user_id(session_id, db)
         if not uid:
             return {"ok": True}
-        announcement_id = int(payload.get("announcement_id", 0))
+        announcement_id = payload.announcement_id
         user = db.query(User).filter(User.id == uid).first()
         if user:
             current = getattr(user, "last_seen_announcement_id", None)
@@ -2292,13 +2309,6 @@ async def sync_loop():
             logger.exception("Background sync failed (will retry)")
 
         await asyncio.sleep(SYNC_INTERVAL_SECONDS)
-
-@app.get("/api/debug/canvas")
-def debug_canvas():
-    return {
-        "canvas_base_url": CANVAS_BASE_URL,
-        "auth_mode": "per-user token",
-    }
 
 # === Auth endpoints ===
 @app.post("/api/auth/register", response_model=UserResponse)
@@ -2402,7 +2412,7 @@ def auth_token_submit(payload: CanvasTokenRequest, current_user: User = Depends(
     try:
         # Validate the token by attempting a simple Canvas API call
         try:
-            response = requests.get(
+            response = session.get(
                 f"{CANVAS_BASE_URL}/api/v1/users/self",
                 headers={"Authorization": f"Bearer {payload.token}"},
                 timeout=10
@@ -3060,7 +3070,7 @@ def delete_todo_endpoint(
     return {"success": bool(deleted_ids), "deleted_ids": deleted_ids}
 
 @app.get("/api/debug/cache")
-def debug_cache():
+def debug_cache(current_user: User = Depends(get_current_user)):
     with _cache_lock:
         keys = list(_cache.keys())
     return {
@@ -3104,11 +3114,15 @@ async def on_startup():
             raise RuntimeError("Database initialization failed during cloud startup") from exc
 
     _sync_task = asyncio.create_task(sync_loop())
+    global _demo_evict_task
+    _demo_evict_task = asyncio.create_task(_demo_evict_loop())
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    global _sync_task
+    global _sync_task, _demo_evict_task
     if _sync_task:
         _sync_task.cancel()
+    if _demo_evict_task:
+        _demo_evict_task.cancel()
 
 # Run with: uvicorn app:app --reload --port 8000
