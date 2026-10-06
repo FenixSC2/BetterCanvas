@@ -386,7 +386,27 @@ def _raise_canvas_http(r: requests.Response, url: str):
     raise HTTPException(status_code=r.status_code, detail=detail)
 
 # === FastAPI app ===
-limiter = Limiter(key_func=get_remote_address)
+# Proxies in front of the app that append to X-Forwarded-For (App Runner: 1).
+TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1"))
+
+
+def client_ip(request: Request) -> str:
+    """Client IP for rate limiting.
+
+    The socket peer is App Runner's proxy, shared by every user. Each trusted
+    proxy appends the address it saw to X-Forwarded-For, so the real client is
+    TRUSTED_PROXY_HOPS entries from the right; entries further left are
+    client-supplied and spoofable.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff and TRUSTED_PROXY_HOPS > 0:
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        if len(hops) >= TRUSTED_PROXY_HOPS:
+            return hops[-TRUSTED_PROXY_HOPS]
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=client_ip)
 
 
 def _session_or_ip(request: Request) -> str:
@@ -398,7 +418,7 @@ def _session_or_ip(request: Request) -> str:
     sid = request.cookies.get("session_id")
     if sid:
         return "s:" + hashlib.sha256(sid.encode()).hexdigest()[:32]
-    return get_remote_address(request)
+    return client_ip(request)
 
 
 def per_session_limit(rate: str):
