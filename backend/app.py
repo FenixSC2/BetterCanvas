@@ -387,6 +387,22 @@ def _raise_canvas_http(r: requests.Response, url: str):
 
 # === FastAPI app ===
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _session_or_ip(request: Request) -> str:
+    """Rate-limit key for signed-in endpoints: the hashed session cookie, else client IP.
+
+    Behind App Runner's proxy the remote address can be shared by every user,
+    so keying writes on the session keeps one user's burst from limiting others.
+    """
+    sid = request.cookies.get("session_id")
+    if sid:
+        return "s:" + hashlib.sha256(sid.encode()).hexdigest()[:32]
+    return get_remote_address(request)
+
+
+def per_session_limit(rate: str):
+    return limiter.limit(rate, key_func=_session_or_ip)
 app = FastAPI(title="CanvAssist API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -2189,7 +2205,8 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/api/cache/clear")
-def api_cache_clear(current_user: User = Depends(get_current_user)):
+@per_session_limit("10/minute")
+def api_cache_clear(request: Request, current_user: User = Depends(get_current_user)):
     """Clear the server-side cache. Requires an authenticated session."""
     cache_clear(prefix=None)
     return {"ok": True}
@@ -2240,7 +2257,9 @@ def api_get_announcement_last_seen(
 
 
 @app.post("/api/announcements/last-seen")
+@per_session_limit("30/minute")
 def api_set_announcement_last_seen(
+    request: Request,
     payload: AnnouncementSeenRequest,
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
@@ -2356,7 +2375,9 @@ def auth_reset_password(request: Request, payload: ResetPasswordRequest, db: Ses
     return {"success": True, "message": "Password reset successful. Please sign in."}
 
 @app.post("/api/auth/logout")
+@per_session_limit("30/minute")
 def auth_logout(
+    request: Request,
     session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
@@ -2380,7 +2401,8 @@ def auth_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @app.post("/api/auth/token")
-def auth_token_submit(payload: CanvasTokenRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@per_session_limit("10/minute")
+def auth_token_submit(request: Request, payload: CanvasTokenRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Submit or update Canvas token for the user."""
     try:
         # Validate the token by attempting a simple Canvas API call
@@ -2422,7 +2444,8 @@ def auth_token_status(current_user: User = Depends(get_current_user), db: Sessio
     return CanvasTokenStatus(has_token=True, updated_at=db_token.updated_at)
 
 @app.delete("/api/auth/token")
-def auth_token_revoke(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@per_session_limit("10/minute")
+def auth_token_revoke(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Revoke the user's Canvas token."""
     revoke_canvas_token(current_user.id, db)
     return {"success": True, "message": "Token revoked"}
@@ -2471,7 +2494,9 @@ def get_hidden_assignments_endpoint(current_user: User = Depends(get_current_use
     return {"hidden_assignments": hidden_details}
 
 @app.post("/api/hidden-assignments")
+@per_session_limit("60/minute")
 def add_hidden_assignment(
+    request: Request,
     course_id: int = Query(...),
     assignment_id: int = Query(...),
     current_user: User = Depends(get_current_user),
@@ -2485,7 +2510,9 @@ def add_hidden_assignment(
     return {"success": True, "message": "Assignment hidden"}
 
 @app.delete("/api/hidden-assignments/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def remove_hidden_assignment(
+    request: Request,
     course_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
@@ -2542,7 +2569,9 @@ def get_workload_estimates_endpoint(
     return {"estimates": get_workload_estimates(current_user.id, db)}
 
 @app.put("/api/workload-estimates/{course_id}/{assignment_id}")
+@per_session_limit("120/minute")
 def upsert_workload_estimate_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     body: WorkloadEstimateRequest,
@@ -2562,7 +2591,9 @@ def upsert_workload_estimate_endpoint(
     return {"success": True}
 
 @app.delete("/api/workload-estimates/{course_id}/{assignment_id}")
+@per_session_limit("120/minute")
 def delete_workload_estimate_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
@@ -2586,7 +2617,9 @@ def get_completed_assignments_endpoint(
 
 
 @app.put("/api/completed-assignments/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def upsert_completed_assignment_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     body: CompletedAssignmentFlagRequest,
@@ -2605,7 +2638,9 @@ def upsert_completed_assignment_endpoint(
 
 
 @app.delete("/api/completed-assignments/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def delete_completed_assignment_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
@@ -2626,7 +2661,9 @@ def get_assignment_weight_overrides_endpoint(
 
 
 @app.put("/api/assignment-weight-overrides/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def upsert_assignment_weight_override_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     body: AssignmentWeightOverrideRequest,
@@ -2645,7 +2682,9 @@ def upsert_assignment_weight_override_endpoint(
 
 
 @app.delete("/api/assignment-weight-overrides/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def delete_assignment_weight_override_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
@@ -2807,7 +2846,9 @@ def get_assignment_group_weight_overrides_endpoint(
 
 
 @app.put("/api/assignment-group-weight-overrides/{course_id}/{group_id}")
+@per_session_limit("60/minute")
 def upsert_assignment_group_weight_override_endpoint(
+    request: Request,
     course_id: int,
     group_id: int,
     body: AssignmentGroupWeightRequest,
@@ -2826,7 +2867,9 @@ def upsert_assignment_group_weight_override_endpoint(
 
 
 @app.delete("/api/assignment-group-weight-overrides/{course_id}/{group_id}")
+@per_session_limit("60/minute")
 def delete_assignment_group_weight_override_endpoint(
+    request: Request,
     course_id: int,
     group_id: int,
     current_user: User = Depends(get_current_user),
@@ -2850,7 +2893,9 @@ def get_personal_assignment_dates_endpoint(
 
 
 @app.put("/api/personal-assignment-dates/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def upsert_personal_assignment_date_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     body: PersonalAssignmentDateRequest,
@@ -2869,7 +2914,9 @@ def upsert_personal_assignment_date_endpoint(
 
 
 @app.delete("/api/personal-assignment-dates/{course_id}/{assignment_id}")
+@per_session_limit("60/minute")
 def delete_personal_assignment_date_endpoint(
+    request: Request,
     course_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
@@ -2890,7 +2937,9 @@ def get_grade_scale_preferences_endpoint(
 
 
 @app.put("/api/grade-scale-preferences/{course_id}")
+@per_session_limit("60/minute")
 def upsert_grade_scale_preference_endpoint(
+    request: Request,
     course_id: int,
     body: GradeScalePreferenceRequest,
     current_user: User = Depends(get_current_user),
@@ -2922,7 +2971,7 @@ def get_todos_endpoint(
 
 
 @app.post("/api/todos")
-@limiter.limit("30/minute")
+@per_session_limit("30/minute")
 def create_todo_endpoint(
     request: Request,
     body: TodoItemPayload,
@@ -2969,7 +3018,7 @@ def create_todo_endpoint(
 
 
 @app.put("/api/todos/{todo_id}")
-@limiter.limit("30/minute")
+@per_session_limit("30/minute")
 def update_todo_endpoint(
     request: Request,
     todo_id: str,
@@ -3031,7 +3080,7 @@ def update_todo_endpoint(
 
 
 @app.delete("/api/todos/{todo_id}")
-@limiter.limit("30/minute")
+@per_session_limit("30/minute")
 def delete_todo_endpoint(
     request: Request,
     todo_id: str,
