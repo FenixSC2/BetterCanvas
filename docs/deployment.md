@@ -39,8 +39,7 @@ Production settings to keep in mind:
   uses `SameSite=None` because the frontend and the API are on different subdomains.
 - Demo sessions are stateless signed tokens, so they survive restarts and scale across instances.
 
-### Alternative targets
+### Running elsewhere
 
-The repository also contains a `Procfile` and an Elastic Beanstalk workflow
-([`deploy-backend.yml`](../.github/workflows/deploy-backend.yml)). Both run the same `app:app`
-ASGI application and can be used instead of App Runner.
+`backend/Procfile` runs the same `app:app` ASGI application with Uvicorn, for hosts that use
+Procfiles. Any ASGI server works.
