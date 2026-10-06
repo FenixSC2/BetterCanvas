@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import hmac
+import secrets
 import time
 import logging
 import smtplib
@@ -9,16 +12,14 @@ import ssl
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
-from random import randint
+from zoneinfo import ZoneInfo
 from enum import Enum
-from typing import Tuple
 from email.message import EmailMessage
 from urllib.parse import quote_plus
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
 from fastapi import FastAPI, HTTPException, Query, Depends, Cookie, Request
-from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -38,10 +39,9 @@ load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 # Auth imports
 from auth import (
+    TOKEN_ENCRYPTION_KEY,
     User,
     CanvasToken,
-    HiddenAssignment,
-    WorkloadEstimate,
     TodoItemPayload,
     describe_database_target,
     get_db,
@@ -178,9 +178,6 @@ MAIL_FROM = os.getenv("MAIL_FROM", "no-reply@canvassist.local")
 
 _cache_lock = Lock()
 _cache: dict[str, dict[str, Any]] = {}  # key -> {"ts": float, "value": Any}
-_demo_sessions: Dict[str, Dict[str, Any]] = {}  # session_id -> {"expires": float} for demo mode
-_demo_sessions_lock = Lock()
-_demo_evict_task: Optional[asyncio.Task] = None
 
 # === Cache mode ===
 class CacheMode(str, Enum):
@@ -378,13 +375,11 @@ def _raise_canvas_http(r: requests.Response, url: str):
     except Exception:
         detail = r.text
 
-    logger.info("[DBG-CANVAS] Canvas returned %s for %s — detail: %s", r.status_code, url, str(detail)[:200])
-
     if r.status_code == 401:
-        logger.error("[DBG-CANVAS] Canvas 401 → returning app 403 (token invalid/expired)")
+        logger.warning("Canvas returned 401 for %s; token invalid or expired", url)
         raise HTTPException(status_code=403, detail="Canvas token invalid or expired. Please re-submit your Canvas API token.")
     if r.status_code == 403:
-        logger.error("[DBG-CANVAS] Canvas 403 → returning app 403")
+        logger.warning("Canvas returned 403 for %s", url)
         raise HTTPException(status_code=403, detail=detail)
 
     logger.error(f"Canvas error {r.status_code} on {url}: {detail}")
@@ -392,7 +387,7 @@ def _raise_canvas_http(r: requests.Response, url: str):
 
 # === FastAPI app ===
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="Canvas Better Backend (local)")
+app = FastAPI(title="CanvAssist API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
@@ -458,38 +453,34 @@ async def _database_error_handler(request: Request, exc: SQLAlchemyError):
 
 # === Session management ===
 
+# Demo sessions are stateless signed tokens ("demo.<expiry>.<nonce>.<sig>") so they
+# survive restarts/redeploys and work across workers without shared storage.
+DEMO_SESSION_TTL_SECONDS = 24 * 60 * 60
+_DEMO_SIGNING_KEY = hashlib.sha256(b"canvassist-demo-session:" + TOKEN_ENCRYPTION_KEY.encode()).digest()
+
+def _sign_demo_payload(payload: str) -> str:
+    return hmac.new(_DEMO_SIGNING_KEY, payload.encode(), hashlib.sha256).hexdigest()
+
 def create_demo_session() -> str:
-    """Create a demo session for unauthenticated mock mode access."""
-    import secrets
-    session_id = secrets.token_urlsafe(32)
-    expires_at = time.time() + (24 * 60 * 60)  # 1 day for demo
-    
-    with _demo_sessions_lock:
-        _demo_sessions[session_id] = {"expires": expires_at}
-    
-    return session_id
+    """Create a demo session for unauthenticated demo access."""
+    payload = f"{int(time.time()) + DEMO_SESSION_TTL_SECONDS}.{secrets.token_urlsafe(16)}"
+    return f"demo.{payload}.{_sign_demo_payload(payload)}"
 
 def is_demo_session(session_id: str) -> bool:
-    """Check if a session is in demo mode."""
-    with _demo_sessions_lock:
-        session = _demo_sessions.get(session_id)
-        if not session:
-            return False
-        if time.time() > session["expires"]:
-            _demo_sessions.pop(session_id, None)
-            return False
-        return True
-
-async def _demo_evict_loop():
-    while True:
-        await asyncio.sleep(300)  # every 5 minutes
-        now = time.time()
-        with _demo_sessions_lock:
-            expired = [k for k, v in _demo_sessions.items() if now > v["expires"]]
-            for k in expired:
-                del _demo_sessions[k]
-        if expired:
-            logger.info("Demo session eviction: removed %d stale entries", len(expired))
+    """Check whether a session ID is a valid, unexpired demo token."""
+    if not session_id or not session_id.startswith("demo."):
+        return False
+    parts = session_id.split(".")
+    if len(parts) != 4:
+        return False
+    _, expires, nonce, sig = parts
+    payload = f"{expires}.{nonce}"
+    if not hmac.compare_digest(sig, _sign_demo_payload(payload)):
+        return False
+    try:
+        return time.time() < int(expires)
+    except ValueError:
+        return False
 
 def get_session_id(session_id: Optional[str] = Cookie(None)) -> Optional[str]:
     """Helper dependency to get session ID from the httponly session cookie."""
@@ -554,7 +545,6 @@ def get_current_user(session_id: Optional[str] = Depends(get_session_id), db: Se
 def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Any:
     """Make a single Canvas API request. Requires a user token."""
     if not token:
-        logger.info("[DBG-CANVAS] canvas_get_single: no token → 403 (path=%s)", path)
         raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
     
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
@@ -572,7 +562,6 @@ def canvas_get_single(path: str, params: Optional[Dict[str, Any]] = None, token:
 def canvas_get_paginated(path: str, params: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> List[Any]:
     """Make a paginated Canvas API request. Requires a user token."""
     if not token:
-        logger.info("[DBG-CANVAS] canvas_get_paginated: no token → 403 (path=%s)", path)
         raise HTTPException(status_code=403, detail="Canvas token required. Please submit your Canvas API token.")
     
     url = f"{CANVAS_BASE_URL}/api/v1{path}"
@@ -716,10 +705,10 @@ def get_announcements(
 def mock_profile() -> Profile:
     return Profile(
         id=999999,
-        name="Mock Student",
-        sortable_name="Student, Mock",
-        short_name="Mock",
-        primary_email="mock.student@example.com",
+        name="Alex Rivera",
+        sortable_name="Rivera, Alex",
+        short_name="Alex",
+        primary_email="alex.rivera@example.com",
         avatar_url=None,
     )
 
@@ -727,125 +716,111 @@ def mock_courses() -> List[Course]:
     return [
         Course(
             id=101,
-            name="CS 3000 — Algorithms (Mock)",
+            name="CS 3000 — Algorithms",
             course_code="CS3000",
             term_id=202601,
             published=True,
-            syllabus="Mock syllabus: This course covers graphs, flows, and dynamic programming.",
+            syllabus="This course covers graphs, flows, and dynamic programming.",
             syllabus_url=f"{CANVAS_BASE_URL}/courses/101/syllabus",
             html_url=f"{CANVAS_BASE_URL}/courses/101",
         ),
         Course(
             id=202,
-            name="MATH 2001 — Discrete Structures (Mock)",
+            name="MATH 2001 — Discrete Structures",
             course_code="MATH2001",
             term_id=202601,
             published=True,
-            syllabus="Mock syllabus: Proofs, combinatorics, and discrete probability.",
+            syllabus="Proofs, combinatorics, and discrete probability.",
             syllabus_url=f"{CANVAS_BASE_URL}/courses/202/syllabus",
             html_url=f"{CANVAS_BASE_URL}/courses/202",
         ),
         Course(
             id=303,
-            name="ENGW 1111 — Writing (Score Only Mock)",
+            name="ENGW 1111 — First-Year Writing",
             course_code="ENGW1111",
             term_id=202601,
             published=True,
-            syllabus="Mock syllabus: Writing and revision.",
+            syllabus="Writing and revision.",
             syllabus_url=f"{CANVAS_BASE_URL}/courses/303/syllabus",
             html_url=f"{CANVAS_BASE_URL}/courses/303",
         ),
     ]
 
+_DEMO_TZ = ZoneInfo("America/New_York")
+
+# Per-course names/descriptions for the demo assignments; the schedule shape
+# (overdue, due soon, upcoming, undated, graded) is shared across courses.
+_DEMO_ASSIGNMENT_COPY: Dict[int, Dict[str, tuple]] = {
+    101: {
+        "missing": ("Reading Check: Asymptotic Notation", "Short check on chapter 3 — Big-O, Big-Θ, and Big-Ω."),
+        "homework": ("Problem Set 2: Divide and Conquer", "Solve recurrences with the Master Theorem and analyze merge-sort variants. Show all work."),
+        "due_soon": ("Lecture Reflection: Graph Traversals", "Two paragraphs comparing BFS and DFS on the examples from lecture."),
+        "project": ("Project Proposal: Route Planner", "One-page proposal for your shortest-path project: dataset, algorithm, and evaluation plan."),
+        "optional": ("Optional: Mid-Semester Feedback Survey", "Anonymous survey — tell us what's working and what isn't."),
+        "graded": ("Problem Set 1: Proof Warm-up", "Induction and loop-invariant proofs."),
+        "quiz": ("Quiz 2: Sorting", "Timed quiz on comparison sorts and lower bounds."),
+    },
+    202: {
+        "missing": ("Reading Check: Propositional Logic", "Truth tables, equivalences, and normal forms (sections 1.1–1.3)."),
+        "homework": ("Homework 3: Combinatorics", "Counting with permutations, combinations, and the pigeonhole principle."),
+        "due_soon": ("Weekly Proof Journal", "Write up one proof from this week in your own words."),
+        "project": ("Group Project Checkpoint", "Submit your group's outline and division of work."),
+        "optional": ("Optional: Extra Practice Set", "Ungraded practice problems for the upcoming exam."),
+        "graded": ("Homework 2: Induction", "Weak and strong induction proofs."),
+        "quiz": ("Quiz 2: Set Theory", "Short quiz on sets, relations, and functions."),
+    },
+    303: {
+        "missing": ("Reading Response: Bird by Bird", "Respond to the assigned Lamott chapter in 300 words."),
+        "homework": ("Annotated Bibliography", "Five annotated sources for your research essay, in MLA format."),
+        "due_soon": ("Peer Review: Essay 2 Draft", "Leave margin comments and an end note on two classmates' drafts."),
+        "project": ("Essay 2: Final Draft", "Submit your revised essay with a short reflection on the changes you made."),
+        "optional": ("Optional: Writing Center Visit Reflection", "Earn participation credit by reflecting on a Writing Center session."),
+        "graded": ("Essay 1: Literacy Narrative", "Final draft of your literacy narrative."),
+        "quiz": ("Grammar Quiz: Comma Usage", "Quick quiz on comma splices and restrictive clauses."),
+    },
+}
+
 def mock_course_assignments(course_id: int, limit: Optional[int] = None) -> List[Assignment]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
+    copy = _DEMO_ASSIGNMENT_COPY.get(course_id, _DEMO_ASSIGNMENT_COPY[101])
+
+    def due(delta: timedelta) -> datetime:
+        # Land on 11:59 PM Eastern so demo deadlines look like real ones rather than "now + n".
+        local = (now + delta).astimezone(_DEMO_TZ)
+        return local.replace(hour=23, minute=59, second=0).astimezone(timezone.utc)
+
+    def due_soon(hours: int) -> datetime:
+        return (now + timedelta(hours=hours)).replace(minute=59, second=0)
+
+    def make(offset: int, kind: str, **fields: Any) -> Assignment:
+        name, desc = copy[kind]
+        aid = offset + course_id * 1000
+        return Assignment(
+            id=aid,
+            course_id=course_id,
+            name=name,
+            description=f"<p>{desc}</p>",
+            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{aid}",
+            **fields,
+        )
+
     base = [
-        Assignment(
-            id=999 + course_id * 1000,
-            course_id=course_id,
-            name="Reading Check 1",
-            due_at=now - timedelta(days=2),
-            points_possible=5,
-            description="<p>This is intentionally overdue + unsubmitted to test missing detection.\n\nMore text a couple lines below</p>",
-            submission_types=["online_text_entry"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{999 + course_id * 1000}",
-            submitted=False,
-            score=None,
-        ),
-        Assignment(
-            id=1 + course_id * 1000,
-            course_id=course_id,
-            name="Homework 1: Warm-up",
-            due_at=now + timedelta(days=3, hours=randint(0, 6)),
-            points_possible=50,
-            description="<p>Answer the questions in the PDF. Show work.</p>",
-            submission_types=["online_upload"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{1 + course_id * 1000}",
-            submitted=False,
-            score=None,
-        ),
-        Assignment(
-            id=4 + course_id * 1000,
-            course_id=course_id,
-            name="Checkpoint: Week 1 Reflection",
-            due_at=now + timedelta(hours=12),
-            points_possible=15,
-            description="<p>A short reflection to keep you on track this week. This is intentionally due soon and unsubmitted so the demo shows the next-24-hours urgency and workload planning views.</p>",
-            submission_types=["online_text_entry"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{4 + course_id * 1000}",
-            submitted=False,
-            score=None,
-        ),
-        Assignment(
-            id=2 + course_id * 1000,
-            course_id=course_id,
-            name="Project Proposal",
-            due_at=now + timedelta(days=7, hours=randint(0, 6)),
-            points_possible=25,
-            description="<p>Submit a 1-page proposal describing your project idea.</p>",
-            submission_types=["online_text_entry"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{2 + course_id * 1000}",
-            submitted=False,
-            score=None,
-        ),
-        Assignment(
-            id=5 + course_id * 1000,
-            course_id=course_id,
-            name="Optional Extra Credit Survey",
-            due_at=None,
-            points_possible=2,
-            description="<p>An undated optional item that demonstrates how assignments without due dates can still exist in Canvas courses.</p>",
-            submission_types=["online_url"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{5 + course_id * 1000}",
-            submitted=False,
-            score=None,
-        ),
-        Assignment(
-            id=6 + course_id * 1000,
-            course_id=course_id,
-            name="Practice Set Review",
-            due_at=now - timedelta(days=6, hours=(course_id % 3) + 2),
-            points_possible=20,
-            description="<p>A previously graded practice set so the demo includes recent grade history.</p>",
-            submission_types=["online_upload"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{6 + course_id * 1000}",
-            submitted=True,
-            score=16.0 + float(course_id % 3),
-            graded_at=now - timedelta(days=5, hours=(course_id % 4) + 1),
-        ),
-        Assignment(
-            id=3 + course_id * 1000,
-            course_id=course_id,
-            name="Quiz 1",
-            due_at=now + timedelta(days=1, hours=randint(0, 6)),
-            points_possible=10,
-            description="",
-            submission_types=["online_quiz"],
-            html_url=f"{CANVAS_BASE_URL}/courses/{course_id}/assignments/{3 + course_id * 1000}",
-            submitted=True,
-            score=9.0,
-            graded_at=now - timedelta(hours=(course_id % 5) + 6),
-        ),
+        make(999, "missing", due_at=due(-timedelta(days=2)), points_possible=5,
+             submission_types=["online_text_entry"], submitted=False, score=None),
+        make(1, "homework", due_at=due(timedelta(days=3, hours=course_id % 7)), points_possible=50,
+             submission_types=["online_upload"], submitted=False, score=None),
+        make(4, "due_soon", due_at=due_soon(12), points_possible=15,
+             submission_types=["online_text_entry"], submitted=False, score=None),
+        make(2, "project", due_at=due(timedelta(days=7, hours=course_id % 5)), points_possible=25,
+             submission_types=["online_text_entry"], submitted=False, score=None),
+        make(5, "optional", due_at=None, points_possible=2,
+             submission_types=["online_url"], submitted=False, score=None),
+        make(6, "graded", due_at=due(-timedelta(days=6, hours=(course_id % 3) + 2)), points_possible=20,
+             submission_types=["online_upload"], submitted=True, score=16.0 + float(course_id % 3),
+             graded_at=now - timedelta(days=5, hours=(course_id % 4) + 1)),
+        make(3, "quiz", due_at=due(timedelta(days=1, hours=course_id % 4)), points_possible=10,
+             submission_types=["online_quiz"], submitted=True, score=9.0,
+             graded_at=now - timedelta(hours=(course_id % 5) + 6)),
     ]
     base.sort(key=lambda a: (a.due_at is None, a.due_at or datetime.max.replace(tzinfo=timezone.utc)))
     return base[:limit] if limit else base
@@ -997,7 +972,7 @@ def mock_discussion_replies(topic_id: int) -> List[Dict[str, Any]]:
                 "id": 60011,
                 "parent_id": None,
                 "author_id": 9201,
-                "author_name": "Alex Kim",
+                "author_name": "Chris Kim",
                 "created_at": iso(now - timedelta(hours=4)),
                 "updated_at": iso(now - timedelta(hours=4)),
                 "message_html": "<p>Bring the induction proof from Thursday — the step case still doesn't click for me.</p>",
@@ -1023,7 +998,7 @@ def mock_announcements(days_back: int = 14, limit: int = 30) -> List[Announcemen
             posted_at=now - timedelta(hours=6),
             html_url=f"{CANVAS_BASE_URL}/courses/101/discussion_topics/90001",
             course_id=101,
-            course_name="CS 3000 — Algorithms (Mock)",
+            course_name="CS 3000 — Algorithms",
         ),
         Announcement(
             id=90002,
@@ -1035,18 +1010,18 @@ def mock_announcements(days_back: int = 14, limit: int = 30) -> List[Announcemen
             posted_at=now - timedelta(days=1, hours=2),
             html_url=f"{CANVAS_BASE_URL}/courses/202/discussion_topics/90002",
             course_id=202,
-            course_name="MATH 2001 — Discrete Structures (Mock)",
+            course_name="MATH 2001 — Discrete Structures",
         ),
         Announcement(
             id=90003,
-            title="Mock Data Walkthrough",
+            title="Welcome to the CanvAssist demo",
             message=(
                 "<p>This demo includes overdue items, due-soon assignments, and undated work so you can test filtering and planning behavior before connecting Canvas.</p>"
             ),
             posted_at=now - timedelta(days=3),
             html_url=f"{CANVAS_BASE_URL}/courses/303/discussion_topics/90003",
             course_id=303,
-            course_name="ENGW 1111 — Writing (Score Only Mock)",
+            course_name="ENGW 1111 — First-Year Writing",
         ),
     ]
 
@@ -1742,8 +1717,6 @@ def api_upcoming(
     db: Session = Depends(get_db),
 ):
     """Get upcoming assignments. Uses user token if authenticated, otherwise returns mock data if in demo mode."""
-    logger.info("[DBG-UPCOMING] session_id=%s", "present" if session_id else "MISSING")
-
     # Check for demo mode
     if session_id and is_demo_session(session_id):
         return mock_upcoming(limit=limit or 50)
@@ -1758,8 +1731,6 @@ def api_upcoming(
         except Exception:
             pass
 
-    logger.info("[DBG-UPCOMING] resolved: user_id=%s, token=%s", user_id, "present" if token else "MISSING")
-    
     lim = limit or 50
     key = f"upcoming:{user_id or 0}:v3:limit={lim}:days={days_ahead}"
 
@@ -1846,8 +1817,7 @@ def api_undated_assignments(
 
     # Get all courses
     courses = get_courses(mode=cache, token=token, user_id=user_id or 0)
-    course_map = {c.id: c for c in courses}
-    
+
     # Get hidden assignments if user is authenticated
     hidden_set = set(get_hidden_assignments(user_id, db)) if user_id and db else set()
     
@@ -1880,7 +1850,7 @@ def api_demo_enable(request: Request):
     response.set_cookie(
         "session_id",
         session_id,
-        max_age=24 * 60 * 60,  # 1 day
+        max_age=DEMO_SESSION_TTL_SECONDS,
         path="/",
         secure=SECURE_COOKIES,
         httponly=True,
@@ -2019,10 +1989,13 @@ def api_courses_summary(
 
 @app.get("/api/courses/attendance-tabs")
 def api_courses_attendance_tabs(
-    current_user: User = Depends(get_current_user),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
     """Return which of the user's active courses have an enabled attendance tab in Canvas."""
+    if session_id and is_demo_session(session_id):
+        return {"attendance": {}}
+    current_user = get_current_user(session_id, db)
     token = get_canvas_token(current_user.id, db)
     if not token:
         raise HTTPException(status_code=403, detail="Canvas token required")
@@ -2602,10 +2575,13 @@ def delete_workload_estimate_endpoint(
 
 @app.get("/api/completed-assignments")
 def get_completed_assignments_endpoint(
-    current_user: User = Depends(get_current_user),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
     """Get all assignment completion flags for the authenticated user."""
+    if session_id and is_demo_session(session_id):
+        return {"flags": []}
+    current_user = get_current_user(session_id, db)
     return {"flags": get_completed_assignment_flags(current_user.id, db)}
 
 
@@ -2863,10 +2839,13 @@ def delete_assignment_group_weight_override_endpoint(
 
 @app.get("/api/personal-assignment-dates")
 def get_personal_assignment_dates_endpoint(
-    current_user: User = Depends(get_current_user),
+    session_id: Optional[str] = Depends(get_session_id),
     db: Session = Depends(get_db),
 ):
     """Get all personal due dates set by the authenticated user for undated assignments."""
+    if session_id and is_demo_session(session_id):
+        return {"dates": []}
+    current_user = get_current_user(session_id, db)
     return {"dates": get_personal_assignment_dates(current_user.id, db)}
 
 
@@ -3114,15 +3093,11 @@ async def on_startup():
             raise RuntimeError("Database initialization failed during cloud startup") from exc
 
     _sync_task = asyncio.create_task(sync_loop())
-    global _demo_evict_task
-    _demo_evict_task = asyncio.create_task(_demo_evict_loop())
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    global _sync_task, _demo_evict_task
+    global _sync_task
     if _sync_task:
         _sync_task.cancel()
-    if _demo_evict_task:
-        _demo_evict_task.cancel()
 
 # Run with: uvicorn app:app --reload --port 8000

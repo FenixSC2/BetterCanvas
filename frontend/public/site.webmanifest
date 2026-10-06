@@ -1,0 +1,13 @@
+{
+  "name": "CanvAssist",
+  "short_name": "CanvAssist",
+  "description": "A calmer dashboard for Canvas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f6fb",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

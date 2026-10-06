@@ -85,19 +85,6 @@ def _default_sqlite_url() -> str:
     return f"sqlite:///{db_path}"
 
 
-def _resolve_db_url() -> str:
-    """Normalize the database URL so SQLAlchemy uses the psycopg3 driver."""
-    url = os.getenv("DATABASE_URL", _default_sqlite_url())
-    if url.startswith("postgres://"):
-        # Legacy Heroku/render scheme; also force psycopg3.
-        return "postgresql+psycopg://" + url[len("postgres://"):]
-    if url.startswith("postgresql://"):
-        # Default scheme makes SQLAlchemy try psycopg2, which is not installed.
-        return "postgresql+psycopg://" + url[len("postgresql://"):]
-    # Already includes driver (e.g. postgresql+psycopg://) or is sqlite.
-    return url
-
-
 def _resolve_database_url() -> str:
     """Resolve DB URL from common env names, falling back to local SQLite for dev."""
     raw = None
@@ -580,14 +567,12 @@ def get_canvas_token(user_id: int, db: Session) -> Optional[str]:
     """Retrieve and decrypt a Canvas token for a user."""
     db_token = db.query(CanvasToken).filter(CanvasToken.user_id == user_id).first()
     if not db_token:
-        logger.info("[DBG-AUTH] get_canvas_token: NO token row in DB for user_id=%s", user_id)
         return None
     try:
         token = decrypt_token(db_token.token_encrypted)
-        logger.info("[DBG-AUTH] get_canvas_token: decrypted OK for user_id=%s", user_id)
         return token
     except Exception as e:
-        logger.error("[DBG-AUTH] get_canvas_token: decryption FAILED for user_id=%s: %s", user_id, e)
+        logger.error("Canvas token decryption failed for user_id=%s: %s", user_id, e)
         return None
 
 def revoke_canvas_token(user_id: int, db: Session) -> bool:
@@ -1437,37 +1422,6 @@ def create_todo(
     return row
 
 
-def update_todo(
-    user_id: int,
-    todo_id: str,
-    title: str,
-    notes: str,
-    due_at: Optional[str],
-    completed: bool,
-    db: Session,
-    recurrence: str = "none",
-    series_id: Optional[str] = None,
-    occurrence_index: int = 0,
-    anchor_due_at: Optional[str] = None,
-    workload_reset_mode: str = "none",
-) -> Optional[TodoItem]:
-    row, _ = update_todo_with_recurrence(
-        user_id,
-        todo_id,
-        title,
-        notes,
-        due_at,
-        completed,
-        db,
-        recurrence=recurrence,
-        series_id=series_id,
-        occurrence_index=occurrence_index,
-        anchor_due_at=anchor_due_at,
-        workload_reset_mode=workload_reset_mode,
-    )
-    return row
-
-
 def update_todo_with_recurrence(
     user_id: int,
     todo_id: str,
@@ -1606,7 +1560,6 @@ def create_session(user_id: int, db: Session, days_valid: int = 30) -> str:
 def get_session_user_id(raw_token: str, db: Session) -> Optional[int]:
     """Return user id for a valid auth session token, else None."""
     if not raw_token:
-        logger.info("[DBG-AUTH] get_session_user_id: raw_token is empty/None")
         return None
 
     row = (
@@ -1615,14 +1568,11 @@ def get_session_user_id(raw_token: str, db: Session) -> Optional[int]:
         .first()
     )
     if not row:
-        logger.info("[DBG-AUTH] get_session_user_id: token hash not found in DB (token=%s...)", raw_token[:8])
         return None
     if _is_expired(row.expires_at):
-        logger.info("[DBG-AUTH] get_session_user_id: token EXPIRED for user_id=%s (expires_at=%s)", row.user_id, row.expires_at)
         db.delete(row)
         db.commit()
         return None
-    logger.info("[DBG-AUTH] get_session_user_id: OK → user_id=%s", row.user_id)
     return int(row.user_id)
 
 
