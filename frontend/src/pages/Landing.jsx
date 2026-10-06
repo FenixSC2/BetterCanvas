@@ -1,8 +1,6 @@
 // src/pages/Landing.jsx
 // Public front door: explains the project and offers a no-account demo.
 
-const REPO_URL = "https://github.com/FenixSC2/BetterCanvas";
-
 const FEATURES = [
   {
     title: "Weekly planner with workload",
@@ -80,7 +78,6 @@ export function Landing({ onTryDemo }) {
           <a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById("features")?.scrollIntoView({ behavior: "smooth" }); }}>
             Features
           </a>
-          <a href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a>
           <a href="#login" className="btn" onClick={goToLogin}>Sign in</a>
         </nav>
       </header>
@@ -164,9 +161,6 @@ export function Landing({ onTryDemo }) {
           <ul className="landingEngList">
             {ENGINEERING.map((line) => <li key={line}>{line}</li>)}
           </ul>
-          <a className="authLink" href={REPO_URL} target="_blank" rel="noreferrer">
-            Read the source on GitHub →
-          </a>
         </section>
 
         <section className="landingSection landingFinal">
@@ -189,8 +183,7 @@ export function Landing({ onTryDemo }) {
           Accounts are currently limited to Northeastern University students.
         </span>
         <span>
-          <a href="mailto:support@canvassist.com">support@canvassist.com</a> ·{" "}
-          <a href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a>
+          <a href="mailto:support@canvassist.com">support@canvassist.com</a>
         </span>
       </footer>
     </div>
