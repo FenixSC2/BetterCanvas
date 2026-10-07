@@ -28,6 +28,8 @@ run:
       value: "true"
     - name: MAIL_FROM
       value: no-reply@canvassist.com
+    - name: ADMIN_EMAILS
+      value: admin@example.com
   # Secrets Manager references below.
   # SMTP secret holds: {"username":"...","password":"..."}
   secrets:
