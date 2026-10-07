@@ -402,7 +402,9 @@ def _raise_canvas_http(r: requests.Response, url: str):
     raise HTTPException(status_code=r.status_code, detail=detail)
 
 # === FastAPI app ===
-# Proxies in front of the app that append to X-Forwarded-For (App Runner: 1).
+# Proxies in front of the app that append to X-Forwarded-For. App Runner: 1 (verified live:
+# a client-sent X-Forwarded-For is kept and the real address appended; X-Envoy-External-Address
+# passes client values through, so it is not trusted).
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1"))
 
 
@@ -2556,31 +2558,6 @@ def auth_token_revoke(request: Request, current_user: User = Depends(get_current
 
 def _frontend_redirect(fragment: str) -> RedirectResponse:
     return RedirectResponse(f"{FRONTEND_BASE_URL}/#{fragment}", status_code=302)
-
-
-# TEMPORARY (remove once read): how App Runner forwards the client address.
-# Echoes only the caller's own public address; non-public (internal) addresses are masked.
-@app.get("/api/forwarding-check")
-@limiter.limit("20/minute", key_func=lambda request: "forwarding-check")
-def forwarding_check(request: Request):
-    import ipaddress
-
-    def mask(value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        try:
-            return value if ipaddress.ip_address(value.strip()).is_global else "non-public"
-        except ValueError:
-            return "unparseable"
-
-    xff = request.headers.get("x-forwarded-for")
-    candidates = ("x-real-ip", "x-envoy-external-address", "true-client-ip", "x-client-ip", "forwarded")
-    return {
-        "socket_peer": mask(request.client.host if request.client else None),
-        "x_forwarded_for": [mask(h) for h in xff.split(",")] if xff else None,
-        "candidates": {name: mask(request.headers.get(name)) for name in candidates if name in request.headers},
-        "header_names": sorted(request.headers.keys()),
-    }
 
 
 @app.get("/api/auth/canvas/config")
