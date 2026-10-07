@@ -207,9 +207,13 @@ class CanvasToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, unique=True, index=True)  # one token per user
-    token_encrypted = Column(String)  # encrypted Canvas token
+    token_encrypted = Column(String)  # encrypted Canvas token (OAuth: the access token)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # "personal" = pasted access token; "oauth" = issued through Canvas OAuth (see canvas_oauth.py)
+    auth_type = Column(String, nullable=False, default="personal")
+    refresh_token_encrypted = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=True)  # naive UTC; OAuth access tokens only
 
 class HiddenAssignment(Base):
     __tablename__ = "hidden_assignments"
@@ -415,6 +419,7 @@ def _initialize_database() -> None:
             Base.metadata.create_all(bind=engine)
             _ensure_todo_item_recurrence_columns()
             _ensure_user_announcement_columns()
+            _ensure_canvas_token_oauth_columns()
             if attempt > 1:
                 logger.info("Database initialization succeeded on retry %s/%s", attempt, attempts)
             return
@@ -491,6 +496,26 @@ def _ensure_todo_item_recurrence_columns() -> None:
             )
 
 
+def _ensure_canvas_token_oauth_columns() -> None:
+    """Best-effort runtime migration adding the OAuth columns to canvas_tokens."""
+    statements = {
+        "auth_type": "ALTER TABLE canvas_tokens ADD COLUMN auth_type VARCHAR NOT NULL DEFAULT 'personal'",
+        "refresh_token_encrypted": "ALTER TABLE canvas_tokens ADD COLUMN refresh_token_encrypted VARCHAR",
+        "expires_at": "ALTER TABLE canvas_tokens ADD COLUMN expires_at TIMESTAMP",
+    }
+    with engine.begin() as conn:
+        try:
+            existing = {col["name"] for col in inspect(conn).get_columns("canvas_tokens")}
+        except Exception:
+            return
+        for column, statement in statements.items():
+            if column not in existing:
+                try:
+                    conn.execute(text(statement))
+                except Exception:
+                    logger.warning("Could not add canvas_tokens.%s", column, exc_info=True)
+
+
 def _ensure_user_announcement_columns() -> None:
     """Best-effort runtime migration to add last_seen_announcement_id to users table."""
     with engine.begin() as conn:
@@ -564,6 +589,9 @@ def store_canvas_token(user_id: int, token: str, db: Session) -> CanvasToken:
     
     if existing:
         existing.token_encrypted = encrypted
+        existing.auth_type = "personal"
+        existing.refresh_token_encrypted = None
+        existing.expires_at = None
         existing.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing)

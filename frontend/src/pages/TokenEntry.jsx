@@ -2,6 +2,12 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { clearCachedAsync } from "../hooks/useCachedAsync";
 import { API_BASE } from "../api/canvasApi";
+import {
+  clearCanvasConnectResult,
+  loadCanvasConnectConfig,
+  readCanvasConnectError,
+  startCanvasConnect,
+} from "../lib/canvasConnect";
 
 export function TokenEntry() {
   const { user, logout, error: authError, setTokenStatus, tokenExpired, clearTokenExpired } = useAuth();
@@ -10,6 +16,19 @@ export function TokenEntry() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [hasToken, setHasToken] = useState(false);
+  const [connectConfig, setConnectConfig] = useState(null);
+  const [connectError] = useState(readCanvasConnectError);
+
+  useEffect(() => {
+    clearCanvasConnectResult();
+    let cancelled = false;
+    loadCanvasConnectConfig().then((config) => {
+      if (!cancelled) setConnectConfig(config);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Check if token is already stored. When the token has been flagged expired by the API,
   // skip this check — we know the stored token is no longer valid even if the DB row exists.
@@ -112,6 +131,21 @@ export function TokenEntry() {
 
   if (!user) {
     return null;
+  }
+
+  if (!connectConfig) {
+    return null; // brief: config is one small request
+  }
+
+  if (connectConfig.oauth_enabled && !connectConfig.personal_tokens_allowed) {
+    return (
+      <ConnectCanvas
+        email={user.email}
+        expired={tokenExpired}
+        error={connectError || authError}
+        onSignOut={logout}
+      />
+    );
   }
 
   return (
@@ -299,3 +333,62 @@ export function TokenEntry() {
   );
 }
 
+
+function ConnectCanvas({ email, expired, error, onSignOut }) {
+  const [redirecting, setRedirecting] = useState(false);
+
+  return (
+    <div className="authContainer">
+      <div className="authPanel" style={{ maxWidth: "520px" }}>
+        <h1 className="authTitle">{expired ? "Reconnect Canvas" : "Connect Canvas"}</h1>
+        <p className="authSubtitle">Logged in as {email}</p>
+
+        {expired && !error ? (
+          <div className="authError" style={{ marginBottom: "16px" }}>
+            Your Canvas connection expired or was removed. Reconnect to keep using CanvAssist.
+          </div>
+        ) : null}
+        {error ? (
+          <div className="authError" style={{ marginBottom: "16px" }} role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="authInstructions" style={{ marginBottom: "24px" }}>
+          <p style={{ marginTop: 0 }}>
+            CanvAssist reads your courses, assignments, grades, and announcements from Northeastern's
+            Canvas. You'll sign in on Canvas's own page and approve read-only access; CanvAssist never
+            sees your Canvas password.
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            You can disconnect anytime in Settings, or in Canvas under Account → Settings → Approved
+            Integrations.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="authButton"
+          disabled={redirecting}
+          onClick={() => {
+            setRedirecting(true);
+            startCanvasConnect();
+          }}
+        >
+          {redirecting ? "Opening Canvas…" : expired ? "Reconnect Canvas" : "Connect Canvas"}
+        </button>
+
+        <div className="authFooter">
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="authLink"
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "inherit" }}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

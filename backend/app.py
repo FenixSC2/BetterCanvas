@@ -21,7 +21,7 @@ import requests
 from requests.adapters import HTTPAdapter, Retry
 from fastapi import FastAPI, HTTPException, Query, Depends, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -33,6 +33,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 import analytics
+import canvas_oauth
+from canvas_oauth import get_canvas_token
 
 # imports for caching / background sync
 import asyncio
@@ -51,7 +53,6 @@ from auth import (
     create_user,
     get_user_by_email,
     get_user_by_id,
-    get_canvas_token,
     store_canvas_token,
     revoke_canvas_token,
     verify_password,
@@ -2456,6 +2457,7 @@ def auth_delete_account(
         raise HTTPException(status_code=403, detail="Incorrect password")
 
     user_id = current_user.id
+    canvas_oauth.revoke_user_grant(user_id, db)
     delete_user_account(user_id, db)
     cache_clear_user(user_id)
     analytics.forget_user(user_id)
@@ -2502,6 +2504,8 @@ def admin_stats(
 @per_session_limit("10/minute")
 def auth_token_submit(request: Request, payload: CanvasTokenRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Submit or update Canvas token for the user."""
+    if not canvas_oauth.PERSONAL_TOKENS_ALLOWED:
+        raise HTTPException(status_code=403, detail="Connect Canvas with the Connect button instead of pasting a token.")
     try:
         # Validate the token by attempting a simple Canvas API call
         try:
@@ -2545,8 +2549,87 @@ def auth_token_status(current_user: User = Depends(get_current_user), db: Sessio
 @per_session_limit("10/minute")
 def auth_token_revoke(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Revoke the user's Canvas token."""
+    canvas_oauth.revoke_user_grant(current_user.id, db)
     revoke_canvas_token(current_user.id, db)
     return {"success": True, "message": "Token revoked"}
+
+
+def _frontend_redirect(fragment: str) -> RedirectResponse:
+    return RedirectResponse(f"{FRONTEND_BASE_URL}/#{fragment}", status_code=302)
+
+
+@app.get("/api/auth/canvas/config")
+def canvas_connect_config():
+    """Which ways of connecting Canvas the frontend should offer."""
+    return {
+        "oauth_enabled": canvas_oauth.OAUTH_ENABLED,
+        "personal_tokens_allowed": canvas_oauth.PERSONAL_TOKENS_ALLOWED,
+    }
+
+
+@app.get("/api/auth/canvas/start")
+@limiter.limit("10/minute")
+def canvas_connect_start(
+    request: Request,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Begin Canvas OAuth: redirect the browser to Canvas's consent page."""
+    if not canvas_oauth.OAUTH_ENABLED:
+        return _frontend_redirect("canvas-error=disabled")
+    user_id = get_session_user_id(session_id, db) if session_id and not is_demo_session(session_id) else None
+    if user_id is None:
+        return _frontend_redirect("login")
+
+    state, nonce = canvas_oauth.new_state(user_id)
+    response = RedirectResponse(canvas_oauth.authorize_url(state), status_code=302)
+    response.set_cookie(
+        canvas_oauth.STATE_COOKIE,
+        nonce,
+        max_age=canvas_oauth.STATE_TTL_SECONDS,
+        path="/api/auth/canvas",
+        secure=SECURE_COOKIES,
+        httponly=True,
+        samesite="lax",  # sent on Canvas's top-level redirect back to us
+    )
+    return response
+
+
+@app.get("/api/auth/canvas/callback")
+@limiter.limit("10/minute")
+def canvas_connect_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    session_id: Optional[str] = Depends(get_session_id),
+    db: Session = Depends(get_db),
+):
+    """Canvas redirects here after the user approves (or denies) access."""
+    def finish(fragment: str) -> RedirectResponse:
+        response = _frontend_redirect(fragment)
+        response.delete_cookie(canvas_oauth.STATE_COOKIE, path="/api/auth/canvas", secure=SECURE_COOKIES, httponly=True, samesite="lax")
+        return response
+
+    if not canvas_oauth.OAUTH_ENABLED:
+        return finish("canvas-error=disabled")
+    user_id = get_session_user_id(session_id, db) if session_id and not is_demo_session(session_id) else None
+    if user_id is None:
+        return finish("login")
+    if not state or not canvas_oauth.verify_state(state, request.cookies.get(canvas_oauth.STATE_COOKIE), user_id):
+        # Leave the nonce cookie alone so a stray or forged callback can't cancel a real attempt.
+        return _frontend_redirect("canvas-error=expired")
+    if error or not code:
+        return finish("canvas-error=denied" if error == "access_denied" else "canvas-error=failed")
+
+    try:
+        canvas_oauth.exchange_code(user_id, code, db)
+    except canvas_oauth.OAuthError as exc:
+        logger.warning("Canvas OAuth exchange failed for user %s: %s", user_id, exc.reason)
+        return finish("canvas-error=failed")
+
+    cache_clear_user(user_id)
+    return finish("canvas-connected")
 
 # === Hidden Assignments Management ===
 @app.get("/api/hidden-assignments")

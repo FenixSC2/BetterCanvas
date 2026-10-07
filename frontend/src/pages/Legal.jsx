@@ -60,7 +60,8 @@ export function PrivacyPolicy() {
           a one-way bcrypt hash; we can't see them.
         </li>
         <li>
-          <strong>Your Canvas access token.</strong> The token you give us is encrypted before it's stored and
+          <strong>Your Canvas access token.</strong> The token that connects your Canvas account (issued by
+          Canvas when you click Connect, or pasted in by early beta users) is encrypted before it's stored and
           is used only to request your own course data from Northeastern's Canvas while you use the app.
         </li>
         <li>

@@ -16,6 +16,7 @@ import { API_BASE, canvasApi } from "../api/canvasApi";
 import { clearDemoMode } from "../lib/storagePolicy";
 import { formatCourseTitle } from "../utils/courseUtils";
 import { UsageStats } from "./UsageStats";
+import { loadCanvasConnectConfig, startCanvasConnect } from "../lib/canvasConnect";
 
 const THEME_OPTIONS = [
   { key: "auto",     label: "Auto",         desc: "Follows your system light/dark" },
@@ -89,6 +90,17 @@ export function SettingsModal({
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [oauthConnect, setOauthConnect] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCanvasConnectConfig().then((config) => {
+      if (!cancelled) setOauthConnect(config.oauth_enabled && !config.personal_tokens_allowed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Effort settings draft
   const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
@@ -305,7 +317,9 @@ export function SettingsModal({
   async function handleRevokeToken() {
     if (
       !window.confirm(
-        "Are you sure you want to revoke your Canvas token? You'll need to add a new one to continue using the app.",
+        oauthConnect
+          ? "Disconnect Canvas? CanvAssist will lose access until you connect again."
+          : "Are you sure you want to revoke your Canvas token? You'll need to add a new one to continue using the app.",
       )
     ) {
       return;
@@ -323,9 +337,11 @@ export function SettingsModal({
       }
 
       setTokenStatus(false);
-      alert(
-        "Canvas token has been revoked. You'll be redirected to add a new token.",
-      );
+      if (!oauthConnect) {
+        alert(
+          "Canvas token has been revoked. You'll be redirected to add a new token.",
+        );
+      }
       window.location.hash = "#";
     } catch (err) {
       alert(err.message || "Failed to revoke token");
@@ -962,7 +978,7 @@ export function SettingsModal({
                         color: "var(--text)",
                       }}
                     >
-                      Canvas Token
+                      {oauthConnect ? "Canvas connection" : "Canvas Token"}
                     </div>
                     <p
                       style={{
@@ -971,16 +987,18 @@ export function SettingsModal({
                         marginBottom: 12,
                       }}
                     >
-                      Manage your Canvas API token for this application.
+                      {oauthConnect
+                        ? "Connected through Canvas. You can also remove access in Canvas under Account → Settings → Approved Integrations."
+                        : "Manage your Canvas API token for this application."}
                     </p>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         type="button"
                         className="btn"
-                        onClick={handleEditToken}
+                        onClick={oauthConnect ? startCanvasConnect : handleEditToken}
                         disabled={tokenLoading || (demoMode && !user)}
                       >
-                        Edit Token
+                        {oauthConnect ? "Reconnect" : "Edit Token"}
                       </button>
                       <button
                         type="button"
@@ -993,7 +1011,9 @@ export function SettingsModal({
                           border: "1px solid var(--badge-danger-border)",
                         }}
                       >
-                        {tokenLoading ? "Revoking..." : "Revoke"}
+                        {tokenLoading
+                          ? oauthConnect ? "Disconnecting..." : "Revoking..."
+                          : oauthConnect ? "Disconnect" : "Revoke"}
                       </button>
                     </div>
                   </div>

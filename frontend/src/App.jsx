@@ -17,6 +17,7 @@ import { AuthProvider } from "./hooks/AuthProvider";
 import { useAuth } from "./hooks/useAuth";
 import { clearDemoMode, isDemoMode, setDemoMode } from "./lib/storagePolicy";
 import { API_BASE } from "./api/canvasApi";
+import { clearCanvasConnectResult } from "./lib/canvasConnect";
 import "./styles.css";
 
 function DashboardApp() {
@@ -63,6 +64,10 @@ function DashboardApp() {
         setAuthPage("reset-password");
       } else if (route === "login") {
         setAuthPage("login");
+      } else if (route === "canvas-connected") {
+        // Back from Canvas OAuth; the auth check on load already sees the new connection.
+        clearCanvasConnectResult();
+        setAuthPage("landing");
       } else if (route === "privacy" || route === "terms") {
         setAuthPage(route);
         window.scrollTo(0, 0);
