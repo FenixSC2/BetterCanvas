@@ -84,6 +84,8 @@ from auth import (
     UserCreate,
     UserLogin,
     UserResponse,
+    DeleteAccountRequest,
+    delete_user_account,
     CanvasTokenRequest,
     CanvasTokenStatus,
     ForgotPasswordRequest,
@@ -205,6 +207,14 @@ def cache_get(key: str):
 def cache_set(key: str, value: Any):
     with _cache_lock:
         _cache[key] = {"ts": time.time(), "value": value}
+
+def cache_clear_user(user_id: int):
+    """Drop every cached Canvas response for one user (keys are "<kind>:<user_id>:...")."""
+    uid = str(user_id)
+    with _cache_lock:
+        for k in list(_cache.keys()):
+            if k.split(":", 2)[1:2] == [uid]:
+                _cache.pop(k, None)
 
 def cache_clear(prefix: str | None = None):
     with _cache_lock:
@@ -2423,6 +2433,34 @@ def auth_logout(
     if session_id:
         invalidate_session(session_id, db)
     
+    response = JSONResponse({"success": True})
+    response.delete_cookie(
+        "session_id",
+        path="/",
+        secure=SECURE_COOKIES,
+        httponly=True,
+        samesite="none" if SECURE_COOKIES else "lax",
+    )
+    return response
+
+@app.delete("/api/auth/account")
+@per_session_limit("5/minute")
+def auth_delete_account(
+    request: Request,
+    payload: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete the signed-in account and all of its data. Requires the password."""
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+
+    user_id = current_user.id
+    delete_user_account(user_id, db)
+    cache_clear_user(user_id)
+    analytics.forget_user(user_id)
+    logger.info("Deleted account %s", user_id)
+
     response = JSONResponse({"success": True})
     response.delete_cookie(
         "session_id",

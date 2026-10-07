@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useCallback, useRef } from "react";
 import { clearCachedAsync } from "./useCachedAsync";
+import { clearLastKnownGrades } from "./useDesktopNotifications";
 import { clearDemoMode, clearMockSessionData } from "../lib/storagePolicy";
 import { API_BASE } from "../api/canvasApi";
 
@@ -207,6 +208,7 @@ export function AuthProvider({ children }) {
       clearMockSessionData();
       // Clear cached data on logout
       clearCachedAsync();
+      clearLastKnownGrades();
       // Emit auth change event so all data fetches re-run
       window.dispatchEvent(new CustomEvent("auth:changed"));
       setLoading(false);

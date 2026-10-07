@@ -112,6 +112,17 @@ def record_activity(session_id: str, is_demo: bool, admin_emails: set[str]) -> N
     _store_day(today, visitor)
 
 
+def forget_user(user_id: int) -> None:
+    """Drop in-memory traces of a deleted user."""
+    visitor = f"u:{user_id}"
+    with _lock:
+        _last_seen.pop(visitor, None)
+        _recorded.difference_update({k for k in _recorded if k[1] == visitor})
+        for digest, (cached_visitor, _) in list(_session_cache.items()):
+            if cached_visitor == visitor:
+                del _session_cache[digest]
+
+
 def usage_stats(db: Session) -> dict:
     now = time.time()
     with _lock:

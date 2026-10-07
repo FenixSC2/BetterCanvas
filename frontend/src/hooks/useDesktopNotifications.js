@@ -9,6 +9,15 @@ import { formatCourseTitle } from "../utils/courseUtils";
 const GRADE_THRESHOLDS_KEY = "bc.notifications.gradeThresholds";
 const LAST_KNOWN_GRADES_KEY = "bc.notifications.lastKnownGrades";
 
+/** Forget the grade snapshot used for change notifications (called on sign-out). */
+export function clearLastKnownGrades() {
+  try {
+    localStorage.removeItem(LAST_KNOWN_GRADES_KEY);
+  } catch {
+    // Storage unavailable; nothing to clear.
+  }
+}
+
 export function loadGradeThresholds() {
   try {
     const raw = localStorage.getItem(GRADE_THRESHOLDS_KEY);

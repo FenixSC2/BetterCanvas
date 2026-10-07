@@ -1602,6 +1602,27 @@ def invalidate_session(raw_token: str, db: Session) -> None:
         db.commit()
 
 
+def delete_user_account(user_id: int, db: Session) -> None:
+    """Permanently delete a user and every row that belongs to them."""
+    for model in (
+        CanvasToken,
+        HiddenAssignment,
+        WorkloadEstimate,
+        CompletedAssignmentFlag,
+        AssignmentWeightOverride,
+        AssignmentGroupWeightOverride,
+        GradeScalePreference,
+        PersonalAssignmentDate,
+        TodoItem,
+        PasswordResetToken,
+        SessionToken,
+    ):
+        db.query(model).filter(model.user_id == user_id).delete(synchronize_session=False)
+    db.query(ActivityDay).filter(ActivityDay.visitor == f"u:{user_id}").delete(synchronize_session=False)
+    db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
+    db.commit()
+
+
 def invalidate_user_sessions(user_id: int, db: Session) -> None:
     """Invalidate all auth sessions for a user."""
     db.query(SessionToken).filter(SessionToken.user_id == user_id).delete(
@@ -1656,6 +1677,9 @@ def mark_password_reset_token_used(row: PasswordResetToken, db: Session) -> None
 # === Pydantic schemas ===
 class UserLogin(BaseModel):
     email: EmailStr
+    password: str
+
+class DeleteAccountRequest(BaseModel):
     password: str
 
 class UserCreate(UserLogin):
