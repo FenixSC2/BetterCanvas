@@ -5931,3 +5931,84 @@ html[data-theme="contrast"] details.expandable.courseRow {
   align-items: center;
   gap: 8px 12px;
 }
+
+/* ===== Settings → Usage (admin analytics) ===== */
+.usageGroupLabel {
+  margin: 14px 0 8px;
+  font-size: var(--fontSm);
+  font-weight: 600;
+  color: var(--muted-strong);
+}
+.usageTiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.usageTile {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radiusMd);
+  background: var(--surface);
+}
+.usageTileLabel {
+  font-size: var(--fontSm);
+  color: var(--muted);
+}
+.usageTileValue {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.usageTileSub {
+  font-size: var(--fontSm);
+  color: var(--muted);
+}
+.usageChart {
+  margin: 0;
+}
+.usageChartHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: var(--fontSm);
+}
+.usageChartTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+.usageChartReadout {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.usageBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+  border-bottom: 1px solid var(--border);
+}
+.usageBarSlot {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 4px 4px 0 0;
+}
+.usageBarSlot.active {
+  background: var(--accent-softer);
+}
+.usageBar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.usageAxis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}

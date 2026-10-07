@@ -22,6 +22,7 @@ from requests.adapters import HTTPAdapter, Retry
 from fastapi import FastAPI, HTTPException, Query, Depends, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -30,6 +31,8 @@ from dateutil import parser as dateparser
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+
+import analytics
 
 # imports for caching / background sync
 import asyncio
@@ -167,6 +170,8 @@ SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "180"))
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 SECURE_COOKIES = os.getenv("SECURE_COOKIES", "false").lower() == "true"
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
+# Accounts that can view usage stats; their own activity is not counted.
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
 
 # Optional SMTP config for password reset email delivery.
 SMTP_HOST = os.getenv("SMTP_HOST")
@@ -433,6 +438,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def track_activity(request: Request, call_next):
+    """Feed successful requests that carry a session cookie into usage analytics."""
+    response = await call_next(request)
+    sid = request.cookies.get("session_id")
+    if sid and request.method != "OPTIONS" and response.status_code < 400:
+        try:
+            await run_in_threadpool(analytics.record_activity, sid, is_demo_session(sid), ADMIN_EMAILS)
+        except Exception:
+            logger.warning("Activity tracking failed", exc_info=True)
+    return response
 
 
 @app.exception_handler(Exception)
@@ -2418,7 +2436,29 @@ def auth_logout(
 @app.get("/api/auth/me", response_model=UserResponse)
 def auth_me(current_user: User = Depends(get_current_user)):
     """Get the currently logged-in user."""
-    return current_user
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        created_at=current_user.created_at,
+        is_admin=is_admin(current_user),
+    )
+
+
+def is_admin(user: User) -> bool:
+    return (user.email or "").lower() in ADMIN_EMAILS
+
+
+@app.get("/api/admin/stats")
+@per_session_limit("30/minute")
+def admin_stats(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Usage analytics for admins. Returns 404 to everyone else."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return analytics.usage_stats(db)
 
 @app.post("/api/auth/token")
 @per_session_limit("10/minute")

@@ -15,6 +15,7 @@ import { useAuth } from "../hooks/useAuth";
 import { API_BASE, canvasApi } from "../api/canvasApi";
 import { clearDemoMode } from "../lib/storagePolicy";
 import { formatCourseTitle } from "../utils/courseUtils";
+import { UsageStats } from "./UsageStats";
 
 const THEME_OPTIONS = [
   { key: "auto",     label: "Auto",         desc: "Follows your system light/dark" },
@@ -163,8 +164,9 @@ export function SettingsModal({
       { key: "general", label: "General" },
       { key: "hidden", label: "Hidden assignments" },
       { key: "account", label: "Account" },
+      ...(user?.is_admin ? [{ key: "usage", label: "Usage" }] : []),
     ],
-    [],
+    [user?.is_admin],
   );
 
   function applySnap() {
@@ -907,6 +909,8 @@ export function SettingsModal({
                   </div>
                 </div>
               </div>
+            ) : activeSection === "usage" && user?.is_admin ? (
+              <UsageStats />
             ) : (
               <div className="card">
                 <div className="cardBody">

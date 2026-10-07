@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, create_engine, UniqueConstraint, inspect, text
+from sqlalchemy import Column, Integer, String, Date, DateTime, Float, Boolean, create_engine, UniqueConstraint, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
@@ -392,6 +392,18 @@ class SessionToken(Base):
     token_hash = Column(String, unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+class ActivityDay(Base):
+    """One row per visitor per day they used the app (see analytics.py)."""
+    __tablename__ = "activity_days"
+    __table_args__ = (
+        UniqueConstraint("day", "visitor", name="uq_activity_day_visitor"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    day = Column(Date, index=True, nullable=False)
+    visitor = Column(String, nullable=False)  # "u:<user id>" or "d:<demo session hash>"
+    kind = Column(String, nullable=False)  # "user" or "demo"
 
 def _initialize_database() -> None:
     """Create database tables with retries to handle transient cloud startup issues."""
@@ -1662,6 +1674,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     created_at: datetime
+    is_admin: bool = False
 
     class Config:
         from_attributes = True
