@@ -402,7 +402,7 @@ def _raise_canvas_http(r: requests.Response, url: str):
     raise HTTPException(status_code=r.status_code, detail=detail)
 
 # === FastAPI app ===
-# Proxies in front of the app that append to X-Forwarded-For (App Runner: 1).
+# Proxies in front of the app that append to X-Forwarded-For (App Runner: 2, set in apprunner.yaml).
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1"))
 
 
