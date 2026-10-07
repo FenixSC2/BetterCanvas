@@ -143,6 +143,10 @@ export function Register() {
           <button type="submit" disabled={loading} className="authButton">
             {loading ? "Creating account..." : "Create account"}
           </button>
+          <p className="authLegalNote">
+            By creating an account you agree to the <a href="#terms">Terms of Use</a> and{" "}
+            <a href="#privacy">Privacy Policy</a>.
+          </p>
         </form>
 
         <div className="authFooter">

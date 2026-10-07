@@ -43,7 +43,7 @@ const FONT_OPTIONS = [
   { key: "system", label: "System UI", css: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
   { key: "times",  label: "Times New Roman", css: '"Times New Roman", Times, serif' },
   { key: "georgia", label: "Georgia", css: "Georgia, serif" },
-  { key: "inter",  label: "Inter", css: "Inter, ui-sans-serif, sans-serif" },
+  { key: "inter",  label: "Inter", css: '"Inter Variable", Inter, ui-sans-serif, sans-serif' },
   { key: "mono",   label: "Monospace", css: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
 ];
 
@@ -85,6 +85,10 @@ export function SettingsModal({
   const { user, logout, setTokenStatus } = useAuth();
   const [activeSection, setActiveSection] = useState("general");
   const [tokenLoading, setTokenLoading] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Effort settings draft
   const [snapDraft, setSnapDraft] = useState(() => getEffortSnapMinutes());
@@ -265,6 +269,36 @@ export function SettingsModal({
       // navigate to login page
       window.location.hash = "#";
       onClose();
+    }
+  }
+
+  async function handleDeleteAccount(e) {
+    e.preventDefault();
+    if (!deletePassword) return;
+    setDeleteLoading(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/account`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      if (res.status === 403) throw new Error("Incorrect password.");
+      if (res.status === 429) throw new Error("Too many attempts. Wait a minute and try again.");
+      if (!res.ok) throw new Error("Couldn't delete your account. Please try again.");
+
+      // Drop everything this device cached for the account, then return to the landing page.
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch {
+        // Storage may be unavailable; the server-side data is already gone.
+      }
+      window.location.assign("/");
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleteLoading(false);
     }
   }
 
@@ -980,6 +1014,101 @@ export function SettingsModal({
                   >
                     {demoMode && !user ? "Sign in" : "Sign out"}
                   </button>
+
+                  {user && !demoMode ? (
+                    <>
+                      <hr
+                        style={{ margin: "16px 0", borderColor: "var(--border)" }}
+                      />
+                      <div
+                        style={{
+                          fontSize: "var(--fontSm)",
+                          fontWeight: 600,
+                          marginBottom: 8,
+                          color: "var(--text)",
+                        }}
+                      >
+                        Delete account
+                      </div>
+                      <p
+                        style={{
+                          fontSize: "var(--fontSm)",
+                          color: "var(--muted)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Permanently deletes your account, your saved Canvas
+                        token, and everything you've saved in CanvAssist
+                        (to-dos, estimates, overrides, hidden assignments).
+                        This can't be undone. Your Canvas account is not
+                        affected; you can also remove the token there under
+                        Account → Settings → Approved Integrations.
+                      </p>
+                      {deleteOpen ? (
+                        <form
+                          onSubmit={handleDeleteAccount}
+                          style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}
+                        >
+                          <input
+                            type="password"
+                            className="authInput"
+                            placeholder="Confirm your password"
+                            aria-label="Confirm your password"
+                            autoComplete="current-password"
+                            value={deletePassword}
+                            onChange={(e) => setDeletePassword(e.target.value)}
+                            disabled={deleteLoading}
+                            autoFocus
+                          />
+                          <button
+                            type="submit"
+                            className="btn"
+                            disabled={deleteLoading || !deletePassword}
+                            style={{
+                              background: "var(--badge-danger-bg)",
+                              color: "var(--badge-danger-text)",
+                              border: "1px solid var(--badge-danger-border)",
+                            }}
+                          >
+                            {deleteLoading ? "Deleting..." : "Permanently delete"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={deleteLoading}
+                            onClick={() => {
+                              setDeleteOpen(false);
+                              setDeletePassword("");
+                              setDeleteError("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          {deleteError ? (
+                            <div
+                              role="alert"
+                              style={{ width: "100%", fontSize: "var(--fontSm)", color: "var(--badge-danger-text)" }}
+                            >
+                              {deleteError}
+                            </div>
+                          ) : null}
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setDeleteOpen(true)}
+                          style={{
+                            background: "var(--badge-danger-bg)",
+                            color: "var(--badge-danger-text)",
+                            border: "1px solid var(--badge-danger-border)",
+                          }}
+                        >
+                          Delete account…
+                        </button>
+                      )}
+                    </>
+                  ) : null}
                 </div>
               </div>
             )}

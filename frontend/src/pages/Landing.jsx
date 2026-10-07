@@ -183,6 +183,7 @@ export function Landing({ onTryDemo }) {
           Accounts are currently limited to Northeastern University students.
         </span>
         <span>
+          <a href="#privacy">Privacy</a> · <a href="#terms">Terms</a> ·{" "}
           <a href="mailto:support@canvassist.com">support@canvassist.com</a>
         </span>
       </footer>

@@ -5,10 +5,10 @@
    ===================================================================== */
 
 /* ===== Font preference ===== */
-html[data-font="system"] { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial; }
+html[data-font="system"] { font-family: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial; }
 html[data-font="times"]  { font-family: "Times New Roman", Times, serif; }
 html[data-font="georgia"] { font-family: Georgia, "Times New Roman", serif; }
-html[data-font="inter"]  { font-family: "Inter", ui-sans-serif, sans-serif; }
+html[data-font="inter"]  { font-family: "Inter Variable", "Inter", ui-sans-serif, sans-serif; }
 html[data-font="mono"]   { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
@@ -95,7 +95,7 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --tracking-mega:    -0.045em;
 
   /* Display font (loaded in index.html) */
-  --display-font: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --display-font: "Inter Tight Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 
   /* Motion — exponential ease-outs only (no bounce per design rules) */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);            /* quint */
@@ -6011,4 +6011,55 @@ html[data-theme="contrast"] details.expandable.courseRow {
   margin-top: 4px;
   font-size: 11px;
   color: var(--muted);
+}
+
+/* ===== Privacy policy / terms ===== */
+.landing main.legalBody {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 16px 64px;
+  line-height: 1.65;
+}
+.legalTitle {
+  font-family: var(--display-font);
+  font-size: clamp(28px, 5vw, 38px);
+  letter-spacing: var(--tracking-tight);
+  margin: 0 0 4px;
+}
+.legalBody h2 {
+  font-size: 18px;
+  margin: 32px 0 8px;
+  letter-spacing: var(--tracking-tight);
+}
+.legalBody p,
+.legalBody ul {
+  margin: 0 0 12px;
+}
+.legalBody ul {
+  padding-left: 20px;
+  list-style: disc;
+}
+.legalBody li {
+  margin-bottom: 6px;
+}
+.legalBody a {
+  color: var(--accent-strong);
+}
+.legalBody code {
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface2);
+}
+.authLegalNote {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: var(--fontSm);
+  color: var(--muted);
+}
+.authLegalNote a {
+  color: inherit;
+  text-decoration: underline;
 }

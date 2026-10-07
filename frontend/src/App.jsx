@@ -8,6 +8,7 @@ import { Register } from "./pages/Register";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ResetPassword } from "./pages/ResetPassword";
 import { TokenEntry } from "./pages/TokenEntry";
+import { PrivacyPolicy, TermsOfUse } from "./pages/Legal";
 import { TopLoadingBar } from "./components/TopLoadingBar";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsModal } from "./components/SettingsModal";
@@ -20,7 +21,7 @@ import "./styles.css";
 
 function DashboardApp() {
   const { user, loading, hasToken } = useAuth();
-  const [authPage, setAuthPage] = useState("landing"); // "landing" | "login" | "register" | "forgot-password" | "reset-password"
+  const [authPage, setAuthPage] = useState("landing"); // "landing" | "login" | "register" | "forgot-password" | "reset-password" | "privacy" | "terms"
   const [demoMode, setDemoModeState] = useState(() => isDemoMode());
   const ANNOUNCEMENT_SEEN_KEYS = ["announcements:seenIds", "announcements:lastSeenId"];
 
@@ -62,6 +63,9 @@ function DashboardApp() {
         setAuthPage("reset-password");
       } else if (route === "login") {
         setAuthPage("login");
+      } else if (route === "privacy" || route === "terms") {
+        setAuthPage(route);
+        window.scrollTo(0, 0);
       } else {
         setAuthPage("landing");
       }
@@ -94,6 +98,17 @@ function DashboardApp() {
             <div className="loadingState"><span className="spinner" /> Loading…</div>
           </main>
           <footer className="footer muted">Loading application...</footer>
+        </div>
+      </ThemeProvider>
+    );
+  }
+
+  // Legal pages are reachable whether or not you're signed in.
+  if (authPage === "privacy" || authPage === "terms") {
+    return (
+      <ThemeProvider>
+        <div className="app">
+          {authPage === "privacy" ? <PrivacyPolicy /> : <TermsOfUse />}
         </div>
       </ThemeProvider>
     );
@@ -242,7 +257,8 @@ function DashboardContent({ demoMode = false, onExitDemo = null }) {
           ) : (
             <>
               Questions, comments, or feedback? Reach us at{" "}
-              <a href="mailto:support@canvassist.com">support@canvassist.com</a>.
+              <a href="mailto:support@canvassist.com">support@canvassist.com</a>.{" "}
+              <a href="#privacy">Privacy</a> · <a href="#terms">Terms</a>
             </>
           )}
         </footer>
