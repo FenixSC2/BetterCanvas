@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   theme: "cb_theme",
   density: "cb_density",
   font: "cb_font",
+  fontVersion: "cb_font_v",
   customColors: "cb_custom_colors",
   rainbowCards: "cb_rainbow_cards",
 };
@@ -189,6 +190,24 @@ function readStored(key, fallback) {
   }
 }
 
+const DEFAULT_FONT = "inter";
+
+// "system" used to render Inter. It now means the device's UI font, so anyone
+// still on it (including everyone who never changed the setting) moves to Inter
+// once, keeping what they see unchanged.
+function readFont() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.font);
+    if (localStorage.getItem(STORAGE_KEYS.fontVersion) !== "2") {
+      localStorage.setItem(STORAGE_KEYS.fontVersion, "2");
+      if (!stored || stored === "system") return DEFAULT_FONT;
+    }
+    return stored || DEFAULT_FONT;
+  } catch {
+    return DEFAULT_FONT;
+  }
+}
+
 function readCustomColors() {
   try {
     const v = localStorage.getItem(STORAGE_KEYS.customColors);
@@ -214,7 +233,7 @@ function applyToDocument({ theme, density, font }) {
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => readStored(STORAGE_KEYS.theme, DEFAULT_THEME));
   const [density, setDensityState] = useState(() => readStored(STORAGE_KEYS.density, "comfortable"));
-  const [font, setFontState] = useState(() => readStored(STORAGE_KEYS.font, "system"));
+  const [font, setFontState] = useState(readFont);
   const [customColors, setCustomColorsState] = useState(readCustomColors);
   const [rainbowCards, setRainbowCardsState] = useState(() => readStored(STORAGE_KEYS.rainbowCards, "dark"));
 

@@ -40,10 +40,10 @@ const DENSITY_OPTIONS = [
 ];
 
 const FONT_OPTIONS = [
-  { key: "system", label: "System UI", css: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" },
+  { key: "inter",  label: "Inter (default)", css: '"Inter Variable", Inter, ui-sans-serif, sans-serif' },
+  { key: "system", label: "System UI", css: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' },
   { key: "times",  label: "Times New Roman", css: '"Times New Roman", Times, serif' },
-  { key: "georgia", label: "Georgia", css: "Georgia, serif" },
-  { key: "inter",  label: "Inter", css: '"Inter Variable", Inter, ui-sans-serif, sans-serif' },
+  { key: "georgia", label: "Georgia", css: 'Georgia, "Times New Roman", serif' },
   { key: "mono",   label: "Monospace", css: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
 ];
 
