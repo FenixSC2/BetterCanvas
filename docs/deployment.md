@@ -38,6 +38,36 @@ Production settings to keep in mind:
 - `SECURE_COOKIES=true` and `ALLOWED_ORIGINS` must list the frontend origin. The session cookie
   uses `SameSite=None` because the frontend and the API are on different subdomains.
 - Demo sessions are stateless signed tokens, so they survive restarts and scale across instances.
+- `ADMIN_EMAILS` (comma-separated) lists the accounts that see Settings → Usage. Their own
+  activity is excluded from the counts.
+- `TRUSTED_PROXY_HOPS` (default 1) is how many proxies in front of the app append to
+  `X-Forwarded-For`. IP-based rate limits key on that entry from the right.
+
+### Canvas OAuth
+
+Canvas's API policy requires apps used by more than one person to get tokens through OAuth with a
+developer key issued by the school. The OAuth flow (`backend/canvas_oauth.py`) stays off until
+these are set:
+
+| Variable | Value |
+|---|---|
+| `CANVAS_OAUTH_CLIENT_ID` | the developer key's client ID (env var) |
+| `CANVAS_OAUTH_CLIENT_SECRET` | the key's secret (Secrets Manager, like `DATABASE_URL`) |
+| `CANVAS_OAUTH_REDIRECT_URI` | `https://api.canvassist.com/api/auth/canvas/callback` (must match the key exactly) |
+| `CANVAS_OAUTH_SCOPES` | optional; space-separated `url:GET\|/api/v1/...` scopes if the key enforces scopes |
+
+When those are present, the token page shows **Connect Canvas** instead of the paste-a-token form,
+pasted tokens are refused, and users who still have one are asked to reconnect once. Set
+`CANVAS_ALLOW_PERSONAL_TOKENS=true` to keep accepting pasted tokens during a transition.
+
+The app only reads from Canvas. It calls these GET endpoints:
+
+- `/api/v1/users/self/profile`, `/api/v1/users/self/enrollments`
+- `/api/v1/courses/:id`, `/api/v1/courses/:id/tabs`
+- `/api/v1/courses/:id/assignments`, `/api/v1/courses/:id/assignments/:id`,
+  `/api/v1/courses/:id/assignment_groups`
+- `/api/v1/courses/:id/discussion_topics`, `/api/v1/courses/:id/discussion_topics/:id/view`
+- `/api/v1/announcements`, `/api/v1/planner/items`
 
 ### Running elsewhere
 
