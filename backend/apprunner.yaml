@@ -28,15 +28,15 @@ run:
       value: "true"
     - name: MAIL_FROM
       value: no-reply@canvassist.com
-    - name: ADMIN_EMAILS
-      value: admin@example.com
   # Secrets Manager references below.
-  # SMTP secret holds: {"username":"...","password":"..."}
+  # SMTP secret holds: {"username":"...","password":"...","admin_emails":"..."}
   secrets:
     - name: SMTP_USERNAME
       value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:username::"
     - name: SMTP_PASSWORD
       value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:password::"
+    - name: ADMIN_EMAILS
+      value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:canvassist/smtp-jaP3Er:admin_emails::"
     - name: DATABASE_URL
       value-from: "arn:aws:secretsmanager:us-east-1:735910966780:secret:DATABASE_URL-c62Bbc"
     - name: TOKEN_ENCRYPTION_KEY
